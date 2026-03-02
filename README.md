@@ -1,5 +1,9 @@
 # ECGDataKit
 
+[![Docs](https://github.com/UMMISCO/ECGDataKit/actions/workflows/docs.yml/badge.svg)](https://ecgdatakit.ummisco.fr)
+[![Python 3.10+](https://img.shields.io/badge/python-3.10%2B-blue.svg)](https://www.python.org/downloads/)
+[![License](https://img.shields.io/badge/license-Apache%202.0-green.svg)](LICENSE)
+
 **A pure-Python library for parsing, processing, and visualizing multi-format ECG files.**
 
 Developed at [UMMISCO](https://www.ummisco.fr) / [IRD](https://www.ird.fr) by Ahmad Fall.
@@ -25,30 +29,30 @@ Developed at [UMMISCO](https://www.ummisco.fr) / [IRD](https://www.ird.fr) by Ah
 | Mindray BeneHeart R12 | `.xml` | `<BeneHeartR12>` or `<MindrayECG>` |
 | GE MAC 2000 | `.xml` | `<MAC2000>` or `<GE_MAC>` |
 
-### Signal Processing — powered by SciPy
+### Signal Processing
 
-- Butterworth filters (lowpass, highpass, bandpass, notch, baseline removal)
-- Diagnostic (0.05–150 Hz) and monitoring (0.67–40 Hz) presets
-- R-peak detection (Pan-Tompkins and Shannon energy)
-- Heart rate, RR intervals, instantaneous HR
-- HRV: time-domain (SDNN, RMSSD, pNN50), frequency-domain (VLF/LF/HF), Poincaré (SD1/SD2)
-- FFT, PSD, beat segmentation, ensemble averaging
-- Signal quality index, SNR estimation
-- Lead derivation (III, aVR/aVL/aVF, full 12-lead assembly)
-- Resampling, normalization (min-max, z-score, amplitude)
-- ECG cleaning (built-in, BioSPPy, NeuroKit2, combined pipelines)
-- Deep learning denoising via DeepFADE (DenseNet encoder-decoder)
+| Category | Capabilities |
+|----------|-------------|
+| **Filtering** | Butterworth (lowpass, highpass, bandpass, notch), baseline removal, diagnostic & monitoring presets |
+| **Peak Detection** | Pan-Tompkins, Shannon energy |
+| **Heart Rate** | Average HR, RR intervals, instantaneous beat-by-beat HR |
+| **HRV Analysis** | Time-domain (SDNN, RMSSD, pNN50), frequency-domain (VLF/LF/HF), Poincaré (SD1/SD2) |
+| **Spectral** | FFT, Welch PSD, beat segmentation, ensemble averaging |
+| **Quality** | Signal quality index (SQI), SNR estimation |
+| **Leads** | Derive III, aVR/aVL/aVF, full 12-lead assembly |
+| **Cleaning** | Built-in, BioSPPy, NeuroKit2, combined, DeepFADE neural-net denoising |
 
-### Visualization — static and interactive
+### Visualization
 
-- Standard 12-lead grid with paper-style background
-- R-peak annotations with RR intervals and heart rate
-- Beat segmentation overlay, ensemble-averaged beat with SD shading
-- Power spectrum (Welch PSD, FFT), spectrogram
-- HRV dashboard (tachogram, Poincaré plot, frequency bands, metrics table)
-- Signal quality bar chart per lead
-- Full ECG report page with patient info, measurements, interpretation
-- Interactive versions of all plots via Plotly (zoom, pan, hover)
+| Type | Plots |
+|------|-------|
+| **ECG Waveforms** | Single lead, multi-lead, standard 12-lead grid with paper background |
+| **Annotations** | R-peak markers, RR intervals, heart rate overlay |
+| **Beat Analysis** | Segmented beats, ensemble-averaged beat with SD shading |
+| **Spectral** | Power spectrum (PSD/FFT), spectrogram |
+| **HRV** | Tachogram, Poincaré plot, frequency bands, metrics dashboard |
+| **Reports** | Signal quality per lead, full ECG report with patient info |
+| **Interactive** | All plots available as interactive Plotly versions (zoom, pan, hover) |
 
 ## Installation
 
