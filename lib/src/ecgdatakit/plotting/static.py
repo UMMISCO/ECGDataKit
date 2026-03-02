@@ -14,11 +14,12 @@ from typing import TYPE_CHECKING
 import numpy as np
 from numpy.typing import NDArray
 
-from ecgdatakit.models import ECGRecord, Lead
+from ecgdatakit.models import ECGRecord, Lead, LeadLike
 from ecgdatakit.plotting._core import (
     GRID_12LEAD,
     _find_lead,
     _resolve_leads,
+    ensure_lead,
     lead_color,
     require_matplotlib,
     time_axis,
@@ -58,19 +59,21 @@ def _ecg_grid(ax, major_x=0.2, major_y=0.5, minor_x=0.04, minor_y=0.1):
 
 
 def plot_lead(
-    lead: Lead,
+    lead: LeadLike,
     peaks: NDArray[np.intp] | None = None,
     title: str | None = None,
     show_grid: bool = True,
     figsize: tuple[float, float] = (12, 3),
     ax: Axes | None = None,
+    *,
+    fs: int | None = None,
 ) -> Figure:
     """Plot a single ECG lead waveform.
 
     Parameters
     ----------
-    lead : Lead
-        ECG lead to plot.
+    lead : Lead | NDArray[np.float64]
+        ECG lead or raw signal array to plot.
     peaks : NDArray | None
         Optional R-peak indices to mark.
     title : str | None
@@ -81,7 +84,10 @@ def plot_lead(
         Figure size in inches (default ``(12, 3)``).
     ax : Axes | None
         Existing axes to draw on. A new figure is created if ``None``.
+    fs : int | None
+        Sample rate in Hz.  Required when *lead* is a numpy array.
     """
+    lead = ensure_lead(lead, fs=fs)
     fig, ax = _get_or_create_ax(figsize, ax)
     t = time_axis(lead)
 
@@ -315,23 +321,28 @@ def _draw_header(ax, record: ECGRecord) -> None:
 
 
 def plot_peaks(
-    lead: Lead,
+    lead: LeadLike,
     peaks: NDArray[np.intp] | None = None,
     title: str | None = None,
     figsize: tuple[float, float] = (12, 3),
     ax: Axes | None = None,
+    *,
+    fs: int | None = None,
 ) -> Figure:
     """Plot lead with R-peak markers and RR interval annotations.
 
     Parameters
     ----------
-    lead : Lead
-        ECG lead to plot.
+    lead : Lead | NDArray[np.float64]
+        ECG lead or raw signal array to plot.
     peaks : NDArray | None
         R-peak indices. Auto-detected if ``None``.
+    fs : int | None
+        Sample rate in Hz.  Required when *lead* is a numpy array.
     """
     from ecgdatakit.processing.peaks import detect_r_peaks
 
+    lead = ensure_lead(lead, fs=fs)
     if peaks is None:
         peaks = detect_r_peaks(lead)
 
@@ -374,28 +385,33 @@ def plot_peaks(
 
 
 def plot_beats(
-    lead: Lead,
+    lead: LeadLike,
     beats: list[Lead] | None = None,
     peaks: NDArray[np.intp] | None = None,
     overlay: bool = True,
     figsize: tuple[float, float] = (8, 5),
     ax: Axes | None = None,
+    *,
+    fs: int | None = None,
 ) -> Figure:
     """Plot segmented heartbeats.
 
     Parameters
     ----------
-    lead : Lead
-        Source ECG lead.
+    lead : Lead | NDArray[np.float64]
+        Source ECG lead or raw signal array.
     beats : list[Lead] | None
         Pre-segmented beats. Segmented automatically if ``None``.
     peaks : NDArray | None
         R-peak indices for segmentation.
     overlay : bool
         ``True``: overlay all beats; ``False``: waterfall display.
+    fs : int | None
+        Sample rate in Hz.  Required when *lead* is a numpy array.
     """
     from ecgdatakit.processing.transforms import average_beat, segment_beats
 
+    lead = ensure_lead(lead, fs=fs)
     if beats is None:
         beats = segment_beats(lead, peaks)
 
@@ -429,28 +445,33 @@ def plot_beats(
 
 
 def plot_average_beat(
-    lead: Lead,
+    lead: LeadLike,
     peaks: NDArray[np.intp] | None = None,
     before: float = 0.2,
     after: float = 0.4,
     figsize: tuple[float, float] = (6, 4),
     ax: Axes | None = None,
+    *,
+    fs: int | None = None,
 ) -> Figure:
     """Plot ensemble-averaged beat with ±1 SD shading.
 
     Parameters
     ----------
-    lead : Lead
-        Source ECG lead.
+    lead : Lead | NDArray[np.float64]
+        Source ECG lead or raw signal array.
     peaks : NDArray | None
         R-peak indices.
     before : float
         Seconds before R-peak.
     after : float
         Seconds after R-peak.
+    fs : int | None
+        Sample rate in Hz.  Required when *lead* is a numpy array.
     """
     from ecgdatakit.processing.transforms import segment_beats
 
+    lead = ensure_lead(lead, fs=fs)
     beats = segment_beats(lead, peaks, before, after)
 
     fig, ax = _get_or_create_ax(figsize, ax)
@@ -480,20 +501,25 @@ def plot_average_beat(
 
 
 def plot_spectrum(
-    lead: Lead,
+    lead: LeadLike,
     method: str = "welch",
     figsize: tuple[float, float] = (10, 4),
     ax: Axes | None = None,
+    *,
+    fs: int | None = None,
 ) -> Figure:
     """Plot power spectral density or FFT magnitude spectrum.
 
     Parameters
     ----------
-    lead : Lead
-        ECG lead to analyse.
+    lead : Lead | NDArray[np.float64]
+        ECG lead or raw signal array to analyse.
     method : str
         ``"welch"`` for PSD or ``"fft"`` for magnitude spectrum.
+    fs : int | None
+        Sample rate in Hz.  Required when *lead* is a numpy array.
     """
+    lead = ensure_lead(lead, fs=fs)
     from ecgdatakit.processing.transforms import fft as ecg_fft
     from ecgdatakit.processing.transforms import power_spectrum
 
@@ -521,22 +547,27 @@ def plot_spectrum(
 
 
 def plot_spectrogram(
-    lead: Lead,
+    lead: LeadLike,
     nperseg: int = 256,
     figsize: tuple[float, float] = (12, 4),
     ax: Axes | None = None,
+    *,
+    fs: int | None = None,
 ) -> Figure:
     """Plot time-frequency spectrogram (STFT).
 
     Parameters
     ----------
-    lead : Lead
-        ECG lead.
+    lead : Lead | NDArray[np.float64]
+        ECG lead or raw signal array.
     nperseg : int
         Segment length for STFT.
+    fs : int | None
+        Sample rate in Hz.  Required when *lead* is a numpy array.
     """
     from ecgdatakit.processing._core import require_scipy
 
+    lead = ensure_lead(lead, fs=fs)
     sig = require_scipy("signal")
     fig, ax = _get_or_create_ax(figsize, ax)
 

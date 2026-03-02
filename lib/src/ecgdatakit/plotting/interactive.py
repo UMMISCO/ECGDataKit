@@ -12,11 +12,12 @@ from typing import TYPE_CHECKING
 import numpy as np
 from numpy.typing import NDArray
 
-from ecgdatakit.models import ECGRecord, Lead
+from ecgdatakit.models import ECGRecord, Lead, LeadLike
 from ecgdatakit.plotting._core import (
     GRID_12LEAD,
     _find_lead,
     _resolve_leads,
+    ensure_lead,
     lead_color,
     require_plotly,
     time_axis,
@@ -28,24 +29,29 @@ if TYPE_CHECKING:
 
 
 def iplot_lead(
-    lead: Lead,
+    lead: LeadLike,
     peaks: NDArray[np.intp] | None = None,
     title: str | None = None,
     height: int = 300,
+    *,
+    fs: int | None = None,
 ) -> go.Figure:
     """Interactive single lead with hover showing time/amplitude.
 
     Parameters
     ----------
-    lead : Lead
-        ECG lead to plot.
+    lead : Lead | NDArray[np.float64]
+        ECG lead or raw signal array to plot.
     peaks : NDArray | None
         Optional R-peak indices to mark.
     title : str | None
         Figure title.
     height : int
         Figure height in pixels.
+    fs : int | None
+        Sample rate in Hz.  Required when *lead* is a numpy array.
     """
+    lead = ensure_lead(lead, fs=fs)
     require_plotly()
     import plotly.graph_objects as go
 
@@ -290,10 +296,12 @@ def _build_header_text(record: ECGRecord) -> str:
 
 
 def iplot_peaks(
-    lead: Lead,
+    lead: LeadLike,
     peaks: NDArray[np.intp] | None = None,
     title: str | None = None,
     height: int = 350,
+    *,
+    fs: int | None = None,
 ) -> go.Figure:
     """Interactive lead with R-peak markers.
 
@@ -301,13 +309,16 @@ def iplot_peaks(
 
     Parameters
     ----------
-    lead : Lead
-        ECG lead to plot.
+    lead : Lead | NDArray[np.float64]
+        ECG lead or raw signal array to plot.
     peaks : NDArray | None
         R-peak indices. Auto-detected if ``None``.
+    fs : int | None
+        Sample rate in Hz.  Required when *lead* is a numpy array.
     """
     from ecgdatakit.processing.peaks import detect_r_peaks
 
+    lead = ensure_lead(lead, fs=fs)
     require_plotly()
     import plotly.graph_objects as go
 
@@ -358,22 +369,27 @@ def iplot_peaks(
 
 
 def iplot_spectrum(
-    lead: Lead,
+    lead: LeadLike,
     method: str = "welch",
     height: int = 400,
+    *,
+    fs: int | None = None,
 ) -> go.Figure:
     """Interactive spectrum with frequency band highlighting.
 
     Parameters
     ----------
-    lead : Lead
-        ECG lead.
+    lead : Lead | NDArray[np.float64]
+        ECG lead or raw signal array.
     method : str
         ``"welch"`` for PSD or ``"fft"`` for magnitude spectrum.
+    fs : int | None
+        Sample rate in Hz.  Required when *lead* is a numpy array.
     """
     from ecgdatakit.processing.transforms import fft as ecg_fft
     from ecgdatakit.processing.transforms import power_spectrum
 
+    lead = ensure_lead(lead, fs=fs)
     require_plotly()
     import plotly.graph_objects as go
 

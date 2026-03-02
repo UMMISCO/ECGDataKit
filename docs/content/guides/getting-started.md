@@ -40,10 +40,11 @@ record = FileParser().parse("path/to/ecg_file.xml")
 
 ```python
 patient = record.patient
-print(patient.name)        # Patient name
-print(patient.id)          # Patient ID
-print(patient.birth_date)  # Date of birth
-print(patient.sex)         # Sex
+print(patient.first_name)   # First name
+print(patient.last_name)    # Last name
+print(patient.patient_id)   # Patient ID
+print(patient.birth_date)   # Date of birth
+print(patient.sex)          # Sex ("M", "F", or "U")
 ```
 
 ### Recording information
@@ -52,7 +53,7 @@ print(patient.sex)         # Sex
 recording = record.recording
 print(recording.date)         # Acquisition date
 print(recording.sample_rate)  # Sampling frequency in Hz
-print(recording.duration)     # Duration in seconds
+print(recording.duration)     # Duration as timedelta
 ```
 
 ### Lead data
@@ -60,7 +61,7 @@ print(recording.duration)     # Duration in seconds
 ```python
 leads = record.leads
 for lead in leads:
-    print(lead.name, lead.samples[:5])
+    print(lead.label, lead.samples[:5])
 ```
 
 ### Measurements and device info
@@ -97,11 +98,19 @@ The `ecgdatakit.processing` module provides filtering, peak detection, heart-rat
 ```python
 from ecgdatakit.processing import diagnostic_filter, remove_baseline
 
+lead = record.leads[0]  # Lead object from a parsed record
+
 # Apply a diagnostic-grade bandpass filter (0.05 - 150 Hz)
-filtered = diagnostic_filter(lead.samples, fs=recording.sample_rate)
+filtered = diagnostic_filter(lead)
 
 # Remove baseline wander
-corrected = remove_baseline(lead.samples, fs=recording.sample_rate)
+corrected = remove_baseline(lead)
+```
+
+You can also pass numpy arrays directly with `fs=`:
+
+```python
+filtered = diagnostic_filter(my_numpy_array, fs=500)
 ```
 
 ### Peak detection and heart rate
@@ -109,14 +118,14 @@ corrected = remove_baseline(lead.samples, fs=recording.sample_rate)
 ```python
 from ecgdatakit.processing import detect_r_peaks, heart_rate, rr_intervals
 
-# Detect R-peaks
-peaks = detect_r_peaks(filtered, fs=recording.sample_rate)
+# Detect R-peaks (returns a numpy array of sample indices)
+peaks = detect_r_peaks(filtered)
 
 # Compute heart rate in BPM
-hr = heart_rate(peaks, fs=recording.sample_rate)
+hr = heart_rate(filtered, peaks)
 
 # Get RR intervals in milliseconds
-rr = rr_intervals(peaks, fs=recording.sample_rate)
+rr = rr_intervals(filtered, peaks)
 ```
 
 ### Heart-rate variability (HRV)
@@ -134,17 +143,20 @@ print(hrv)
 ```python
 from ecgdatakit.processing import signal_quality_index
 
-sqi = signal_quality_index(filtered, fs=recording.sample_rate)
+sqi = signal_quality_index(filtered)
 print(f"Signal quality: {sqi}")
 ```
 
 ### Lead derivation
 
 ```python
-from ecgdatakit.processing import derive_augmented
+from ecgdatakit.processing import derive_augmented, find_lead
+
+lead_i = find_lead(record.leads, "I")
+lead_ii = find_lead(record.leads, "II")
 
 # Derive augmented limb leads (aVR, aVL, aVF) from I and II
-augmented = derive_augmented(lead_I.samples, lead_II.samples)
+avr, avl, avf = derive_augmented(lead_i, lead_ii)
 ```
 
 ### ECG cleaning
@@ -214,7 +226,7 @@ files = list(Path("data/").glob("*.xml"))
 records = parse_batch(files, max_workers=4)
 
 for rec in records:
-    print(rec.patient.name, rec.recording.date)
+    print(rec.patient.first_name, rec.recording.date)
 ```
 
 ## Adding a new parser

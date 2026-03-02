@@ -5,25 +5,28 @@ from __future__ import annotations
 import numpy as np
 from numpy.typing import NDArray
 
-from ecgdatakit.models import Lead
-from ecgdatakit.processing._core import require_scipy
+from ecgdatakit.models import Lead, LeadLike
+from ecgdatakit.processing._core import ensure_lead, require_scipy
 
 
-def detect_r_peaks(lead: Lead, method: str = "pan_tompkins") -> NDArray[np.intp]:
+def detect_r_peaks(lead: LeadLike, method: str = "pan_tompkins", *, fs: int | None = None) -> NDArray[np.intp]:
     """Detect R-peak locations in an ECG lead.
 
     Parameters
     ----------
-    lead : Lead
-        Input ECG lead (typically Lead II).
+    lead : Lead | NDArray[np.float64]
+        Input ECG lead or raw signal array (typically Lead II).
     method : str
         Detection algorithm: ``"pan_tompkins"`` or ``"shannon_energy"``.
+    fs : int | None
+        Sample rate in Hz.  Required when *lead* is a numpy array.
 
     Returns
     -------
     NDArray[np.intp]
         Array of sample indices where R-peaks were detected.
     """
+    lead = ensure_lead(lead, fs=fs)
     methods = ("pan_tompkins", "shannon_energy")
     if method not in methods:
         raise ValueError(f"Unknown method {method!r}; choose from {methods}")
@@ -32,16 +35,19 @@ def detect_r_peaks(lead: Lead, method: str = "pan_tompkins") -> NDArray[np.intp]
     return _shannon_energy(lead.samples, lead.sample_rate)
 
 
-def heart_rate(lead: Lead, peaks: NDArray[np.intp] | None = None) -> float:
+def heart_rate(lead: LeadLike, peaks: NDArray[np.intp] | None = None, *, fs: int | None = None) -> float:
     """Compute average heart rate in beats per minute.
 
     Parameters
     ----------
-    lead : Lead
-        Input ECG lead.
+    lead : Lead | NDArray[np.float64]
+        Input ECG lead or raw signal array.
     peaks : NDArray | None
         Pre-detected R-peak indices.  Detected automatically if ``None``.
+    fs : int | None
+        Sample rate in Hz.  Required when *lead* is a numpy array.
     """
+    lead = ensure_lead(lead, fs=fs)
     rr = rr_intervals(lead, peaks)
     if len(rr) == 0:
         return 0.0
@@ -52,17 +58,20 @@ def heart_rate(lead: Lead, peaks: NDArray[np.intp] | None = None) -> float:
 
 
 def rr_intervals(
-    lead: Lead, peaks: NDArray[np.intp] | None = None
+    lead: LeadLike, peaks: NDArray[np.intp] | None = None, *, fs: int | None = None
 ) -> NDArray[np.float64]:
     """Compute RR intervals in milliseconds.
 
     Parameters
     ----------
-    lead : Lead
-        Input ECG lead.
+    lead : Lead | NDArray[np.float64]
+        Input ECG lead or raw signal array.
     peaks : NDArray | None
         Pre-detected R-peak indices.  Detected automatically if ``None``.
+    fs : int | None
+        Sample rate in Hz.  Required when *lead* is a numpy array.
     """
+    lead = ensure_lead(lead, fs=fs)
     if peaks is None:
         peaks = detect_r_peaks(lead)
     if len(peaks) < 2:
@@ -72,17 +81,20 @@ def rr_intervals(
 
 
 def instantaneous_heart_rate(
-    lead: Lead, peaks: NDArray[np.intp] | None = None
+    lead: LeadLike, peaks: NDArray[np.intp] | None = None, *, fs: int | None = None
 ) -> NDArray[np.float64]:
     """Compute instantaneous heart rate at each beat in bpm.
 
     Parameters
     ----------
-    lead : Lead
-        Input ECG lead.
+    lead : Lead | NDArray[np.float64]
+        Input ECG lead or raw signal array.
     peaks : NDArray | None
         Pre-detected R-peak indices.  Detected automatically if ``None``.
+    fs : int | None
+        Sample rate in Hz.  Required when *lead* is a numpy array.
     """
+    lead = ensure_lead(lead, fs=fs)
     rr = rr_intervals(lead, peaks)
     if len(rr) == 0:
         return np.array([], dtype=np.float64)

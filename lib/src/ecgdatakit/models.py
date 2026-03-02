@@ -212,6 +212,10 @@ class Lead:
         return d
 
 
+LeadLike = Lead | NDArray[np.float64]
+"""Type alias: accepts a :class:`Lead` or a raw numpy array of samples."""
+
+
 @dataclass
 class ECGRecord:
     """Unified ECG record returned by all parsers.

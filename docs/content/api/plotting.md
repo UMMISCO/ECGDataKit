@@ -9,6 +9,12 @@ Static plots require: `pip install ecgdatakit[plotting]` (matplotlib ≥ 3.7)
 
 Interactive plots require: `pip install ecgdatakit[plotting-interactive]` (plotly ≥ 5.15)
 
+> **Note:** All single-lead plotting functions accept both `Lead` objects and raw numpy arrays. When passing a numpy array, provide the sample rate via `fs`:
+> ```python
+> plot_lead(my_array, fs=500)
+> ```
+> See [Data Models](/api/parsing/#working-with-data-models) for details.
+
 ## Static Plots (matplotlib)
 
 All functions return `matplotlib.figure.Figure`. Functions with an `ax` parameter can render into an existing axes for composability. When `ax=None`, a new figure is created.

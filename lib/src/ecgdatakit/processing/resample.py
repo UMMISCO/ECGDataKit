@@ -6,11 +6,11 @@ from math import gcd
 
 import numpy as np
 
-from ecgdatakit.models import Lead
-from ecgdatakit.processing._core import new_lead, require_scipy
+from ecgdatakit.models import Lead, LeadLike
+from ecgdatakit.processing._core import ensure_lead, new_lead, require_scipy
 
 
-def resample(lead: Lead, target_rate: int) -> Lead:
+def resample(lead: LeadLike, target_rate: int, *, fs: int | None = None) -> Lead:
     """Resample a lead to a different sample rate.
 
     Uses polyphase rational resampling (``scipy.signal.resample_poly``)
@@ -19,11 +19,14 @@ def resample(lead: Lead, target_rate: int) -> Lead:
 
     Parameters
     ----------
-    lead : Lead
-        Input ECG lead.
+    lead : Lead | NDArray[np.float64]
+        Input ECG lead or raw signal array.
     target_rate : int
         Desired output sample rate in Hz.
+    fs : int | None
+        Sample rate in Hz.  Required when *lead* is a numpy array.
     """
+    lead = ensure_lead(lead, fs=fs)
     if target_rate <= 0:
         raise ValueError(f"target_rate must be positive, got {target_rate}")
     if target_rate == lead.sample_rate:

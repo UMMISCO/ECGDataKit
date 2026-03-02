@@ -5,12 +5,12 @@ from __future__ import annotations
 import numpy as np
 from numpy.typing import NDArray
 
-from ecgdatakit.models import Lead
-from ecgdatakit.processing._core import require_scipy
+from ecgdatakit.models import Lead, LeadLike
+from ecgdatakit.processing._core import ensure_lead, require_scipy
 from ecgdatakit.processing.peaks import detect_r_peaks
 
 
-def signal_quality_index(lead: Lead) -> float:
+def signal_quality_index(lead: LeadLike, *, fs: int | None = None) -> float:
     """Compute a composite signal quality index (SQI) in the range [0, 1].
 
     Combines four sub-metrics: kurtosis SQI, power-ratio SQI,
@@ -18,14 +18,17 @@ def signal_quality_index(lead: Lead) -> float:
 
     Parameters
     ----------
-    lead : Lead
-        Input ECG lead.
+    lead : Lead | NDArray[np.float64]
+        Input ECG lead or raw signal array.
+    fs : int | None
+        Sample rate in Hz.  Required when *lead* is a numpy array.
 
     Returns
     -------
     float
         Score between 0.0 (unusable) and 1.0 (excellent).
     """
+    lead = ensure_lead(lead, fs=fs)
     scores = [
         _kurtosis_sqi(lead.samples),
         _power_ratio_sqi(lead.samples, lead.sample_rate),
@@ -35,8 +38,15 @@ def signal_quality_index(lead: Lead) -> float:
     return float(np.clip(np.mean(scores), 0.0, 1.0))
 
 
-def classify_quality(lead: Lead) -> str:
+def classify_quality(lead: LeadLike, *, fs: int | None = None) -> str:
     """Classify signal quality as a human-readable category.
+
+    Parameters
+    ----------
+    lead : Lead | NDArray[np.float64]
+        Input ECG lead or raw signal array.
+    fs : int | None
+        Sample rate in Hz.  Required when *lead* is a numpy array.
 
     Returns
     -------
@@ -44,6 +54,7 @@ def classify_quality(lead: Lead) -> str:
         ``"excellent"`` (SQI > 0.8), ``"acceptable"`` (0.5--0.8),
         or ``"unacceptable"`` (< 0.5).
     """
+    lead = ensure_lead(lead, fs=fs)
     sqi = signal_quality_index(lead)
     if sqi > 0.8:
         return "excellent"
@@ -52,7 +63,7 @@ def classify_quality(lead: Lead) -> str:
     return "unacceptable"
 
 
-def snr_estimate(lead: Lead) -> float:
+def snr_estimate(lead: LeadLike, *, fs: int | None = None) -> float:
     """Estimate signal-to-noise ratio in dB.
 
     Uses a frequency-domain approach: signal power in 1--40 Hz
@@ -60,14 +71,17 @@ def snr_estimate(lead: Lead) -> float:
 
     Parameters
     ----------
-    lead : Lead
-        Input ECG lead.
+    lead : Lead | NDArray[np.float64]
+        Input ECG lead or raw signal array.
+    fs : int | None
+        Sample rate in Hz.  Required when *lead* is a numpy array.
 
     Returns
     -------
     float
         Estimated SNR in decibels.
     """
+    lead = ensure_lead(lead, fs=fs)
     sig = require_scipy("signal")
 
     nperseg = min(256, len(lead.samples))

@@ -9,6 +9,7 @@ from ecgdatakit.models import (
     GlobalMeasurements,
     Interpretation,
     Lead,
+    LeadLike,
     PatientInfo,
     RecordingInfo,
 )
@@ -29,6 +30,7 @@ __all__ = [
     "GlobalMeasurements",
     "Interpretation",
     "Lead",
+    "LeadLike",
     "PatientInfo",
     "RecordingInfo",
     "FileParser",

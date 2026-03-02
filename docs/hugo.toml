@@ -30,6 +30,10 @@ title = 'ECGDataKit'
     name = 'Formats'
     pageRef = '/guides/formats'
     weight = 30
+  [[menus.main]]
+    name = 'Releases'
+    pageRef = '/releases'
+    weight = 40
 
   [[menus.sidebar]]
     name = 'Guides'
@@ -65,3 +69,13 @@ title = 'ECGDataKit'
     pageRef = '/api/plotting'
     parent = 'api'
     weight = 30
+
+  [[menus.sidebar]]
+    name = 'Releases'
+    identifier = 'releases'
+    weight = 30
+  [[menus.sidebar]]
+    name = 'Changelog'
+    pageRef = '/releases'
+    parent = 'releases'
+    weight = 10

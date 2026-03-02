@@ -9,6 +9,12 @@ Requires: `pip install ecgdatakit[processing]` (scipy ≥ 1.10)
 
 All filter and transform functions accept a `Lead` and return a **new** `Lead` (immutable pattern via `dataclasses.replace`). The original lead is never modified.
 
+> **Note:** All processing functions accept both `Lead` objects and raw numpy arrays. When passing a numpy array, provide the sample rate via `fs`:
+> ```python
+> filtered = diagnostic_filter(my_array, fs=500)
+> ```
+> See [Data Models](/api/parsing/#working-with-data-models) for details.
+
 ## Filters
 
 All filters use SOS (second-order sections) + zero-phase `sosfiltfilt` to preserve ECG morphology.

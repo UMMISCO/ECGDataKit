@@ -21,22 +21,24 @@ from pathlib import Path
 import numpy as np
 from numpy.typing import NDArray
 
-from ecgdatakit.models import Lead
-from ecgdatakit.processing._core import new_lead, require_scipy
+from ecgdatakit.models import Lead, LeadLike
+from ecgdatakit.processing._core import ensure_lead, new_lead, require_scipy
 
 _DEEPFADE_WEIGHTS = Path(__file__).parent / "nn" / "weights" / "deepfade_exp_1_ddp.pt"
 
 
-def clean_ecg(lead: Lead, method: str = "default", **kwargs) -> Lead:
+def clean_ecg(lead: LeadLike, method: str = "default", *, fs: int | None = None, **kwargs) -> Lead:
     """Clean an ECG lead signal.
 
     Parameters
     ----------
-    lead : Lead
-        Input ECG lead.
+    lead : Lead | NDArray[np.float64]
+        Input ECG lead or raw signal array.
     method : str
         Cleaning method: ``"default"``, ``"biosppy"``, ``"neurokit2"``,
         ``"combined"``, or ``"deepfade"``.
+    fs : int | None
+        Sample rate in Hz.  Required when *lead* is a numpy array.
     **kwargs
         Extra arguments forwarded to the selected backend:
 
@@ -49,6 +51,7 @@ def clean_ecg(lead: Lead, method: str = "default", **kwargs) -> Lead:
     Lead
         Cleaned lead (new object, original unchanged).
     """
+    lead = ensure_lead(lead, fs=fs)
     methods = ("default", "biosppy", "neurokit2", "combined", "deepfade")
     if method not in methods:
         raise ValueError(f"Unknown method {method!r}; choose from {methods}")

@@ -191,6 +191,109 @@ The unified output type returned by every parser.
   </tbody>
 </table>
 
+## Working with Data Models
+
+ECGDataKit functions accept both `Lead` objects and raw **numpy arrays**. When passing a numpy array, you must provide the sample rate via the `fs` keyword argument.
+
+### Using numpy arrays directly
+
+All processing and plotting functions accept numpy arrays with `fs`:
+
+```python
+import numpy as np
+from ecgdatakit.processing import diagnostic_filter, detect_r_peaks
+from ecgdatakit.plotting import plot_lead
+
+signal = np.array([0.12, 0.15, 0.13, ...], dtype=np.float64)
+
+# Pass numpy arrays with fs=
+filtered = diagnostic_filter(signal, fs=500)
+peaks = detect_r_peaks(filtered)
+fig = plot_lead(filtered, peaks=peaks)
+```
+
+> **Note:** `fs` is required when passing a numpy array and will raise a `TypeError` if omitted. When passing a `Lead` object, `fs` is ignored.
+
+### Using Lead objects
+
+A `Lead` bundles samples with metadata (sample rate, label, units). Functions that return signal data always return a `Lead`:
+
+```python
+from ecgdatakit import Lead
+
+lead = Lead(
+    label="II",           # Lead name (required)
+    samples=samples,      # numpy float64 array (required)
+    sample_rate=500,      # Hz (required)
+    units="mV",           # optional, but recommended
+)
+
+# No need for fs= when using Lead objects
+filtered = diagnostic_filter(lead)
+peaks = detect_r_peaks(filtered)
+fig = plot_lead(filtered, peaks=peaks)
+```
+
+### Extracting numpy arrays from a Lead
+
+To get the raw samples back (e.g. for use with scipy, sklearn, or your own code):
+
+```python
+raw_array = lead.samples          # NDArray[np.float64]
+fs = lead.sample_rate             # int (Hz)
+```
+
+### Building a Lead from external data
+
+```python
+import numpy as np
+from ecgdatakit import Lead
+
+# Synthetic sine wave (10 seconds at 500 Hz)
+fs = 500
+t = np.arange(fs * 10, dtype=np.float64) / fs
+signal = np.sin(2 * np.pi * 1.2 * t)  # 1.2 Hz ≈ 72 bpm
+
+lead = Lead(label="II", samples=signal, sample_rate=fs, units="mV")
+```
+
+```python
+# From a CSV or pandas DataFrame
+import pandas as pd
+
+df = pd.read_csv("ecg_data.csv")
+lead = Lead(
+    label="V1",
+    samples=df["voltage"].to_numpy(dtype=np.float64),
+    sample_rate=250,
+    units="mV",
+)
+```
+
+### Building a full ECGRecord from scratch
+
+If you need to use functions that expect an `ECGRecord` (like `plot_12lead` or `plot_report`), you can build one manually:
+
+```python
+from ecgdatakit import ECGRecord, Lead, PatientInfo, RecordingInfo
+import numpy as np
+
+leads = [
+    Lead(label=name, samples=np.random.randn(5000).astype(np.float64),
+         sample_rate=500, units="mV")
+    for name in ["I", "II", "III", "aVR", "aVL", "aVF",
+                 "V1", "V2", "V3", "V4", "V5", "V6"]
+]
+
+record = ECGRecord(
+    patient=PatientInfo(patient_id="001", first_name="Jane", last_name="Doe"),
+    recording=RecordingInfo(sample_rate=500),
+    leads=leads,
+)
+```
+
+All fields on `ECGRecord` are optional and have sensible defaults, so you only need to provide what you have.
+
 ## Exceptions
 
 All exceptions inherit from `ECGDataKitError`.
