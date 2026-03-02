@@ -58,6 +58,13 @@ all = [
     "neurokit2",
 ]
 dev = ["pytest>=9.0", "pytest-cov>=7.0", "ruff>=0.15"]
+docs = [
+    "sphinx>=8.0",
+    "furo>=2024.8",
+    "myst-parser>=4.0",
+    "sphinx-autodoc-typehints>=2.0",
+    "sphinx-copybutton>=0.5",
+]
 
 [tool.setuptools.packages.find]
 where = ["src"]

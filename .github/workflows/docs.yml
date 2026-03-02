@@ -20,19 +20,26 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Setup Hugo
-        uses: peaceiris/actions-hugo@v3
+      - name: Set up Python
+        uses: actions/setup-python@v5
         with:
-          hugo-version: '0.157.0'
-          extended: true
+          python-version: "3.12"
 
-      - name: Build site
-        run: hugo --minify --source docs
+      - name: Install dependencies
+        run: |
+          pip install -r docs/requirements.txt
+          pip install -e "./lib[all]"
+
+      - name: Build documentation
+        run: sphinx-build -b html docs docs/_build/html
+
+      - name: Copy CNAME for custom domain
+        run: cp docs/_static/CNAME docs/_build/html/CNAME
 
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v3
         with:
-          path: docs/public
+          path: docs/_build/html
 
   deploy:
     environment:

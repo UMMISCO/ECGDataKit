@@ -12,9 +12,8 @@ build/
 venv/
 env/
 
-# Hugo
-docs/public/
-docs/resources/_gen/
+# Sphinx
+docs/_build/
 
 # IDE
 .idea/

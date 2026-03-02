@@ -44,17 +44,37 @@ def _get_or_create_ax(figsize, ax):
 
 
 def _ecg_grid(ax, major_x=0.2, major_y=0.5, minor_x=0.04, minor_y=0.1):
-    """Draw ECG paper-style grid on *ax*."""
+    """Draw ECG paper-style grid on *ax*.
+
+    If the data range on either axis would produce more than 500 ticks,
+    the locator for that axis falls back to matplotlib's ``AutoLocator``
+    to avoid excessive tick generation (e.g. when signals are in raw ADC
+    units rather than millivolts).
+    """
     ax.set_axisbelow(True)
     ax.grid(True, which="major", color="#ffcccc", linewidth=0.8)
     ax.grid(True, which="minor", color="#ffe6e6", linewidth=0.4)
 
-    from matplotlib.ticker import MultipleLocator
+    from matplotlib.ticker import AutoLocator, AutoMinorLocator, MultipleLocator
 
-    ax.xaxis.set_major_locator(MultipleLocator(major_x))
-    ax.xaxis.set_minor_locator(MultipleLocator(minor_x))
-    ax.yaxis.set_major_locator(MultipleLocator(major_y))
-    ax.yaxis.set_minor_locator(MultipleLocator(minor_y))
+    _MAX_TICKS = 500
+
+    x_lo, x_hi = ax.get_xlim()
+    y_lo, y_hi = ax.get_ylim()
+
+    if (x_hi - x_lo) / minor_x < _MAX_TICKS:
+        ax.xaxis.set_major_locator(MultipleLocator(major_x))
+        ax.xaxis.set_minor_locator(MultipleLocator(minor_x))
+    else:
+        ax.xaxis.set_major_locator(AutoLocator())
+        ax.xaxis.set_minor_locator(AutoMinorLocator())
+
+    if (y_hi - y_lo) / minor_y < _MAX_TICKS:
+        ax.yaxis.set_major_locator(MultipleLocator(major_y))
+        ax.yaxis.set_minor_locator(MultipleLocator(minor_y))
+    else:
+        ax.yaxis.set_major_locator(AutoLocator())
+        ax.yaxis.set_minor_locator(AutoMinorLocator())
 
 
 
