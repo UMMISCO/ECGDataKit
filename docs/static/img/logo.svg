@@ -1,0 +1,19 @@
+<svg viewBox="0 0 40 40" xmlns="http://www.w3.org/2000/svg" fill="none">
+  <!-- Parsing: document shape background -->
+  <path d="M4,4 L26,4 L32,10 L32,36 L4,36 Z" fill="#f0f7ff" stroke="#d0e2f2" stroke-width="0.8"/>
+  <path d="M26,4 L26,10 L32,10" fill="#d0e2f2" stroke="#d0e2f2" stroke-width="0.8" stroke-linejoin="round"/>
+  <!-- Bold ECG waveform -->
+  <polyline stroke="#1B4F72" stroke-width="2.8" stroke-linecap="round" stroke-linejoin="round"
+    points="1,22 7,22 10,22 12,19 14,26 17,7 20,33 22.5,14 24,22 27,22"/>
+  <!-- Bar chart (plotting) -->
+  <rect x="28" y="16" width="3" height="8" rx="0.8" fill="#42A5F5"/>
+  <rect x="32" y="12" width="3" height="12" rx="0.8" fill="#2196F3"/>
+  <rect x="36" y="14" width="3" height="10" rx="0.8" fill="#64B5F6"/>
+  <!-- Data points (processing) -->
+  <circle cx="29" cy="30" r="1.8" fill="#E91E63"/>
+  <circle cx="34" cy="28" r="1.8" fill="#E91E63"/>
+  <line x1="29" y1="30" x2="34" y2="28" stroke="#E91E63" stroke-width="1.2"/>
+  <!-- Small signal wave (processing) -->
+  <polyline stroke="#FF9800" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" fill="none"
+    points="27,35 29,33 31,37 33,32 35,36 37,34"/>
+</svg>
