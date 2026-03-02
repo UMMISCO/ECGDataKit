@@ -9,6 +9,8 @@
 
 Developed at [UMMISCO](https://www.ummisco.fr) / [IRD](https://www.ird.fr) by Ahmad Fall.
 
+> **[ecgdatakit.ummisco.fr](https://ecgdatakit.ummisco.fr)** — Full documentation, API reference, and getting started guide.
+
 ---
 
 ## Features

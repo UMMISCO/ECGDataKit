@@ -10,6 +10,12 @@ authors = [{name = "Ahmad Fall", email = "ahmad.fall@ird.fr"}]
 maintainers = [{name = "Ahmad Fall", email = "ahmad.fall@ird.fr"}]
 license = {text = "Apache-2.0"}
 requires-python = ">=3.10"
+dependencies = [
+    "numpy>=1.24",
+    "defusedxml>=0.7.1",
+    "xmltodict>=1.0",
+    "python-dateutil>=2.9",
+]
 keywords = ["ecg", "electrocardiogram", "signal-processing", "medical", "waveform", "hl7", "dicom", "edf", "scp-ecg", "wfdb"]
 classifiers = [
     "Development Status :: 3 - Alpha",
@@ -34,12 +40,6 @@ Issues = "https://github.com/UMMISCO/ECGDataKit/issues"
 Mirror = "https://git.ummisco.fr/open/ecgdatakit"
 UMMISCO = "https://www.ummisco.fr"
 IRD = "https://www.ird.fr"
-dependencies = [
-    "numpy>=1.24",
-    "defusedxml>=0.7.1",
-    "xmltodict>=1.0",
-    "python-dateutil>=2.9",
-]
 
 [project.optional-dependencies]
 holter = ["PyCRC>=0.11"]
