@@ -22,13 +22,13 @@ All filters use SOS (second-order sections) + zero-phase `sosfiltfilt` to preser
 <table>
   <thead><tr><th>Function</th><th>Returns</th><th>Description</th></tr></thead>
   <tbody>
-    <tr><td><code>lowpass(lead, cutoff, order=4)</code></td><td><code>Lead</code></td><td>Butterworth low-pass filter</td></tr>
-    <tr><td><code>highpass(lead, cutoff, order=4)</code></td><td><code>Lead</code></td><td>Butterworth high-pass filter</td></tr>
-    <tr><td><code>bandpass(lead, low, high, order=4)</code></td><td><code>Lead</code></td><td>Butterworth band-pass filter</td></tr>
-    <tr><td><code>notch(lead, freq=50.0, quality=30.0)</code></td><td><code>Lead</code></td><td>IIR notch (band-stop) filter</td></tr>
-    <tr><td><code>remove_baseline(lead, cutoff=0.5, order=2)</code></td><td><code>Lead</code></td><td>Remove baseline wander (highpass at 0.5 Hz)</td></tr>
-    <tr><td><code>diagnostic_filter(lead, notch_freq=50.0)</code></td><td><code>Lead</code></td><td>AHA diagnostic: 0.05–150 Hz bandpass + notch</td></tr>
-    <tr><td><code>monitoring_filter(lead, notch_freq=50.0)</code></td><td><code>Lead</code></td><td>Monitoring: 0.67–40 Hz bandpass + notch</td></tr>
+    <tr><td><code><a href="/api/ref/lowpass/">lowpass</a>(lead, cutoff, order=4)</code></td><td><code>Lead</code></td><td>Butterworth low-pass filter</td></tr>
+    <tr><td><code><a href="/api/ref/highpass/">highpass</a>(lead, cutoff, order=4)</code></td><td><code>Lead</code></td><td>Butterworth high-pass filter</td></tr>
+    <tr><td><code><a href="/api/ref/bandpass/">bandpass</a>(lead, low, high, order=4)</code></td><td><code>Lead</code></td><td>Butterworth band-pass filter</td></tr>
+    <tr><td><code><a href="/api/ref/notch/">notch</a>(lead, freq=50.0, quality=30.0)</code></td><td><code>Lead</code></td><td>IIR notch (band-stop) filter</td></tr>
+    <tr><td><code><a href="/api/ref/remove_baseline/">remove_baseline</a>(lead, cutoff=0.5, order=2)</code></td><td><code>Lead</code></td><td>Remove baseline wander (highpass at 0.5 Hz)</td></tr>
+    <tr><td><code><a href="/api/ref/diagnostic_filter/">diagnostic_filter</a>(lead, notch_freq=50.0)</code></td><td><code>Lead</code></td><td>AHA diagnostic: 0.05–150 Hz bandpass + notch</td></tr>
+    <tr><td><code><a href="/api/ref/monitoring_filter/">monitoring_filter</a>(lead, notch_freq=50.0)</code></td><td><code>Lead</code></td><td>Monitoring: 0.67–40 Hz bandpass + notch</td></tr>
   </tbody>
 </table>
 
@@ -47,7 +47,7 @@ filtered = notch(lead, freq=60.0)  # 60 Hz for US mains
 <table>
   <thead><tr><th>Function</th><th>Returns</th><th>Description</th></tr></thead>
   <tbody>
-    <tr><td><code>resample(lead, target_rate)</code></td><td><code>Lead</code></td><td>Polyphase resampling to target sample rate</td></tr>
+    <tr><td><code><a href="/api/ref/resample/">resample</a>(lead, target_rate)</code></td><td><code>Lead</code></td><td>Polyphase resampling to target sample rate</td></tr>
   </tbody>
 </table>
 
@@ -65,9 +65,9 @@ Pure numpy — no scipy required.
 <table>
   <thead><tr><th>Function</th><th>Returns</th><th>Description</th></tr></thead>
   <tbody>
-    <tr><td><code>normalize_minmax(lead)</code></td><td><code>Lead</code></td><td>Scale to [−1, 1] range</td></tr>
-    <tr><td><code>normalize_zscore(lead)</code></td><td><code>Lead</code></td><td>Zero mean, unit variance</td></tr>
-    <tr><td><code>normalize_amplitude(lead, target_mv=1.0)</code></td><td><code>Lead</code></td><td>Scale peak amplitude to target</td></tr>
+    <tr><td><code><a href="/api/ref/normalize_minmax/">normalize_minmax</a>(lead)</code></td><td><code>Lead</code></td><td>Scale to [−1, 1] range</td></tr>
+    <tr><td><code><a href="/api/ref/normalize_zscore/">normalize_zscore</a>(lead)</code></td><td><code>Lead</code></td><td>Zero mean, unit variance</td></tr>
+    <tr><td><code><a href="/api/ref/normalize_amplitude/">normalize_amplitude</a>(lead, target_mv=1.0)</code></td><td><code>Lead</code></td><td>Scale peak amplitude to target</td></tr>
   </tbody>
 </table>
 
@@ -76,10 +76,10 @@ Pure numpy — no scipy required.
 <table>
   <thead><tr><th>Function</th><th>Returns</th><th>Description</th></tr></thead>
   <tbody>
-    <tr><td><code>detect_r_peaks(lead, method="pan_tompkins")</code></td><td><code>NDArray[np.intp]</code></td><td>R-peak sample indices. Methods: <code>"pan_tompkins"</code> (bandpass + derivative + adaptive threshold) or <code>"shannon_energy"</code> (Shannon energy envelope detector).</td></tr>
-    <tr><td><code>heart_rate(lead, peaks=None)</code></td><td><code>float</code></td><td>Average heart rate in bpm</td></tr>
-    <tr><td><code>rr_intervals(lead, peaks=None)</code></td><td><code>NDArray[np.float64]</code></td><td>RR intervals in milliseconds</td></tr>
-    <tr><td><code>instantaneous_heart_rate(lead, peaks=None)</code></td><td><code>NDArray[np.float64]</code></td><td>Beat-by-beat heart rate in bpm</td></tr>
+    <tr><td><code><a href="/api/ref/detect_r_peaks/">detect_r_peaks</a>(lead, method="pan_tompkins")</code></td><td><code>NDArray[np.intp]</code></td><td>R-peak sample indices. Methods: <code>"pan_tompkins"</code> (bandpass + derivative + adaptive threshold) or <code>"shannon_energy"</code> (Shannon energy envelope detector).</td></tr>
+    <tr><td><code><a href="/api/ref/heart_rate/">heart_rate</a>(lead, peaks=None)</code></td><td><code>float</code></td><td>Average heart rate in bpm</td></tr>
+    <tr><td><code><a href="/api/ref/rr_intervals/">rr_intervals</a>(lead, peaks=None)</code></td><td><code>NDArray[np.float64]</code></td><td>RR intervals in milliseconds</td></tr>
+    <tr><td><code><a href="/api/ref/instantaneous_heart_rate/">instantaneous_heart_rate</a>(lead, peaks=None)</code></td><td><code>NDArray[np.float64]</code></td><td>Beat-by-beat heart rate in bpm</td></tr>
   </tbody>
 </table>
 
@@ -104,17 +104,17 @@ rr = rr_intervals(filtered, peaks)    # array of RR in ms
   <thead><tr><th>Function</th><th>Returns</th><th>Description</th></tr></thead>
   <tbody>
     <tr>
-      <td><code>time_domain(rr_ms)</code></td>
+      <td><code><a href="/api/ref/time_domain/">time_domain</a>(rr_ms)</code></td>
       <td><code>dict</code></td>
       <td>Keys: <code>mean_rr</code>, <code>sdnn</code>, <code>rmssd</code>, <code>sdsd</code>, <code>nn50_count</code>, <code>pnn50</code>, <code>nn20_count</code>, <code>pnn20</code>, <code>hr_mean</code>, <code>hr_std</code></td>
     </tr>
     <tr>
-      <td><code>frequency_domain(rr_ms, method="welch", interp_fs=4.0)</code></td>
+      <td><code><a href="/api/ref/frequency_domain/">frequency_domain</a>(rr_ms, method="welch", interp_fs=4.0)</code></td>
       <td><code>dict</code></td>
       <td>Keys: <code>vlf_power</code> (0–0.04 Hz), <code>lf_power</code> (0.04–0.15 Hz), <code>hf_power</code> (0.15–0.4 Hz), <code>lf_hf_ratio</code>, <code>total_power</code></td>
     </tr>
     <tr>
-      <td><code>poincare(rr_ms)</code></td>
+      <td><code><a href="/api/ref/poincare/">poincare</a>(rr_ms)</code></td>
       <td><code>dict</code></td>
       <td>Keys: <code>sd1</code>, <code>sd2</code>, <code>sd1_sd2_ratio</code></td>
     </tr>
@@ -139,10 +139,10 @@ print(p["sd1"], p["sd2"])
 <table>
   <thead><tr><th>Function</th><th>Returns</th><th>Description</th></tr></thead>
   <tbody>
-    <tr><td><code>power_spectrum(lead, method="welch", nperseg=None)</code></td><td><code>tuple[NDArray, NDArray]</code></td><td>(frequencies, power) — Welch PSD</td></tr>
-    <tr><td><code>fft(lead)</code></td><td><code>tuple[NDArray, NDArray]</code></td><td>(frequencies, magnitudes) — single-sided FFT</td></tr>
-    <tr><td><code>segment_beats(lead, peaks=None, before=0.2, after=0.4)</code></td><td><code>list[Lead]</code></td><td>Extract individual heartbeats around R-peaks</td></tr>
-    <tr><td><code>average_beat(lead, peaks=None, before=0.2, after=0.4)</code></td><td><code>Lead</code></td><td>Ensemble-averaged beat template</td></tr>
+    <tr><td><code><a href="/api/ref/power_spectrum/">power_spectrum</a>(lead, method="welch", nperseg=None)</code></td><td><code>tuple[NDArray, NDArray]</code></td><td>(frequencies, power) — Welch PSD</td></tr>
+    <tr><td><code><a href="/api/ref/fft/">fft</a>(lead)</code></td><td><code>tuple[NDArray, NDArray]</code></td><td>(frequencies, magnitudes) — single-sided FFT</td></tr>
+    <tr><td><code><a href="/api/ref/segment_beats/">segment_beats</a>(lead, peaks=None, before=0.2, after=0.4)</code></td><td><code>list[Lead]</code></td><td>Extract individual heartbeats around R-peaks</td></tr>
+    <tr><td><code><a href="/api/ref/average_beat/">average_beat</a>(lead, peaks=None, before=0.2, after=0.4)</code></td><td><code>Lead</code></td><td>Ensemble-averaged beat template</td></tr>
   </tbody>
 </table>
 
@@ -151,9 +151,9 @@ print(p["sd1"], p["sd2"])
 <table>
   <thead><tr><th>Function</th><th>Returns</th><th>Description</th></tr></thead>
   <tbody>
-    <tr><td><code>signal_quality_index(lead)</code></td><td><code>float</code></td><td>Composite SQI score (0.0–1.0)</td></tr>
-    <tr><td><code>classify_quality(lead)</code></td><td><code>str</code></td><td><code>"excellent"</code> (&gt;0.8), <code>"acceptable"</code> (0.5–0.8), <code>"unacceptable"</code> (&lt;0.5)</td></tr>
-    <tr><td><code>snr_estimate(lead)</code></td><td><code>float</code></td><td>Signal-to-noise ratio in dB</td></tr>
+    <tr><td><code><a href="/api/ref/signal_quality_index/">signal_quality_index</a>(lead)</code></td><td><code>float</code></td><td>Composite SQI score (0.0–1.0)</td></tr>
+    <tr><td><code><a href="/api/ref/classify_quality/">classify_quality</a>(lead)</code></td><td><code>str</code></td><td><code>"excellent"</code> (&gt;0.8), <code>"acceptable"</code> (0.5–0.8), <code>"unacceptable"</code> (&lt;0.5)</td></tr>
+    <tr><td><code><a href="/api/ref/snr_estimate/">snr_estimate</a>(lead)</code></td><td><code>float</code></td><td>Signal-to-noise ratio in dB</td></tr>
   </tbody>
 </table>
 
@@ -164,10 +164,10 @@ Pure numpy — no scipy required. Validates sample rate and length match.
 <table>
   <thead><tr><th>Function</th><th>Returns</th><th>Description</th></tr></thead>
   <tbody>
-    <tr><td><code>derive_lead_iii(lead_i, lead_ii)</code></td><td><code>Lead</code></td><td>III = II − I (Einthoven's law)</td></tr>
-    <tr><td><code>derive_augmented(lead_i, lead_ii)</code></td><td><code>list[Lead]</code></td><td>[aVR, aVL, aVF]</td></tr>
-    <tr><td><code>derive_standard_12(lead_i, lead_ii, v1..v6)</code></td><td><code>list[Lead]</code></td><td>Full 12-lead set in standard order</td></tr>
-    <tr><td><code>find_lead(leads, label)</code></td><td><code>Lead | None</code></td><td>Case-insensitive lead lookup</td></tr>
+    <tr><td><code><a href="/api/ref/derive_lead_iii/">derive_lead_iii</a>(lead_i, lead_ii)</code></td><td><code>Lead</code></td><td>III = II − I (Einthoven's law)</td></tr>
+    <tr><td><code><a href="/api/ref/derive_augmented/">derive_augmented</a>(lead_i, lead_ii)</code></td><td><code>list[Lead]</code></td><td>[aVR, aVL, aVF]</td></tr>
+    <tr><td><code><a href="/api/ref/derive_standard_12/">derive_standard_12</a>(lead_i, lead_ii, v1..v6)</code></td><td><code>list[Lead]</code></td><td>Full 12-lead set in standard order</td></tr>
+    <tr><td><code><a href="/api/ref/find_lead/">find_lead</a>(leads, label)</code></td><td><code>Lead | None</code></td><td>Case-insensitive lead lookup</td></tr>
   </tbody>
 </table>
 
@@ -187,7 +187,7 @@ Unified cleaning interface with multiple backends. All methods return a new `Lea
 <table>
   <thead><tr><th>Function</th><th>Returns</th><th>Description</th></tr></thead>
   <tbody>
-    <tr><td><code>clean_ecg(lead, method="default", **kwargs)</code></td><td><code>Lead</code></td><td>Clean an ECG lead. Methods: <code>"default"</code>, <code>"biosppy"</code>, <code>"neurokit2"</code>, <code>"combined"</code>, <code>"deepfade"</code>.</td></tr>
+    <tr><td><code><a href="/api/ref/clean_ecg/">clean_ecg</a>(lead, method="default", **kwargs)</code></td><td><code>Lead</code></td><td>Clean an ECG lead. Methods: <code>"default"</code>, <code>"biosppy"</code>, <code>"neurokit2"</code>, <code>"combined"</code>, <code>"deepfade"</code>.</td></tr>
   </tbody>
 </table>
 

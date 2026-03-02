@@ -69,6 +69,11 @@ title = 'ECGDataKit'
     pageRef = '/api/plotting'
     parent = 'api'
     weight = 30
+  [[menus.sidebar]]
+    name = 'Function Reference'
+    pageRef = '/api/ref'
+    parent = 'api'
+    weight = 40
 
   [[menus.sidebar]]
     name = 'Releases'
