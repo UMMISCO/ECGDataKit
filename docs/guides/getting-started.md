@@ -36,7 +36,7 @@ ECGDataKit ships several optional dependency groups. Install only what you need:
 | `holter` | `pip install "ecgdatakit[holter]"` | ISHNE Holter format CRC validation |
 | `dicom` | `pip install "ecgdatakit[dicom]"` | DICOM waveform parsing via pydicom |
 | `cleaning` | `pip install "ecgdatakit[cleaning]"` | BioSPPy + NeuroKit2 ECG cleaning backends |
-| `denoising` | `pip install "ecgdatakit[denoising]"` | DeepFADE neural-net denoiser (torch) |
+| `denoising` | `pip install "ecgdatakit[denoising]"` | DeepFADE denoising autoencoder (torch) |
 | `all` | `pip install "ecgdatakit[all]"` | Everything above (except torch) |
 
 ## Parsing an ECG file
@@ -186,10 +186,12 @@ cleaned = clean_ecg(lead, method="neurokit2")
 
 ### Neural-net denoising
 
+DeepFADE is a denoising autoencoder developed as part of ECGDataKit. It uses a symmetric DenseNet encoder-decoder architecture trained on a large private ECG database with extensive noise augmentations. Pre-trained weights are bundled with the package.
+
 ```python
 from ecgdatakit.processing import clean_ecg
 
-# DeepFADE DenseNet denoiser (pip install ecgdatakit[denoising])
+# DeepFADE denoising autoencoder (pip install ecgdatakit[denoising])
 denoised = clean_ecg(lead, method="deepfade")
 
 # Use MPS acceleration on Apple Silicon

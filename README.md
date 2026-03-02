@@ -44,7 +44,8 @@ Developed at [UMMISCO](https://www.ummisco.fr) / [IRD](https://www.ird.fr) by Ah
 | **Spectral** | FFT, Welch PSD, beat segmentation, ensemble averaging |
 | **Quality** | Signal quality index (SQI), SNR estimation |
 | **Leads** | Derive III, aVR/aVL/aVF, full 12-lead assembly |
-| **Cleaning** | Built-in, BioSPPy, NeuroKit2, combined, DeepFADE neural-net denoising |
+| **Cleaning** | Built-in, BioSPPy, NeuroKit2, combined pipelines |
+| **Deep Denoising** | DeepFADE — a DenseNet encoder-decoder denoising autoencoder trained on a large private ECG database (weights bundled) |
 
 ### Visualization
 
@@ -76,7 +77,7 @@ pip install "ecgdatakit[plotting-interactive]"
 # With ECG cleaning backends
 pip install "ecgdatakit[cleaning]"
 
-# With DeepFADE neural-net denoising (requires torch)
+# With DeepFADE denoising autoencoder (requires torch)
 pip install "ecgdatakit[denoising]"
 
 # Everything (except torch — install separately if needed)

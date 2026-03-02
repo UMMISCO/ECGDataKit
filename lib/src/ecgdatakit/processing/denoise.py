@@ -1,8 +1,15 @@
 """ECG denoising using the DeepFADE neural network.
 
-DeepFADE is a DenseNet encoder-decoder that removes noise and baseline
-wander from single-lead ECG signals.  Operates on 10-second segments
-at 500 Hz (5 000 samples).
+DeepFADE is a denoising autoencoder developed as part of ECGDataKit,
+trained on a large private multi-source ECG database with extensive
+noise augmentations (baseline wander, electrode motion, muscle artifacts,
+powerline interference).  The architecture is a symmetric DenseNet
+encoder-decoder: the encoder compresses a 10-second single-lead segment
+(500 Hz, 5 000 samples) through four dense blocks into an 8-channel
+latent space, and the decoder mirrors the path to produce two outputs
+— the denoised signal and the estimated baseline wander.
+
+Pre-trained weights are bundled with the package.
 
 Requires: ``pip install ecgdatakit[denoising]`` (torch >= 2.0)
 """

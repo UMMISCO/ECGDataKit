@@ -65,7 +65,7 @@ The first public release of ECGDataKit.
 - Lead derivation (III, aVR/aVL/aVF, full 12-lead assembly)
 - Resampling and normalization (min-max, z-score, amplitude)
 - ECG cleaning: built-in, BioSPPy, NeuroKit2, combined pipelines
-- DeepFADE neural-net denoising (DenseNet encoder-decoder)
+- DeepFADE denoising autoencoder — a symmetric DenseNet encoder-decoder trained on a large private ECG database with noise augmentations, with pre-trained weights bundled
 
 ### Visualization
 

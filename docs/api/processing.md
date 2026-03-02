@@ -195,7 +195,7 @@ Unified cleaning interface with multiple backends. All methods return a new `Lea
     <tr><td><code>"biosppy"</code></td><td><code>pip install biosppy</code></td><td>BioSPPy ECG filter</td></tr>
     <tr><td><code>"neurokit2"</code></td><td><code>pip install neurokit2</code></td><td>NeuroKit2 adaptive pipeline</td></tr>
     <tr><td><code>"combined"</code></td><td>biosppy + neurokit2</td><td>BioSPPy → NeuroKit2</td></tr>
-    <tr><td><code>"deepfade"</code></td><td><code>pip install torch</code></td><td>DeepFADE DenseNet encoder-decoder (weights bundled)</td></tr>
+    <tr><td><code>"deepfade"</code></td><td><code>pip install torch</code></td><td>DeepFADE denoising autoencoder — see <a href="#deepfade">details below</a></td></tr>
   </tbody>
 </table>
 
@@ -207,3 +207,25 @@ cleaned = clean_ecg(lead, method="neurokit2")
 cleaned = clean_ecg(lead, method="deepfade")
 cleaned = clean_ecg(lead, method="deepfade", device="mps")
 ```
+
+### DeepFADE
+
+DeepFADE is a denoising autoencoder developed as part of ECGDataKit, trained on a large private multi-source ECG database with extensive noise augmentations (baseline wander, electrode motion, muscle artifacts, powerline interference). The architecture follows a symmetric DenseNet encoder-decoder design: the encoder compresses a 10-second single-lead ECG segment (500 Hz, 5 000 samples) through four dense blocks with progressive downsampling into an 8-channel latent representation, while the decoder mirrors the path with transposed-convolution upsampling and produces two outputs — the denoised signal and the estimated baseline wander. Pre-trained weights are bundled with the package.
+
+```python
+from ecgdatakit.processing import clean_ecg
+
+# CPU inference (default)
+denoised = clean_ecg(lead, method="deepfade")
+
+# GPU acceleration
+denoised = clean_ecg(lead, method="deepfade", device="cuda")
+
+# Apple Silicon MPS
+denoised = clean_ecg(lead, method="deepfade", device="mps")
+
+# Custom weights and batch size
+denoised = clean_ecg(lead, method="deepfade", weights_path="my_weights.pt", batch_size=64)
+```
+
+Signals are automatically resampled to 500 Hz, segmented into 5 000-sample chunks, denoised in batches, and reassembled to the original length and sample rate.

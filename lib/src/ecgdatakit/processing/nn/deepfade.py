@@ -1,8 +1,10 @@
 """DeepFADE — Deep Filtering and Artefact Denoising for ECG.
 
-An encoder-decoder neural network built on DenseNet trunks that removes
-noise and baseline wander from single-lead ECG signals.  The forward pass
-returns ``(clean_signal, estimated_baseline)``.
+A denoising autoencoder developed as part of ECGDataKit, trained on a large
+private multi-source ECG database with extensive noise augmentations.  Built
+on symmetric DenseNet encoder-decoder trunks, the network removes noise and
+baseline wander from single-lead ECG signals.  The forward pass returns
+``(clean_signal, estimated_baseline)``.
 
 Architecture
 ~~~~~~~~~~~~
