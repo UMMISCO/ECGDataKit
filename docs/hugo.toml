@@ -1,0 +1,67 @@
+baseURL = 'https://ummisco.github.io/ECGDataKit/'
+languageCode = 'en'
+title = 'ECGDataKit'
+
+[params]
+  description = 'A Python library for parsing, processing, and visualizing multi-format ECG files.'
+  version = '0.0.6'
+  license = 'Apache-2.0'
+
+[markup.highlight]
+  noClasses = false
+  codeFences = true
+  guessSyntax = false
+  lineNos = false
+  style = 'dracula'
+
+[markup.goldmark.renderer]
+  unsafe = true
+
+[menus]
+  [[menus.main]]
+    name = 'Getting Started'
+    pageRef = '/guides/getting-started'
+    weight = 10
+  [[menus.main]]
+    name = 'API Reference'
+    pageRef = '/api/parsing'
+    weight = 20
+  [[menus.main]]
+    name = 'Formats'
+    pageRef = '/guides/formats'
+    weight = 30
+
+  [[menus.sidebar]]
+    name = 'Guides'
+    identifier = 'guides'
+    weight = 10
+  [[menus.sidebar]]
+    name = 'Getting Started'
+    pageRef = '/guides/getting-started'
+    parent = 'guides'
+    weight = 10
+  [[menus.sidebar]]
+    name = 'Supported Formats'
+    pageRef = '/guides/formats'
+    parent = 'guides'
+    weight = 20
+
+  [[menus.sidebar]]
+    name = 'API Reference'
+    identifier = 'api'
+    weight = 20
+  [[menus.sidebar]]
+    name = 'Parsing'
+    pageRef = '/api/parsing'
+    parent = 'api'
+    weight = 10
+  [[menus.sidebar]]
+    name = 'Processing'
+    pageRef = '/api/processing'
+    parent = 'api'
+    weight = 20
+  [[menus.sidebar]]
+    name = 'Plotting'
+    pageRef = '/api/plotting'
+    parent = 'api'
+    weight = 30

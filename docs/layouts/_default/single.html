@@ -1,0 +1,79 @@
+{{ define "main" }}
+<div class="doc-container">
+  {{ partial "sidebar.html" . }}
+  <main class="main">
+    <div class="main-content">
+      {{/* ── Breadcrumbs ── */}}
+      <nav class="breadcrumbs" aria-label="Breadcrumb">
+        <a href="{{ "/" | relURL }}">Home</a>
+        <span class="sep">/</span>
+        {{ with .Parent }}
+          {{ if ne .IsHome true }}
+          <a href="{{ .RelPermalink }}">{{ .Title }}</a>
+          <span class="sep">/</span>
+          {{ end }}
+        {{ end }}
+        <span class="current">{{ .Title }}</span>
+      </nav>
+
+      <h1>{{ .Title }}</h1>
+      {{ .Content }}
+
+      {{/* ── Prev / Next navigation ── */}}
+      {{- $pages := slice -}}
+      {{- range .Site.Menus.sidebar -}}
+        {{- if .HasChildren -}}
+          {{- range .Children -}}
+            {{- $pages = $pages | append . -}}
+          {{- end -}}
+        {{- end -}}
+      {{- end -}}
+
+      {{- $prev := false -}}
+      {{- $next := false -}}
+      {{- $found := false -}}
+      {{- range $i, $item := $pages -}}
+        {{- if $found -}}
+          {{- if not $next -}}
+            {{- $next = $item -}}
+          {{- end -}}
+        {{- else if eq $item.URL $.RelPermalink -}}
+          {{- $found = true -}}
+        {{- else -}}
+          {{- $prev = $item -}}
+        {{- end -}}
+      {{- end -}}
+
+      {{ if or $prev $next }}
+      <nav class="page-nav" aria-label="Page navigation">
+        {{ with $prev }}
+        <a href="{{ .URL }}" class="prev">
+          <span class="page-nav-label">&larr; Previous</span>
+          <span class="page-nav-title">{{ .Name }}</span>
+        </a>
+        {{ end }}
+        {{ with $next }}
+        <a href="{{ .URL }}" class="next">
+          <span class="page-nav-label">Next &rarr;</span>
+          <span class="page-nav-title">{{ .Name }}</span>
+        </a>
+        {{ end }}
+      </nav>
+      {{ end }}
+    </div>
+  </main>
+
+  {{/* ── Right sidebar: On This Page (TOC) ── */}}
+  {{ if .TableOfContents }}
+  <aside class="toc-sidebar">
+    <p class="toc-heading">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 6h16M4 12h10M4 18h14"/></svg>
+      On this page
+    </p>
+    <nav class="toc-nav">
+      {{ .TableOfContents }}
+    </nav>
+  </aside>
+  {{ end }}
+</div>
+{{ end }}

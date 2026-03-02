@@ -1,0 +1,148 @@
+{{ define "bodyclass" }}no-sidebar{{ end }}
+
+{{ define "main" }}
+<section class="hero-section">
+  <div class="hero-inner">
+    <span class="hero-version">v{{ .Site.Params.version }}</span>
+    <div class="hero-logo">
+      <svg class="hero-logo-icon" viewBox="0 0 40 40" xmlns="http://www.w3.org/2000/svg" fill="none">
+        <path d="M4,4 L26,4 L32,10 L32,36 L4,36 Z" fill="#f0f7ff" stroke="#d0e2f2" stroke-width="0.8"/>
+        <path d="M26,4 L26,10 L32,10" fill="#d0e2f2" stroke="#d0e2f2" stroke-width="0.8" stroke-linejoin="round"/>
+        <polyline stroke="#1B4F72" stroke-width="2.8" stroke-linecap="round" stroke-linejoin="round"
+          points="1,22 7,22 10,22 12,19 14,26 17,7 20,33 22.5,14 24,22 27,22"/>
+        <rect x="28" y="16" width="3" height="8" rx="0.8" fill="#42A5F5"/>
+        <rect x="32" y="12" width="3" height="12" rx="0.8" fill="#2196F3"/>
+        <rect x="36" y="14" width="3" height="10" rx="0.8" fill="#64B5F6"/>
+        <circle cx="29" cy="30" r="1.8" fill="#E91E63"/>
+        <circle cx="34" cy="28" r="1.8" fill="#E91E63"/>
+        <line x1="29" y1="30" x2="34" y2="28" stroke="#E91E63" stroke-width="1.2"/>
+        <polyline stroke="#FF9800" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" fill="none"
+          points="27,35 29,33 31,37 33,32 35,36 37,34"/>
+      </svg>
+      <h1><span class="logo-ecg">ECG</span><span class="logo-dk">DataKit</span></h1>
+    </div>
+    <p class="hero-tagline">A Python library for parsing, processing, and visualizing multi-format ECG files.</p>
+    <div class="hero-badges">
+      <span class="badge badge-blue">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+        12 ECG Formats
+      </span>
+      <span class="badge badge-green">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg>
+        Signal Processing
+      </span>
+      <span class="badge badge-purple">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18"/><path d="M9 21V9"/></svg>
+        ECG Plotting
+      </span>
+    </div>
+    <div class="hero-cta">
+      <a href="{{ "guides/getting-started/" | relURL }}" class="btn btn-primary">
+        Get Started
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12h14"/><path d="m12 5 7 7-7 7"/></svg>
+      </a>
+      <a href="{{ "api/parsing/" | relURL }}" class="btn btn-outline">API Reference</a>
+    </div>
+    <div class="hero-install">
+      <span class="prompt">$</span>
+      <code>pip install ecgdatakit</code>
+      <button class="copy-install" onclick="navigator.clipboard.writeText('pip install ecgdatakit');this.innerHTML='&#10003;';setTimeout(()=>this.innerHTML='&lt;svg width=&quot;16&quot; height=&quot;16&quot; viewBox=&quot;0 0 24 24&quot; fill=&quot;none&quot; stroke=&quot;currentColor&quot; stroke-width=&quot;2&quot;&gt;&lt;rect x=&quot;9&quot; y=&quot;9&quot; width=&quot;13&quot; height=&quot;13&quot; rx=&quot;2&quot;/&gt;&lt;path d=&quot;M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1&quot;/&gt;&lt;/svg&gt;',2000)" aria-label="Copy">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+      </button>
+    </div>
+  </div>
+</section>
+
+<section class="features-section">
+  <div class="features-inner">
+    <div class="features-grid">
+      <div class="feature-card">
+        <div class="feature-icon feature-icon-blue">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
+        </div>
+        <h3>Multi-Format Parsing</h3>
+        <p>Parse HL7 aECG, Philips Sierra, GE MUSE, SCP-ECG, DICOM, EDF, WFDB, MFER, and more into one unified data structure.</p>
+      </div>
+      <div class="feature-card">
+        <div class="feature-icon feature-icon-green">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg>
+        </div>
+        <h3>Signal Processing</h3>
+        <p>Butterworth filters, R-peak detection (Pan-Tompkins &amp; Shannon energy), HRV analysis, FFT, signal quality, lead derivation, ECG cleaning, and DeepFADE neural-net denoising.</p>
+      </div>
+      <div class="feature-card">
+        <div class="feature-icon feature-icon-purple">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18"/><path d="M9 21V9"/></svg>
+        </div>
+        <h3>Visualization</h3>
+        <p>Standard 12-lead grids, R-peak annotations, HRV dashboards, spectrograms, and full ECG reports. Static or interactive.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="home-section">
+  <div class="home-inner">
+    <h2 class="section-heading">Quick Example</h2>
+    {{ highlight `from ecgdatakit import FileParser
+from ecgdatakit.processing import diagnostic_filter, detect_r_peaks, heart_rate
+from ecgdatakit.plotting import plot_12lead, plot_peaks
+
+# Parse any ECG file (auto-detect format)
+record = FileParser().parse("ecg_file.xml")
+
+# Filter and detect R-peaks
+lead = record.leads[1]  # Lead II
+filtered = diagnostic_filter(lead)
+peaks = detect_r_peaks(filtered)
+print(f"Heart rate: {heart_rate(filtered, peaks):.0f} bpm")
+
+# Visualize
+fig = plot_12lead(record)
+fig.savefig("ecg_report.png", dpi=150)` "python" "" }}
+  </div>
+</section>
+
+<section class="home-section">
+  <div class="home-inner">
+    <h2 class="section-heading">Supported Formats</h2>
+    <div class="formats-grid">
+      <div class="format-item"><strong>HL7 aECG</strong><span>Health Level 7 annotated ECG</span></div>
+      <div class="format-item"><strong>Philips Sierra XML</strong><span>Philips Sierra ECG format</span></div>
+      <div class="format-item"><strong>GE MUSE XML</strong><span>GE MUSE ECG management</span></div>
+      <div class="format-item"><strong>ISHNE Holter</strong><span>Holter &amp; Noninvasive ECG</span></div>
+      <div class="format-item"><strong>Mortara EL250</strong><span>Mortara ELI 250 device</span></div>
+      <div class="format-item"><strong>EDF/EDF+</strong><span>European Data Format</span></div>
+      <div class="format-item"><strong>SCP-ECG</strong><span>Standard Comms Protocol</span></div>
+      <div class="format-item"><strong>DICOM Waveform</strong><span>Medical imaging standard</span></div>
+      <div class="format-item"><strong>WFDB</strong><span>PhysioNet WaveForm DB</span></div>
+      <div class="format-item"><strong>MFER</strong><span>Medical waveform encoding</span></div>
+      <div class="format-item"><strong>Mindray R12</strong><span>BeneHeart R12 device</span></div>
+      <div class="format-item"><strong>GE MAC 2000</strong><span>Resting ECG system</span></div>
+    </div>
+  </div>
+</section>
+
+<section class="home-section">
+  <div class="home-inner">
+    <h2 class="section-heading">Installation</h2>
+    {{ highlight `# Core (parsing only)
+pip install .
+
+# With signal processing (scipy)
+pip install ".[processing]"
+
+# With plotting (matplotlib + plotly)
+pip install ".[plotting,plotting-interactive]"
+
+# ECG cleaning backends (BioSPPy + NeuroKit2)
+pip install ".[cleaning]"
+
+# DeepFADE neural-net denoising (requires torch)
+pip install ".[denoising]"
+
+# Everything (except torch — install separately)
+pip install ".[all]"` "bash" "" }}
+  </div>
+</section>
+{{ end }}
