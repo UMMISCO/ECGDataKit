@@ -1,7 +1,7 @@
 # ECGDataKit
 
-[![Tests](https://github.com/UMMISCO/ECGDataKit/actions/workflows/tests.yml/badge.svg)](https://github.com/UMMISCO/ECGDataKit/actions/workflows/tests.yml)
-[![Docs](https://github.com/UMMISCO/ECGDataKit/actions/workflows/docs.yml/badge.svg)](https://ecgdatakit.ummisco.fr)
+[![Tests](https://github.com/UMMISCO/ECGDataKit/actions/workflows/tests.yml/badge.svg?branch=main)](https://github.com/UMMISCO/ECGDataKit/actions/workflows/tests.yml)
+[![Docs](https://github.com/UMMISCO/ECGDataKit/actions/workflows/docs.yml/badge.svg?branch=main)](https://ecgdatakit.ummisco.fr)
 [![Python 3.10+](https://img.shields.io/badge/python-3.10%2B-blue.svg)](https://www.python.org/downloads/)
 [![License](https://img.shields.io/badge/license-Apache%202.0-green.svg)](LICENSE)
 
