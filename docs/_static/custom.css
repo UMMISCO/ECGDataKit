@@ -36,23 +36,19 @@ body[data-theme="dark"] .top-navbar {
   height: 52px;
 }
 
+/* Brand: logo + title + version */
 .top-navbar-brand {
   display: flex;
   align-items: center;
   gap: 0.6rem;
-  text-decoration: none;
   flex-shrink: 0;
 }
 
-.top-navbar-brand a {
-  font-weight: 700;
-  font-size: 1.1rem;
-  color: #6ee7b7;
+.top-navbar-logo-link {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
   text-decoration: none;
-}
-
-.top-navbar-brand a:hover {
-  color: #a7f3d0;
 }
 
 .top-navbar-logo-wrap {
@@ -60,38 +56,45 @@ body[data-theme="dark"] .top-navbar {
   align-items: center;
   justify-content: center;
   background: #ffffff;
-  border-radius: 6px;
-  padding: 3px;
+  border-radius: 8px;
+  padding: 4px;
 }
 
 .top-navbar-logo {
-  height: 26px;
-  width: auto;
+  height: 28px;
+  width: 28px;
   display: block;
 }
 
-.top-navbar-sep {
-  width: 1px;
-  height: 24px;
-  background: #374151;
-  margin: 0 0.25rem;
+.top-navbar-title {
+  font-weight: 700;
+  font-size: 1.15rem;
+  letter-spacing: -0.01em;
 }
 
-.top-navbar-ummisco {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  background: #ffffff;
-  border-radius: 6px;
-  padding: 3px;
+.top-navbar-title-ecg {
+  color: #ffffff;
 }
 
-.top-navbar-ummisco-logo {
-  height: 22px;
-  width: auto;
-  display: block;
+.top-navbar-title-dk {
+  color: #6ee7b7;
 }
 
+.top-navbar-logo-link:hover .top-navbar-title-dk {
+  color: #a7f3d0;
+}
+
+.top-navbar-version {
+  font-size: 0.7rem;
+  font-weight: 600;
+  color: #9ca3af;
+  background: #1f2937;
+  padding: 2px 8px;
+  border-radius: 10px;
+  letter-spacing: 0.02em;
+}
+
+/* Nav links */
 .top-navbar-links {
   display: flex;
   align-items: center;
@@ -113,12 +116,40 @@ body[data-theme="dark"] .top-navbar {
   color: #6ee7b7;
 }
 
-.top-navbar-github {
-  display: flex !important;
+/* UMMISCO logo (right side, larger) */
+.top-navbar-ummisco {
+  display: inline-flex !important;
   align-items: center;
-  gap: 0.35rem;
+  justify-content: center;
+  background: #ffffff;
+  border-radius: 8px;
+  padding: 4px 6px;
+  margin-left: 0.5rem;
 }
 
+.top-navbar-ummisco-logo {
+  height: 30px;
+  width: auto;
+  display: block;
+}
+
+/* GitHub icon */
+.top-navbar-github {
+  display: inline-flex !important;
+  align-items: center;
+  padding: 0.35rem !important;
+  margin-left: 0.25rem;
+}
+
+.top-navbar-github svg {
+  color: #d1d5db;
+}
+
+.top-navbar-github:hover svg {
+  color: #ffffff;
+}
+
+/* Mobile toggle */
 .top-navbar-toggle {
   display: none;
   background: none;
@@ -157,11 +188,17 @@ body[data-theme="dark"] .top-navbar {
   }
 }
 
-/* ── Sidebar logo size ────────────────────────────────── */
+/* ── Sidebar logo ─────────────────────────────────────── */
+.sidebar-brand {
+  text-align: center;
+}
+
 .sidebar-brand img,
 .sidebar-logo {
   max-height: 100px;
   width: auto;
+  margin: 0 auto;
+  display: block;
 }
 
 /* ── Code block styling ───────────────────────────────── */
@@ -247,4 +284,293 @@ body[data-theme="dark"] tr:hover td {
 td code, th code {
   font-size: 0.8rem;
   padding: 1px 5px;
+}
+
+/* ══════════════════════════════════════════════════════════
+   Landing Page
+   ══════════════════════════════════════════════════════════ */
+
+/* ── Hero ──────────────────────────────────────────────── */
+.landing-hero {
+  text-align: center;
+  padding: 2.5rem 0 2rem;
+  background: linear-gradient(180deg, #0f172a 0%, #1e293b 100%);
+  border-radius: 16px;
+  margin: 0 0 2.5rem;
+  color: #f8fafc;
+}
+
+body[data-theme="dark"] .landing-hero {
+  background: linear-gradient(180deg, #0b0f1a 0%, #111827 100%);
+}
+
+.landing-hero-logo img {
+  height: 72px;
+  width: auto;
+  margin-bottom: 0.75rem;
+}
+
+.landing-hero-title {
+  font-size: 2.5rem;
+  font-weight: 800;
+  margin: 0 0 0.5rem;
+  letter-spacing: -0.02em;
+}
+
+.lh-ecg { color: #ffffff; }
+.lh-dk { color: #6ee7b7; }
+
+.landing-hero-version {
+  display: inline-block;
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: #9ca3af;
+  background: rgba(255, 255, 255, 0.08);
+  padding: 2px 10px;
+  border-radius: 10px;
+  margin-bottom: 1rem;
+}
+
+.landing-hero-subtitle {
+  font-size: 1.1rem;
+  color: #cbd5e1;
+  margin: 0.75rem auto 1.25rem;
+  max-width: 550px;
+  line-height: 1.5;
+}
+
+/* Feature pills */
+.landing-pills {
+  display: flex;
+  justify-content: center;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+  margin-bottom: 1.5rem;
+}
+
+.landing-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-size: 0.8rem;
+  font-weight: 500;
+  color: #6ee7b7;
+  border: 1px solid #374151;
+  border-radius: 20px;
+  padding: 6px 14px;
+  text-decoration: none;
+  transition: background 0.15s, border-color 0.15s;
+}
+
+.landing-pill:hover {
+  background: rgba(110, 231, 183, 0.08);
+  border-color: #6ee7b7;
+  color: #a7f3d0;
+}
+
+/* CTA buttons */
+.landing-cta {
+  display: flex;
+  justify-content: center;
+  gap: 0.75rem;
+  margin-bottom: 1.5rem;
+}
+
+.landing-btn {
+  display: inline-flex;
+  align-items: center;
+  font-size: 0.9rem;
+  font-weight: 600;
+  padding: 10px 24px;
+  border-radius: 8px;
+  text-decoration: none;
+  transition: background 0.15s, transform 0.1s;
+}
+
+.landing-btn:active { transform: scale(0.97); }
+
+.landing-btn-primary {
+  background: #059669;
+  color: #ffffff;
+}
+
+.landing-btn-primary:hover {
+  background: #047857;
+  color: #ffffff;
+}
+
+.landing-btn-outline {
+  background: transparent;
+  color: #d1d5db;
+  border: 1px solid #4b5563;
+}
+
+.landing-btn-outline:hover {
+  background: rgba(255, 255, 255, 0.05);
+  border-color: #9ca3af;
+  color: #ffffff;
+}
+
+/* Install bar */
+.landing-install {
+  display: inline-block;
+  background: #0f172a;
+  border: 1px solid #1e293b;
+  border-radius: 8px;
+  padding: 10px 24px;
+}
+
+.landing-install code {
+  font-family: 'JetBrains Mono', 'SF Mono', monospace;
+  font-size: 0.85rem;
+  color: #e2e8f0;
+  background: none;
+}
+
+body[data-theme="dark"] .landing-install {
+  background: #0b0f1a;
+  border-color: #1e293b;
+}
+
+/* ── Feature Cards ─────────────────────────────────────── */
+.landing-features {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 1.25rem;
+  margin-bottom: 2.5rem;
+}
+
+.landing-card {
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+  padding: 1.5rem;
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+
+.landing-card:hover {
+  border-color: #059669;
+  box-shadow: 0 2px 12px rgba(5, 150, 105, 0.08);
+}
+
+body[data-theme="dark"] .landing-card {
+  border-color: #1e293b;
+  background: #111827;
+}
+
+body[data-theme="dark"] .landing-card:hover {
+  border-color: #6ee7b7;
+  box-shadow: 0 2px 12px rgba(110, 231, 183, 0.06);
+}
+
+.landing-card-icon {
+  width: 44px;
+  height: 44px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 10px;
+  margin-bottom: 1rem;
+}
+
+.landing-card-icon-parse { background: #eff6ff; color: #3b82f6; }
+.landing-card-icon-proc  { background: #fef3c7; color: #d97706; }
+.landing-card-icon-plot  { background: #ecfdf5; color: #059669; }
+
+body[data-theme="dark"] .landing-card-icon-parse { background: #1e3a5f; color: #60a5fa; }
+body[data-theme="dark"] .landing-card-icon-proc  { background: #422006; color: #fbbf24; }
+body[data-theme="dark"] .landing-card-icon-plot  { background: #064e3b; color: #6ee7b7; }
+
+.landing-card h3 {
+  font-size: 1.05rem;
+  font-weight: 700;
+  margin: 0 0 0.5rem;
+}
+
+.landing-card p {
+  font-size: 0.85rem;
+  color: #64748b;
+  line-height: 1.55;
+  margin: 0;
+}
+
+body[data-theme="dark"] .landing-card p {
+  color: #94a3b8;
+}
+
+/* ── Section Titles ────────────────────────────────────── */
+.landing-section-title {
+  font-size: 1.5rem;
+  font-weight: 700;
+  text-align: center;
+  margin: 2.5rem 0 1.25rem;
+}
+
+/* ── Supported Formats Grid ────────────────────────────── */
+.landing-formats {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 1rem;
+  margin-bottom: 2.5rem;
+}
+
+.landing-format {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  padding: 1rem 1.25rem;
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+  transition: border-color 0.15s;
+}
+
+.landing-format:hover {
+  border-color: #059669;
+}
+
+body[data-theme="dark"] .landing-format {
+  border-color: #1e293b;
+  background: #111827;
+}
+
+body[data-theme="dark"] .landing-format:hover {
+  border-color: #6ee7b7;
+}
+
+.landing-format strong {
+  font-size: 0.9rem;
+  font-weight: 600;
+}
+
+.landing-format span {
+  font-size: 0.78rem;
+  color: #94a3b8;
+}
+
+/* ── Responsive ────────────────────────────────────────── */
+@media (max-width: 768px) {
+  .landing-features,
+  .landing-formats {
+    grid-template-columns: 1fr;
+  }
+
+  .landing-hero-title {
+    font-size: 1.8rem;
+  }
+
+  .landing-pills {
+    flex-direction: column;
+    align-items: center;
+  }
+
+  .landing-cta {
+    flex-direction: column;
+    align-items: center;
+  }
+}
+
+@media (min-width: 769px) and (max-width: 1024px) {
+  .landing-features,
+  .landing-formats {
+    grid-template-columns: repeat(2, 1fr);
+  }
 }

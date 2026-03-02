@@ -87,6 +87,8 @@ def plot_lead(
     ax: Axes | None = None,
     *,
     fs: int | None = None,
+    show: bool = True,
+    x_axis: str = "time",
 ) -> Figure:
     """Plot a single ECG lead waveform.
 
@@ -106,31 +108,57 @@ def plot_lead(
         Existing axes to draw on. A new figure is created if ``None``.
     fs : int | None
         Sample rate in Hz.  Required when *lead* is a numpy array.
+    show : bool
+        Display the plot immediately (default ``True``). Set to ``False``
+        to return the figure without displaying.
+    x_axis : str
+        ``"time"`` for seconds (default) or ``"samples"`` for sample indices
+        (1, 2, ..., N).
     """
     lead = ensure_lead(lead, fs=fs)
+    own_fig = ax is None
     fig, ax = _get_or_create_ax(figsize, ax)
-    t = time_axis(lead)
 
-    ax.plot(t, lead.samples, color=lead_color(lead.label), linewidth=0.8)
+    if x_axis == "samples":
+        x = np.arange(1, len(lead.samples) + 1)
+        xlabel = "Sample"
+    else:
+        x = time_axis(lead)
+        xlabel = "Time (s)"
+
+    ax.plot(x, lead.samples, color=lead_color(lead.label), linewidth=0.8)
 
     if peaks is not None and len(peaks) > 0:
         ax.plot(
-            t[peaks],
+            x[peaks],
             lead.samples[peaks],
             "rv",
             markersize=6,
             label="R-peaks",
         )
 
-    ax.set_xlabel("Time (s)")
+    ax.set_xlabel(xlabel)
     ax.set_ylabel(f"Amplitude ({lead.units})" if lead.units else "Amplitude")
     ax.set_title(title or lead.label)
 
     if show_grid:
         _ecg_grid(ax)
 
-    ax.set_xlim(t[0], t[-1])
+    ax.set_xlim(x[0], x[-1])
+
+    ax.spines["top"].set_visible(False)
+    ax.spines["right"].set_visible(False)
+
+    from matplotlib.ticker import AutoMinorLocator, MaxNLocator
+    ax.xaxis.set_major_locator(MaxNLocator(integer=True))
+    ax.xaxis.set_minor_locator(AutoMinorLocator())
+
     fig.tight_layout()
+
+    if show and own_fig:
+        import matplotlib.pyplot as plt
+        plt.show()
+
     return fig
 
 
