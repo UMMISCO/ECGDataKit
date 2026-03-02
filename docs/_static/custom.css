@@ -11,22 +11,175 @@ code, pre, .highlight {
   font-family: 'JetBrains Mono', 'SF Mono', 'Fira Code', 'Consolas', monospace;
 }
 
-/* ── Code block background (Dracula-inspired) ──────────── */
+/* ── Top Navbar (dark) ─────────────────────────────────── */
+.top-navbar {
+  position: sticky;
+  top: 0;
+  z-index: 200;
+  background: #111827;
+  border-bottom: 1px solid #1f2937;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.2);
+}
+
+body[data-theme="dark"] .top-navbar {
+  background: #0f1117;
+  border-bottom-color: #1e2130;
+}
+
+.top-navbar-inner {
+  max-width: 1400px;
+  margin: 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 1.5rem;
+  height: 52px;
+}
+
+.top-navbar-brand {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  text-decoration: none;
+  flex-shrink: 0;
+}
+
+.top-navbar-brand a {
+  font-weight: 700;
+  font-size: 1.1rem;
+  color: #6ee7b7;
+  text-decoration: none;
+}
+
+.top-navbar-brand a:hover {
+  color: #a7f3d0;
+}
+
+.top-navbar-logo-wrap {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: #ffffff;
+  border-radius: 6px;
+  padding: 3px;
+}
+
+.top-navbar-logo {
+  height: 26px;
+  width: auto;
+  display: block;
+}
+
+.top-navbar-sep {
+  width: 1px;
+  height: 24px;
+  background: #374151;
+  margin: 0 0.25rem;
+}
+
+.top-navbar-ummisco {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: #ffffff;
+  border-radius: 6px;
+  padding: 3px;
+}
+
+.top-navbar-ummisco-logo {
+  height: 22px;
+  width: auto;
+  display: block;
+}
+
+.top-navbar-links {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+}
+
+.top-navbar-links a {
+  color: #d1d5db;
+  text-decoration: none;
+  font-size: 0.875rem;
+  font-weight: 500;
+  padding: 0.4rem 0.75rem;
+  border-radius: 6px;
+  transition: background 0.15s, color 0.15s;
+}
+
+.top-navbar-links a:hover {
+  background: #1f2937;
+  color: #6ee7b7;
+}
+
+.top-navbar-github {
+  display: flex !important;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+.top-navbar-toggle {
+  display: none;
+  background: none;
+  border: none;
+  color: #d1d5db;
+  cursor: pointer;
+  padding: 0.25rem;
+}
+
+/* Mobile navbar */
+@media (max-width: 768px) {
+  .top-navbar-toggle {
+    display: block;
+  }
+
+  .top-navbar-links {
+    display: none;
+    position: absolute;
+    top: 52px;
+    left: 0;
+    right: 0;
+    background: #111827;
+    border-bottom: 1px solid #1f2937;
+    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.3);
+    flex-direction: column;
+    padding: 0.5rem;
+  }
+
+  .top-navbar-links.show {
+    display: flex;
+  }
+
+  .top-navbar-links a {
+    padding: 0.6rem 1rem;
+    width: 100%;
+  }
+}
+
+/* ── Sidebar logo size ────────────────────────────────── */
+.sidebar-brand img,
+.sidebar-logo {
+  max-height: 100px;
+  width: auto;
+}
+
+/* ── Code block styling ───────────────────────────────── */
 .highlight pre {
-  background: #0f172a !important;
+  border-radius: 8px;
+  padding: 1rem 1.25rem;
+  font-size: 0.85rem;
+  line-height: 1.6;
+  overflow-x: auto;
 }
 
-body[data-theme="dark"] .highlight pre {
-  background: #1e293b !important;
-}
-
-/* ── Inline code styling ───────────────────────────────── */
+/* Inline code styling */
 code.literal {
   background: #f1f5f9;
   color: #e11d48;
   padding: 2px 7px;
   border-radius: 5px;
-  font-size: 0.875em;
+  font-size: 0.85em;
 }
 
 body[data-theme="dark"] code.literal {
@@ -34,25 +187,64 @@ body[data-theme="dark"] code.literal {
   color: #fbbf24;
 }
 
-/* ── Table styling ─────────────────────────────────────── */
+/* ── Table styling ────────────────────────────────────── */
 table {
-  font-size: 14px;
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.875rem;
+  margin: 1.5rem 0;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+body[data-theme="dark"] table {
+  border-color: #334155;
+}
+
+th, td {
+  padding: 0.65rem 1rem;
+  text-align: left;
+  border-bottom: 1px solid #e2e8f0;
+}
+
+body[data-theme="dark"] th,
+body[data-theme="dark"] td {
+  border-bottom-color: #334155;
 }
 
 th {
   background: #f8fafc;
   font-weight: 600;
-  font-size: 13px;
+  font-size: 0.8rem;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  color: #64748b;
 }
 
 body[data-theme="dark"] th {
   background: #1e293b;
+  color: #94a3b8;
+}
+
+td {
+  vertical-align: top;
+}
+
+tr:last-child td {
+  border-bottom: none;
 }
 
 tr:hover td {
-  background: #ecfdf5;
+  background: #f0fdf4;
 }
 
 body[data-theme="dark"] tr:hover td {
-  background: #064e3b;
+  background: #0f2a1f;
+}
+
+/* Code inside tables */
+td code, th code {
+  font-size: 0.8rem;
+  padding: 1px 5px;
 }

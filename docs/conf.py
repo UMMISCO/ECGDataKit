@@ -43,6 +43,7 @@ myst_enable_extensions = [
     "tasklist",
 ]
 myst_heading_anchors = 3
+myst_enable_extensions += ["tables"]
 source_suffix = {
     ".rst": "restructuredtext",
     ".md": "markdown",
@@ -94,6 +95,8 @@ html_theme = "furo"
 html_title = "ECGDataKit"
 html_static_path = ["_static"]
 html_css_files = ["custom.css"]
+templates_path = ["_templates"]
+pygments_dark_style = "monokai"
 html_favicon = "_static/logo.svg"
 html_theme_options = {
     "light_logo": "logo.svg",

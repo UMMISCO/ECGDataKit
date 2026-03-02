@@ -15,7 +15,6 @@ def require_matplotlib() -> ModuleType:
     try:
         import matplotlib
 
-        matplotlib.use("Agg")
         return matplotlib
     except ImportError as exc:
         raise ImportError(

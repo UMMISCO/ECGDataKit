@@ -2,25 +2,20 @@
 
 ECGDataKit parses 12 ECG file formats via content-based detection — no file extension guessing.
 
-<table>
-  <thead>
-    <tr><th>Format</th><th>File Types</th><th>Parser Class</th><th>Detection</th></tr>
-  </thead>
-  <tbody>
-    <tr><td>HL7 aECG</td><td><code>.xml</code></td><td><code>HL7aECGParser</code></td><td><code>&lt;AnnotatedECG</code> in header</td></tr>
-    <tr><td>Philips Sierra XML</td><td><code>.xml</code></td><td><code>SierraXMLParser</code></td><td><code>&lt;restingecgdata</code> in header</td></tr>
-    <tr><td>GE MUSE XML</td><td><code>.xml</code></td><td><code>GEMuseXMLParser</code></td><td><code>&lt;RestingECG&gt;</code> in header</td></tr>
-    <tr><td>ISHNE Holter</td><td><code>.ecg</code>, <code>.hol</code></td><td><code>ISHNEHolterParser</code></td><td><code>ISHNE1.0</code> or <code>ANN  1.0</code> magic bytes</td></tr>
-    <tr><td>Mortara EL250</td><td><code>.xml</code></td><td><code>MortaraEL250Parser</code></td><td><code>&lt;ECG</code> + <code>&lt;CHANNEL</code> in header</td></tr>
-    <tr><td>EDF / EDF+</td><td><code>.edf</code></td><td><code>EDFParser</code></td><td><code>"0       "</code> at offset 0 + valid structure</td></tr>
-    <tr><td>SCP-ECG</td><td><code>.scp</code></td><td><code>SCPECGParser</code></td><td>Valid Section 0 pointer table at offset 6</td></tr>
-    <tr><td>DICOM Waveform</td><td><code>.dcm</code></td><td><code>DICOMWaveformParser</code></td><td><code>DICM</code> at offset 128</td></tr>
-    <tr><td>WFDB (PhysioNet)</td><td><code>.hea</code> + <code>.dat</code></td><td><code>WFDBParser</code></td><td><code>.hea</code> extension + valid header</td></tr>
-    <tr><td>MFER</td><td><code>.mwf</code>, <code>.mfer</code></td><td><code>MFERParser</code></td><td>Valid MFER tag (0x01–0x3F) + BER length</td></tr>
-    <tr><td>Mindray BeneHeart R12</td><td><code>.xml</code></td><td><code>BeneHeartR12Parser</code></td><td><code>&lt;BeneHeartR12&gt;</code> or <code>&lt;MindrayECG&gt;</code></td></tr>
-    <tr><td>GE MAC 2000</td><td><code>.xml</code></td><td><code>GEMAC2000Parser</code></td><td><code>&lt;MAC2000&gt;</code> or <code>&lt;GE_MAC&gt;</code></td></tr>
-  </tbody>
-</table>
+| Format | File Types | Parser Class | Detection |
+|--------|-----------|--------------|-----------|
+| HL7 aECG | `.xml` | `HL7aECGParser` | `<AnnotatedECG` in header |
+| Philips Sierra XML | `.xml` | `SierraXMLParser` | `<restingecgdata` in header |
+| GE MUSE XML | `.xml` | `GEMuseXMLParser` | `<RestingECG>` in header |
+| ISHNE Holter | `.ecg`, `.hol` | `ISHNEHolterParser` | `ISHNE1.0` or `ANN  1.0` magic bytes |
+| Mortara EL250 | `.xml` | `MortaraEL250Parser` | `<ECG` + `<CHANNEL` in header |
+| EDF / EDF+ | `.edf` | `EDFParser` | `"0       "` at offset 0 + valid structure |
+| SCP-ECG | `.scp` | `SCPECGParser` | Valid Section 0 pointer table at offset 6 |
+| DICOM Waveform | `.dcm` | `DICOMWaveformParser` | `DICM` at offset 128 |
+| WFDB (PhysioNet) | `.hea` + `.dat` | `WFDBParser` | `.hea` extension + valid header |
+| MFER | `.mwf`, `.mfer` | `MFERParser` | Valid MFER tag (0x01–0x3F) + BER length |
+| Mindray BeneHeart R12 | `.xml` | `BeneHeartR12Parser` | `<BeneHeartR12>` or `<MindrayECG>` |
+| GE MAC 2000 | `.xml` | `GEMAC2000Parser` | `<MAC2000>` or `<GE_MAC>` |
 
 ## HL7 aECG
 
