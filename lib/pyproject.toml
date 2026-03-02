@@ -28,7 +28,7 @@ classifiers = [
 
 [project.urls]
 Homepage = "https://github.com/UMMISCO/ECGDataKit"
-Documentation = "https://ummisco.github.io/ECGDataKit"
+Documentation = "https://ecgdatakit.ummisco.fr"
 Repository = "https://github.com/UMMISCO/ECGDataKit"
 Issues = "https://github.com/UMMISCO/ECGDataKit/issues"
 Mirror = "https://git.ummisco.fr/open/ecgdatakit"

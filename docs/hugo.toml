@@ -1,4 +1,4 @@
-baseURL = 'https://ummisco.github.io/ECGDataKit/'
+baseURL = 'https://ecgdatakit.ummisco.fr/'
 languageCode = 'en'
 title = 'ECGDataKit'
 
