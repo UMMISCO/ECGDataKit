@@ -75,7 +75,7 @@ class TestDeviceInfo:
     def test_dict_keys_stable(self):
         d = DeviceInfo().to_dict()
         expected = {
-            "manufacturer", "model", "serial_number", "software_version",
+            "manufacturer", "model", "name", "serial_number", "software_version",
             "institution", "department", "acquisition_type",
         }
         assert set(d.keys()) == expected
@@ -213,7 +213,7 @@ class TestECGRecord:
         assert set(d.keys()) == {
             "source_format", "patient", "recording", "device", "filters",
             "leads", "interpretation", "measurements", "median_beats",
-            "annotations",
+            "annotations", "signal",
         }
         assert d["source_format"] == "test"
         assert len(d["leads"]) == 2
@@ -243,7 +243,7 @@ class TestECGRecord:
         d = record.to_dict()
         assert list(d.keys()) == [
             "source_format", "patient", "recording", "device", "filters",
-            "leads", "interpretation", "measurements", "median_beats",
+            "signal", "leads", "interpretation", "measurements", "median_beats",
             "annotations",
         ]
 

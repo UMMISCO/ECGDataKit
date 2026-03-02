@@ -23,6 +23,7 @@ from ecgdatakit.models import (
     Lead,
     PatientInfo,
     RecordingInfo,
+    SignalCharacteristics,
 )
 from ecgdatakit.parsing.parser import Parser
 
@@ -86,6 +87,43 @@ class GEMuseXMLParser(Parser):
         order_info = self._read_order_info(root)
         if order_info:
             record.raw_metadata["order_info"] = order_info
+            # Promote referring physician to structured field
+            if not record.recording.referring_physician:
+                ref = order_info.get("referring_physician", "")
+                if ref:
+                    record.recording.referring_physician = ref
+
+        # Extract technician from TestDemographics
+        test_demo = find_tag(root, "TestDemographics")
+        if test_demo is not None:
+            if isinstance(test_demo, list):
+                test_demo = test_demo[0]
+            tech = self._get_text(test_demo, "TechnicianID") or self._get_text(test_demo, "OperatorID")
+            if tech:
+                record.recording.technician = tech
+
+        # Count all lead data elements for channels_allocated
+        all_lead_count = 0
+        waveform_nodes = find_tag(root, "Waveform")
+        if waveform_nodes is not None:
+            if isinstance(waveform_nodes, dict):
+                waveform_nodes = [waveform_nodes]
+            for wf_node in waveform_nodes:
+                ld_nodes = find_tag(wf_node, "LeadData")
+                if ld_nodes is not None:
+                    if isinstance(ld_nodes, dict):
+                        all_lead_count += 1
+                    elif isinstance(ld_nodes, list):
+                        all_lead_count += len(ld_nodes)
+
+        record.signal = SignalCharacteristics(
+            bits_per_sample=16,
+            signal_signed=True,
+            number_channels_valid=len(record.leads),
+            number_channels_allocated=all_lead_count or len(record.leads),
+            data_encoding="base64_int16le",
+            compression="none",
+        )
 
         record.raw_metadata["filepath"] = str(file_path)
 

@@ -4,6 +4,41 @@ All notable changes to ECGDataKit are documented here.
 
 ---
 
+## v0.0.7
+
+### Parsing
+
+- New `SignalCharacteristics` dataclass on `ECGRecord` — captures bits per sample, data encoding, compression, signed/unsigned, channel counts, electrode placement, and signal processing flags
+- All 12 parsers now populate `record.signal` with format-specific signal characteristics
+- New `DeviceInfo.name` field (distinct from `model`)
+- Expanded metadata extraction across all parsers:
+  - `recording.technician` — now extracted from Sierra XML, GE MUSE, DICOM, GE MAC 2000
+  - `recording.referring_physician` — now extracted from Sierra XML, EDF, GE MUSE, GE MAC 2000
+  - `patient.weight` — now extracted from SCP-ECG, BeneHeart R12, GE MAC 2000
+  - `patient.height` — now extracted from BeneHeart R12, GE MAC 2000
+  - `patient.race` — now extracted from HL7 aECG, Mortara EL250, GE MAC 2000
+  - `patient.clinical_history` — now extracted from WFDB comment lines
+  - `filters.notch_active` — now properly set when notch filter is present (all parsers)
+  - `measurements.rr_interval` — now extracted from Mortara EL250, BeneHeart R12, GE MAC 2000
+  - `measurements.qrs_count` — now extracted from Mortara EL250, BeneHeart R12, GE MAC 2000
+  - `device.serial_number` — now extracted from HL7 aECG, GE MAC 2000
+  - `device.institution` — now extracted from HL7 aECG
+- Fix: BeneHeart R12 no longer assigns device name to non-existent `RecordingInfo.device` field
+- Fix: SCP-ECG now reads patient weight from Tag 12
+
+### Visualization
+
+- Static plots now auto-display by default (`show=True`); pass `show=False` to get the figure without displaying
+- New `x_axis` parameter on single-lead plots: `"time"` (default, seconds) or `"samples"` (sample indices)
+- Reduced plot margins and borders
+- X-axis time labels now use integer seconds
+
+### Processing & Plotting
+
+- All processing and plotting functions now accept raw numpy arrays directly with `fs=` (sample rate) parameter, in addition to `Lead` objects
+
+---
+
 ## v0.0.6 — Initial Release
 
 **Release date:** March 2, 2026

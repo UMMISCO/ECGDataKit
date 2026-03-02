@@ -21,6 +21,7 @@ from ecgdatakit.models import (
     Lead,
     PatientInfo,
     RecordingInfo,
+    SignalCharacteristics,
 )
 from ecgdatakit.parsing.parser import Parser
 
@@ -59,7 +60,7 @@ class DICOMWaveformParser(Parser):
         record.patient = self._read_patient(ds)
         record.recording = self._read_recording(ds)
         record.device = self._read_device(ds)
-        record.leads, record.filters = self._read_leads(ds)
+        record.leads, record.filters, record.signal = self._read_leads(ds)
         if record.leads:
             if record.recording.sample_rate == 0:
                 record.recording.sample_rate = record.leads[0].sample_rate
@@ -68,6 +69,14 @@ class DICOMWaveformParser(Parser):
                 record.recording.duration = timedelta(seconds=duration_s)
 
         record.interpretation, record.measurements = self._read_annotations(ds)
+
+        # Extract technician and department
+        technician = str(getattr(ds, "OperatorsName", ""))
+        if technician:
+            record.recording.technician = technician
+        department = str(getattr(ds, "InstitutionalDepartmentName", ""))
+        if department:
+            record.device.department = department
 
         record.raw_metadata["filepath"] = str(file_path)
         record.raw_metadata["sop_class_uid"] = str(getattr(ds, "SOPClassUID", ""))
@@ -156,21 +165,36 @@ class DICOMWaveformParser(Parser):
 
         return info
 
-    def _read_leads(self, ds) -> tuple[list[Lead], FilterSettings]:
+    def _read_leads(self, ds) -> tuple[list[Lead], FilterSettings, SignalCharacteristics]:
         leads: list[Lead] = []
         filters = FilterSettings()
+        sig = SignalCharacteristics(
+            data_encoding="pcm",
+            compression="none",
+        )
         highpass_values: list[float] = []
         lowpass_values: list[float] = []
+        notch_values: list[float] = []
 
         waveform_seq = getattr(ds, "WaveformSequence", None)
         if waveform_seq is None:
-            return leads, filters
+            return leads, filters, sig
 
         for wf in waveform_seq:
             num_channels = int(getattr(wf, "NumberOfWaveformChannels", 0))
             num_samples = int(getattr(wf, "NumberOfWaveformSamples", 0))
             sample_rate = float(getattr(wf, "SamplingFrequency", 0))
             bits_allocated = int(getattr(wf, "WaveformBitsAllocated", 16))
+
+            sig.bits_per_sample = bits_allocated
+            sig.number_channels_allocated = num_channels
+
+            # Determine signedness from WaveformSampleInterpretation
+            sample_interp = str(getattr(wf, "WaveformSampleInterpretation", ""))
+            if sample_interp in ("SB", "SS"):
+                sig.signal_signed = True
+            elif sample_interp in ("UB", "US"):
+                sig.signal_signed = False
 
             channel_defs = getattr(wf, "ChannelDefinitionSequence", [])
             waveform_data = getattr(wf, "WaveformData", None)
@@ -251,6 +275,13 @@ class DICOMWaveformParser(Parser):
                         except (ValueError, TypeError):
                             pass
 
+                    notch_freq = getattr(ch_def, "NotchFilterFrequency", None)
+                    if notch_freq is not None:
+                        try:
+                            notch_values.append(float(notch_freq))
+                        except (ValueError, TypeError):
+                            pass
+
                 samples = (channels[:, ch_idx].astype(np.float64) - baseline) * sensitivity
                 leads.append(Lead(
                     label=label,
@@ -266,8 +297,13 @@ class DICOMWaveformParser(Parser):
             filters.highpass = highpass_values[0]
         if lowpass_values:
             filters.lowpass = lowpass_values[0]
+        if notch_values:
+            filters.notch = notch_values[0]
+            filters.notch_active = True
 
-        return leads, filters
+        sig.number_channels_valid = len(leads)
+
+        return leads, filters, sig
 
     _MEASUREMENT_CODES: dict[str, str] = {
         "MDC_ECG_HEART_RATE": "heart_rate",

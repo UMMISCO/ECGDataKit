@@ -43,7 +43,6 @@ myst_enable_extensions = [
     "tasklist",
 ]
 myst_heading_anchors = 3
-myst_enable_extensions += ["tables"]
 source_suffix = {
     ".rst": "restructuredtext",
     ".md": "markdown",

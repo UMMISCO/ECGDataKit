@@ -14,7 +14,7 @@ Interactive plots require: `pip install ecgdatakit[plotting-interactive]` (plotl
 
 ## Static Plots (matplotlib)
 
-All functions return `matplotlib.figure.Figure`. Functions with an `ax` parameter can render into an existing axes for composability. When `ax=None`, a new figure is created.
+All static plot functions display the figure automatically by default (`show=True`). Pass `show=False` to suppress display and get back the `matplotlib.figure.Figure` for saving or further customization. Functions with an `ax` parameter can render into an existing axes for composability. When `ax=None`, a new figure is created.
 
 ### Lead Waveforms
 
@@ -22,8 +22,8 @@ All functions return `matplotlib.figure.Figure`. Functions with an `ax` paramete
   <thead><tr><th>Function</th><th>Description</th></tr></thead>
   <tbody>
     <tr>
-      <td><code><a href="reference.html#ecgdatakit.plotting.plot_lead">plot_lead</a>(lead, peaks=None, title=None, show_grid=True, figsize=(12,3), ax=None)</code></td>
-      <td>Single lead waveform with optional R-peak markers. ECG-style grid with major lines every 0.2s / 0.5mV.</td>
+      <td><code><a href="reference.html#ecgdatakit.plotting.plot_lead">plot_lead</a>(lead, peaks=None, title=None, show_grid=True, figsize=(12,3), ax=None, show=True, x_axis="time")</code></td>
+      <td>Single lead waveform with optional R-peak markers. ECG-style grid with major lines every 0.2s / 0.5mV. Set <code>x_axis="samples"</code> for sample indices instead of time.</td>
     </tr>
     <tr>
       <td><code><a href="reference.html#ecgdatakit.plotting.plot_leads">plot_leads</a>(leads, peaks_dict=None, title=None, show_grid=True, figsize=(12,None), share_x=True)</code></td>
@@ -39,12 +39,15 @@ All functions return `matplotlib.figure.Figure`. Functions with an `ax` paramete
 ```python
 from ecgdatakit.plotting import plot_12lead
 
-# From an ECGRecord (header with patient info)
-fig = plot_12lead(record)
+# Displays automatically — from an ECGRecord (header with patient info)
+plot_12lead(record)
+
+# Suppress display to save to file
+fig = plot_12lead(record, show=False)
 fig.savefig("ecg_grid.png", dpi=150)
 
 # From a list of leads (no header)
-fig = plot_12lead(record.leads)
+plot_12lead(record.leads)
 ```
 
 ### Annotations & Beats
@@ -130,7 +133,11 @@ fig = plot_12lead(record.leads)
 ```python
 from ecgdatakit.plotting import plot_report
 
-fig = plot_report(record)
+# Displays automatically
+plot_report(record)
+
+# Or suppress display to save
+fig = plot_report(record, show=False)
 fig.savefig("full_report.pdf")
 ```
 

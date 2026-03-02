@@ -49,6 +49,7 @@ class DeviceInfo:
 
     manufacturer: str = ""
     model: str = ""
+    name: str = ""
     serial_number: str = ""
     software_version: str = ""
     institution: str = ""
@@ -60,6 +61,7 @@ class DeviceInfo:
         return {
             "manufacturer": self.manufacturer,
             "model": self.model,
+            "name": self.name,
             "serial_number": self.serial_number,
             "software_version": self.software_version,
             "institution": self.institution,
@@ -147,6 +149,47 @@ class GlobalMeasurements:
 
 
 @dataclass
+class SignalCharacteristics:
+    """Technical signal encoding and acquisition metadata."""
+
+    bits_per_sample: int | None = None
+    signal_offset: int | None = None
+    signal_signed: bool | None = None
+    number_channels_allocated: int | None = None
+    number_channels_valid: int | None = None
+    electrode_placement: str = ""
+    compression: str = ""
+    data_encoding: str = ""
+    acsetting: int | None = None
+    filtered: bool | None = None
+    downsampled: bool | None = None
+    upsampled: bool | None = None
+    waveform_modified: bool | None = None
+    downsampling_method: str = ""
+    upsampling_method: str = ""
+
+    def to_dict(self) -> dict:
+        """Convert to a JSON-serialisable dictionary."""
+        return {
+            "bits_per_sample": self.bits_per_sample,
+            "signal_offset": self.signal_offset,
+            "signal_signed": self.signal_signed,
+            "number_channels_allocated": self.number_channels_allocated,
+            "number_channels_valid": self.number_channels_valid,
+            "electrode_placement": self.electrode_placement,
+            "compression": self.compression,
+            "data_encoding": self.data_encoding,
+            "acsetting": self.acsetting,
+            "filtered": self.filtered,
+            "downsampled": self.downsampled,
+            "upsampled": self.upsampled,
+            "waveform_modified": self.waveform_modified,
+            "downsampling_method": self.downsampling_method,
+            "upsampling_method": self.upsampling_method,
+        }
+
+
+@dataclass
 class RecordingInfo:
     """Recording session metadata."""
 
@@ -230,6 +273,7 @@ class ECGRecord:
     recording: RecordingInfo = field(default_factory=RecordingInfo)
     device: DeviceInfo = field(default_factory=DeviceInfo)
     filters: FilterSettings = field(default_factory=FilterSettings)
+    signal: SignalCharacteristics = field(default_factory=SignalCharacteristics)
     leads: list[Lead] = field(default_factory=list)
     interpretation: Interpretation = field(default_factory=Interpretation)
     measurements: GlobalMeasurements = field(default_factory=GlobalMeasurements)
@@ -253,6 +297,7 @@ class ECGRecord:
             "recording": self.recording.to_dict(),
             "device": self.device.to_dict(),
             "filters": self.filters.to_dict(),
+            "signal": self.signal.to_dict(),
             "leads": [lead.to_dict(include_samples=include_samples) for lead in self.leads],
             "interpretation": self.interpretation.to_dict(),
             "measurements": self.measurements.to_dict(),

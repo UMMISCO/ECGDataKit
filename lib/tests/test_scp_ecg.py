@@ -74,7 +74,7 @@ class TestSCPECGParser:
         assert set(d.keys()) == {
             "source_format", "patient", "recording", "device", "filters",
             "leads", "interpretation", "measurements", "median_beats",
-            "annotations",
+            "annotations", "signal",
         }
 
     def test_to_json_roundtrip(self, scp_ecg_file: Path):

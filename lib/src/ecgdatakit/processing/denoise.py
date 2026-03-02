@@ -17,8 +17,8 @@ from typing import TYPE_CHECKING
 import numpy as np
 from numpy.typing import NDArray
 
-from ecgdatakit.models import Lead
-from ecgdatakit.processing._core import new_lead
+from ecgdatakit.models import Lead, LeadLike
+from ecgdatakit.processing._core import ensure_lead, new_lead
 
 if TYPE_CHECKING:
     import torch
@@ -84,10 +84,12 @@ def _load_model(weights_path: str | Path, device: str = "cpu"):
 
 
 def denoise_deepfade(
-    lead: Lead,
+    lead: LeadLike,
     weights_path: str | Path,
     device: str = "cpu",
     batch_size: int = 32,
+    *,
+    fs: int | None = None,
 ) -> Lead:
     """Denoise an ECG lead using the DeepFADE neural network.
 
@@ -96,14 +98,16 @@ def denoise_deepfade(
 
     Parameters
     ----------
-    lead : Lead
-        Input ECG lead (single channel).
+    lead : Lead | NDArray[np.float64]
+        Input ECG lead or raw signal array (single channel).
     weights_path : str | Path
         Path to the pre-trained ``.pt`` weights file.
     device : str
         Torch device (``"cpu"``, ``"cuda"``, ``"mps"``).
     batch_size : int
         Inference batch size for multi-segment signals.
+    fs : int | None
+        Sample rate in Hz.  Required when *lead* is a numpy array.
 
     Returns
     -------
@@ -111,6 +115,7 @@ def denoise_deepfade(
         Denoised lead (new object, original unchanged).
     """
     torch = _require_torch()
+    lead = ensure_lead(lead, fs=fs)
 
     original_fs = lead.sample_rate
     if original_fs != _EXPECTED_FS:

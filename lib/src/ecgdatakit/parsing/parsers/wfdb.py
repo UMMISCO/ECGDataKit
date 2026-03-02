@@ -21,6 +21,7 @@ from ecgdatakit.models import (
     Lead,
     PatientInfo,
     RecordingInfo,
+    SignalCharacteristics,
 )
 from ecgdatakit.parsing.parser import Parser
 
@@ -139,6 +140,28 @@ class WFDBParser(Parser):
             record.leads = self._read_signals(
                 hea_path, signal_specs, num_signals, num_samples, sample_rate
             )
+
+        # Apply additional context from comments
+        if context.get("technician"):
+            record.recording.technician = context["technician"]
+        if context.get("institution"):
+            record.device.institution = context["institution"]
+        if context.get("device_model"):
+            record.device.model = context["device_model"]
+
+        # Signal characteristics
+        fmt_code = signal_specs[0]["format"] if signal_specs else 16
+        bits = signal_specs[0].get("adc_resolution", 12) if signal_specs else 12
+        adc_zero = signal_specs[0].get("adc_zero", 0) if signal_specs else 0
+        record.signal = SignalCharacteristics(
+            bits_per_sample=bits,
+            signal_offset=adc_zero if adc_zero != 0 else None,
+            signal_signed=True,
+            number_channels_allocated=num_signals,
+            number_channels_valid=len(record.leads),
+            data_encoding=f"format_{fmt_code}",
+            compression="none",
+        )
 
         record.raw_metadata["filepath"] = str(file_path)
         record.raw_metadata["record_name"] = record_name
@@ -261,6 +284,21 @@ class WFDBParser(Parser):
                     patient.first_name = name_parts[0]
                     if len(name_parts) > 1:
                         patient.last_name = name_parts[1]
+            elif key in ("race", "ethnicity"):
+                if value:
+                    patient.race = value
+            elif key in ("history", "clinical_history", "clinical history"):
+                if value:
+                    patient.clinical_history = value
+            elif key == "technician":
+                if value:
+                    context.setdefault("technician", value)
+            elif key in ("institution", "hospital"):
+                if value:
+                    context.setdefault("institution", value)
+            elif key in ("device", "equipment"):
+                if value:
+                    context.setdefault("device_model", value)
 
     def _read_signals(
         self,

@@ -20,6 +20,7 @@ from ecgdatakit.models import (
     Lead,
     PatientInfo,
     RecordingInfo,
+    SignalCharacteristics,
 )
 from ecgdatakit.parsing.parser import Parser
 
@@ -81,7 +82,13 @@ def _parse_edfplus_patient(patient_str: str) -> PatientInfo:
         except ValueError:
             pass
     if len(parts) >= 4 and parts[3] != "X":
-        info.last_name = parts[3]
+        name = parts[3]
+        if "_" in name:
+            name_parts = name.split("_", 1)
+            info.last_name = name_parts[0]
+            info.first_name = name_parts[1]
+        else:
+            info.last_name = name
 
     return info
 
@@ -292,6 +299,8 @@ class EDFParser(Parser):
                 record.device = DeviceInfo(model=rec_id_fields["equipment"])
             if rec_id_fields["technician"]:
                 record.recording.technician = rec_id_fields["technician"]
+            if rec_id_fields["investigator"]:
+                record.recording.referring_physician = rec_id_fields["investigator"]
 
         data_offset = header_bytes
         if data_offset > len(raw):
@@ -409,6 +418,15 @@ class EDFParser(Parser):
                                or ref.lowpass is not None
                                or ref.notch is not None):
                 record.filters = ref
+
+        record.signal = SignalCharacteristics(
+            bits_per_sample=16,
+            signal_signed=True,
+            number_channels_allocated=num_signals,
+            number_channels_valid=len(record.leads),
+            data_encoding="int16",
+            compression="none",
+        )
 
         record.raw_metadata["filepath"] = str(file_path)
         record.raw_metadata["recording_id"] = _clean_str(recording_id_str)

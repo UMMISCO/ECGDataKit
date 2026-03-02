@@ -26,6 +26,7 @@ from ecgdatakit.models import (
     Lead,
     PatientInfo,
     RecordingInfo,
+    SignalCharacteristics,
 )
 from ecgdatakit.parsing.parser import Parser
 
@@ -124,6 +125,13 @@ class BeneHeartR12Parser(Parser):
             duration_s = len(record.leads[0].samples) / record.recording.sample_rate
             record.recording.duration = timedelta(seconds=duration_s)
 
+        record.signal = SignalCharacteristics(
+            signal_signed=True,
+            number_channels_valid=len(record.leads),
+            data_encoding="base64_int16le",
+            compression="none",
+        )
+
         record.raw_metadata["filepath"] = str(file_path)
 
         return record
@@ -160,6 +168,20 @@ class BeneHeartR12Parser(Parser):
         if age_str and age_str.isdigit():
             info.age = int(age_str)
 
+        height_str = self._get_text(demo, "Height") or self._get_text(demo, "PatientHeight")
+        if height_str:
+            try:
+                info.height = float(height_str)
+            except (ValueError, TypeError):
+                pass
+
+        weight_str = self._get_text(demo, "Weight") or self._get_text(demo, "PatientWeight")
+        if weight_str:
+            try:
+                info.weight = float(weight_str)
+            except (ValueError, TypeError):
+                pass
+
         return info
 
     def _read_recording(self, root: dict) -> RecordingInfo:
@@ -193,11 +215,6 @@ class BeneHeartR12Parser(Parser):
                     info.sample_rate = int(float(sr_str))
                 except ValueError:
                     pass
-
-            info.device = self._get_text(acq, "Device") or self._get_text(acq, "Model") or "BeneHeart R12"
-
-        if not info.device:
-            info.device = "BeneHeart R12"
 
         return info
 
@@ -381,6 +398,20 @@ class BeneHeartR12Parser(Parser):
                     except (ValueError, TypeError):
                         pass
 
+                rr = self._get_text(meas_node, "RRInterval") or self._get_text(meas_node, "RR")
+                if rr:
+                    try:
+                        measurements.rr_interval = int(float(rr))
+                    except (ValueError, TypeError):
+                        pass
+
+                qrs_count = self._get_text(meas_node, "QRSCount") or self._get_text(meas_node, "NumQRS")
+                if qrs_count:
+                    try:
+                        measurements.qrs_count = int(float(qrs_count))
+                    except (ValueError, TypeError):
+                        pass
+
         return interp, measurements
 
     def _read_device(self, root: dict) -> DeviceInfo:
@@ -397,7 +428,12 @@ class BeneHeartR12Parser(Parser):
                 continue
 
             if not dev.model or dev.model == "BeneHeart R12":
-                name = self._get_text(src, "DeviceName") or self._get_text(src, "DeviceModel")
+                name = (
+                    self._get_text(src, "DeviceName") or
+                    self._get_text(src, "DeviceModel") or
+                    self._get_text(src, "Device") or
+                    self._get_text(src, "Model")
+                )
                 if name:
                     dev.model = name
 
@@ -447,6 +483,8 @@ class BeneHeartR12Parser(Parser):
             if nf:
                 try:
                     filters.notch = float(nf)
+                    if filters.notch:
+                        filters.notch_active = True
                 except (ValueError, TypeError):
                     pass
 

@@ -27,6 +27,15 @@ if TYPE_CHECKING:
     import plotly.graph_objects as go
 
 
+def _x_data_i(lead, x_axis):
+    """Return ``(x_array, xlabel, hover_template)`` based on *x_axis* mode."""
+    if x_axis == "samples":
+        x = np.arange(1, len(lead.samples) + 1)
+        return x, "Sample", "Sample: %{x}<br>Amplitude: %{y:.3f}<extra></extra>"
+    x = time_axis(lead)
+    return x, "Time (s)", "Time: %{x:.3f}s<br>Amplitude: %{y:.3f}<extra></extra>"
+
+
 
 def iplot_lead(
     lead: LeadLike,
@@ -35,6 +44,8 @@ def iplot_lead(
     height: int = 300,
     *,
     fs: int | None = None,
+    show: bool = True,
+    x_axis: str = "time",
 ) -> go.Figure:
     """Interactive single lead with hover showing time/amplitude.
 
@@ -50,34 +61,42 @@ def iplot_lead(
         Figure height in pixels.
     fs : int | None
         Sample rate in Hz.  Required when *lead* is a numpy array.
+    show : bool
+        Display the plot immediately (default ``True``).
+    x_axis : str
+        ``"time"`` for seconds (default) or ``"samples"`` for sample indices.
     """
     lead = ensure_lead(lead, fs=fs)
     require_plotly()
     import plotly.graph_objects as go
 
-    t = time_axis(lead)
+    x, xlabel, hover_tpl = _x_data_i(lead, x_axis)
 
     fig = go.Figure()
     fig.add_trace(go.Scatter(
-        x=t, y=lead.samples,
+        x=x, y=lead.samples,
         mode="lines",
         name=lead.label,
         line=dict(color=lead_color(lead.label), width=1),
-        hovertemplate="Time: %{x:.3f}s<br>Amplitude: %{y:.3f}<extra></extra>",
+        hovertemplate=hover_tpl,
     ))
 
     if peaks is not None and len(peaks) > 0:
+        if x_axis == "samples":
+            peak_hover = "Sample: %{x}<br>Amplitude: %{y:.3f}<extra></extra>"
+        else:
+            peak_hover = "Peak at %{x:.3f}s<br>Amplitude: %{y:.3f}<extra></extra>"
         fig.add_trace(go.Scatter(
-            x=t[peaks], y=lead.samples[peaks],
+            x=x[peaks], y=lead.samples[peaks],
             mode="markers",
             name="R-peaks",
             marker=dict(color="red", size=8, symbol="triangle-down"),
-            hovertemplate="Peak at %{x:.3f}s<br>Amplitude: %{y:.3f}<extra></extra>",
+            hovertemplate=peak_hover,
         ))
 
     fig.update_layout(
         title=title or lead.label,
-        xaxis_title="Time (s)",
+        xaxis_title=xlabel,
         yaxis_title=f"Amplitude ({lead.units})" if lead.units else "Amplitude",
         height=height,
         xaxis=dict(
@@ -87,6 +106,10 @@ def iplot_lead(
         yaxis=dict(showspikes=True, spikemode="across", spikethickness=1),
         hovermode="x unified",
     )
+
+    if show:
+        fig.show()
+
     return fig
 
 
@@ -95,6 +118,9 @@ def iplot_leads(
     peaks_dict: dict[str, NDArray[np.intp]] | None = None,
     title: str | None = None,
     height: int | None = None,
+    *,
+    show: bool = True,
+    x_axis: str = "time",
 ) -> go.Figure:
     """Interactive stacked leads with synchronized X-axis zoom.
 
@@ -108,6 +134,10 @@ def iplot_leads(
         Overall title.
     height : int | None
         Figure height (auto-calculated if ``None``).
+    show : bool
+        Display the plot immediately (default ``True``).
+    x_axis : str
+        ``"time"`` for seconds (default) or ``"samples"`` for sample indices.
     """
     require_plotly()
     import plotly.graph_objects as go
@@ -129,10 +159,10 @@ def iplot_leads(
     )
 
     for i, ld in enumerate(lead_list, start=1):
-        t = time_axis(ld)
+        x, _, _ = _x_data_i(ld, x_axis)
         fig.add_trace(
             go.Scatter(
-                x=t, y=ld.samples,
+                x=x, y=ld.samples,
                 mode="lines",
                 name=ld.label,
                 line=dict(color=lead_color(ld.label), width=1),
@@ -145,7 +175,7 @@ def iplot_leads(
             pk = peaks_dict[ld.label]
             fig.add_trace(
                 go.Scatter(
-                    x=t[pk], y=ld.samples[pk],
+                    x=x[pk], y=ld.samples[pk],
                     mode="markers",
                     name=f"{ld.label} peaks",
                     marker=dict(color="red", size=6, symbol="triangle-down"),
@@ -154,13 +184,18 @@ def iplot_leads(
                 row=i, col=1,
             )
 
+    xlabel = "Sample" if x_axis == "samples" else "Time (s)"
     fig.update_layout(
         title=title or "ECG Leads",
         height=h,
         hovermode="x unified",
         showlegend=True,
     )
-    fig.update_xaxes(title_text="Time (s)", row=n, col=1)
+    fig.update_xaxes(title_text=xlabel, row=n, col=1)
+
+    if show:
+        fig.show()
+
     return fig
 
 
@@ -169,6 +204,9 @@ def iplot_12lead(
     record: ECGRecord | None = None,
     duration: float = 10.0,
     height: int = 800,
+    *,
+    show: bool = True,
+    x_axis: str = "time",
 ) -> go.Figure:
     """Interactive 12-lead grid.
 
@@ -182,6 +220,10 @@ def iplot_12lead(
         Seconds per cell (default 10).
     height : int
         Figure height in pixels.
+    show : bool
+        Display the plot immediately (default ``True``).
+    x_axis : str
+        ``"time"`` for seconds (default) or ``"samples"`` for sample indices.
     """
     require_plotly()
     import plotly.graph_objects as go
@@ -215,32 +257,32 @@ def iplot_12lead(
         for col_idx, lbl in enumerate(row_labels):
             ld = _find_lead(lead_list, lbl)
             if ld is not None:
-                t = time_axis(ld)
+                x, _, _ = _x_data_i(ld, x_axis)
                 max_s = int(duration * ld.sample_rate)
                 sl = slice(0, min(max_s, len(ld.samples)))
                 fig.add_trace(
                     go.Scatter(
-                        x=t[sl], y=ld.samples[sl],
+                        x=x[sl], y=ld.samples[sl],
                         mode="lines",
                         name=lbl,
                         line=dict(color=lead_color(lbl), width=1),
                         showlegend=False,
-                        hovertemplate=f"{lbl}<br>%{{x:.3f}}s: %{{y:.3f}}<extra></extra>",
+                        hovertemplate=f"{lbl}<br>%{{x:.3f}}: %{{y:.3f}}<extra></extra>",
                     ),
                     row=row_idx + 1, col=col_idx + 1,
                 )
 
     rl = _find_lead(lead_list, "II")
     if rl is not None:
-        t = time_axis(rl)
+        x, _, _ = _x_data_i(rl, x_axis)
         fig.add_trace(
             go.Scatter(
-                x=t, y=rl.samples,
+                x=x, y=rl.samples,
                 mode="lines",
                 name="II rhythm",
                 line=dict(color=lead_color("II"), width=1),
                 showlegend=False,
-                hovertemplate="II<br>%{x:.3f}s: %{y:.3f}<extra></extra>",
+                hovertemplate="II<br>%{x:.3f}: %{y:.3f}<extra></extra>",
             ),
             row=4, col=1,
         )
@@ -261,6 +303,10 @@ def iplot_12lead(
         hovermode="closest",
         margin=dict(t=80 if rec else 40),
     )
+
+    if show:
+        fig.show()
+
     return fig
 
 
@@ -291,7 +337,7 @@ def _build_header_text(record: ECGRecord) -> str:
     if meas:
         parts.append(" | ".join(meas))
 
-    return "  —  ".join(parts) if parts else "ECG Report"
+    return "  \u2014  ".join(parts) if parts else "ECG Report"
 
 
 
@@ -302,6 +348,8 @@ def iplot_peaks(
     height: int = 350,
     *,
     fs: int | None = None,
+    show: bool = True,
+    x_axis: str = "time",
 ) -> go.Figure:
     """Interactive lead with R-peak markers.
 
@@ -315,6 +363,10 @@ def iplot_peaks(
         R-peak indices. Auto-detected if ``None``.
     fs : int | None
         Sample rate in Hz.  Required when *lead* is a numpy array.
+    show : bool
+        Display the plot immediately (default ``True``).
+    x_axis : str
+        ``"time"`` for seconds (default) or ``"samples"`` for sample indices.
     """
     from ecgdatakit.processing.peaks import detect_r_peaks
 
@@ -325,21 +377,21 @@ def iplot_peaks(
     if peaks is None:
         peaks = detect_r_peaks(lead)
 
-    t = time_axis(lead)
+    x, xlabel, hover_tpl = _x_data_i(lead, x_axis)
 
     fig = go.Figure()
     fig.add_trace(go.Scatter(
-        x=t, y=lead.samples,
+        x=x, y=lead.samples,
         mode="lines",
         name=lead.label,
         line=dict(color=lead_color(lead.label), width=1),
-        hovertemplate="Time: %{x:.3f}s<br>Amplitude: %{y:.3f}<extra></extra>",
+        hovertemplate=hover_tpl,
     ))
 
     if len(peaks) > 0:
         hover_texts = []
         for i, p in enumerate(peaks):
-            parts = [f"Peak #{i}", f"Time: {t[p]:.3f}s"]
+            parts = [f"Peak #{i}", f"Pos: {x[p]:.3f}" if x_axis == "time" else f"Sample: {x[p]}"]
             if i > 0:
                 rr = (peaks[i] - peaks[i - 1]) / lead.sample_rate * 1000
                 hr = 60_000.0 / rr if rr > 0 else 0
@@ -348,7 +400,7 @@ def iplot_peaks(
             hover_texts.append("<br>".join(parts))
 
         fig.add_trace(go.Scatter(
-            x=t[peaks], y=lead.samples[peaks],
+            x=x[peaks], y=lead.samples[peaks],
             mode="markers",
             name="R-peaks",
             marker=dict(color="red", size=9, symbol="triangle-down"),
@@ -357,13 +409,17 @@ def iplot_peaks(
         ))
 
     fig.update_layout(
-        title=title or f"{lead.label} — R-peaks",
-        xaxis_title="Time (s)",
+        title=title or f"{lead.label} \u2014 R-peaks",
+        xaxis_title=xlabel,
         yaxis_title=f"Amplitude ({lead.units})" if lead.units else "Amplitude",
         height=height,
         xaxis=dict(rangeslider=dict(visible=True)),
         hovermode="closest",
     )
+
+    if show:
+        fig.show()
+
     return fig
 
 
@@ -374,6 +430,7 @@ def iplot_spectrum(
     height: int = 400,
     *,
     fs: int | None = None,
+    show: bool = True,
 ) -> go.Figure:
     """Interactive spectrum with frequency band highlighting.
 
@@ -385,6 +442,8 @@ def iplot_spectrum(
         ``"welch"`` for PSD or ``"fft"`` for magnitude spectrum.
     fs : int | None
         Sample rate in Hz.  Required when *lead* is a numpy array.
+    show : bool
+        Display the plot immediately (default ``True``).
     """
     from ecgdatakit.processing.transforms import fft as ecg_fft
     from ecgdatakit.processing.transforms import power_spectrum
@@ -423,13 +482,17 @@ def iplot_spectrum(
     fig.add_vrect(x0=0.05, x1=150, fillcolor="green", opacity=0.05, line_width=0, annotation_text="ECG band")
 
     fig.update_layout(
-        title=f"{lead.label} — {title_suffix}",
+        title=f"{lead.label} \u2014 {title_suffix}",
         xaxis_title="Frequency (Hz)",
         yaxis_title=y_label,
         height=height,
         xaxis=dict(range=[0, min(nyquist, 250)]),
         hovermode="x unified",
     )
+
+    if show:
+        fig.show()
+
     return fig
 
 
@@ -437,6 +500,8 @@ def iplot_spectrum(
 def iplot_rr_tachogram(
     rr_ms: NDArray[np.float64],
     height: int = 300,
+    *,
+    show: bool = True,
 ) -> go.Figure:
     """Interactive RR interval tachogram.
 
@@ -444,6 +509,8 @@ def iplot_rr_tachogram(
     ----------
     rr_ms : NDArray
         RR intervals in milliseconds.
+    show : bool
+        Display the plot immediately (default ``True``).
     """
     require_plotly()
     import plotly.graph_objects as go
@@ -475,19 +542,27 @@ def iplot_rr_tachogram(
         height=height,
         hovermode="x unified",
     )
+
+    if show:
+        fig.show()
+
     return fig
 
 
 def iplot_poincare(
     rr_ms: NDArray[np.float64],
     height: int = 500,
+    *,
+    show: bool = True,
 ) -> go.Figure:
-    """Interactive Poincaré plot with SD1/SD2 ellipse.
+    """Interactive Poincar\u00e9 plot with SD1/SD2 ellipse.
 
     Parameters
     ----------
     rr_ms : NDArray
         RR intervals in milliseconds.
+    show : bool
+        Display the plot immediately (default ``True``).
     """
     require_plotly()
     import plotly.graph_objects as go
@@ -502,7 +577,7 @@ def iplot_poincare(
     x = rr_ms[:-1]
     y = rr_ms[1:]
 
-    hover = [f"Beat {i}→{i+1}<br>RR(n): {x[i]:.0f} ms<br>RR(n+1): {y[i]:.0f} ms"
+    hover = [f"Beat {i}\u2192{i+1}<br>RR(n): {x[i]:.0f} ms<br>RR(n+1): {y[i]:.0f} ms"
              for i in range(len(x))]
 
     fig.add_trace(go.Scatter(
@@ -544,13 +619,17 @@ def iplot_poincare(
     ))
 
     fig.update_layout(
-        title="Poincaré Plot",
+        title="Poincar\u00e9 Plot",
         xaxis_title="RR(n) (ms)",
         yaxis_title="RR(n+1) (ms)",
         height=height,
         yaxis=dict(scaleanchor="x", scaleratio=1),
         hovermode="closest",
     )
+
+    if show:
+        fig.show()
+
     return fig
 
 
@@ -558,6 +637,9 @@ def iplot_poincare(
 def iplot_report(
     record: ECGRecord,
     height: int = 1200,
+    *,
+    show: bool = True,
+    x_axis: str = "time",
 ) -> go.Figure:
     """Interactive full ECG report.
 
@@ -565,6 +647,10 @@ def iplot_report(
     ----------
     record : ECGRecord
         Full ECG record.
+    show : bool
+        Display the plot immediately (default ``True``).
+    x_axis : str
+        ``"time"`` for seconds (default) or ``"samples"`` for sample indices.
     """
     require_plotly()
     import plotly.graph_objects as go
@@ -584,32 +670,32 @@ def iplot_report(
     )
 
     for i, ld in enumerate(leads[:n_leads], start=1):
-        t = time_axis(ld)
+        x, _, _ = _x_data_i(ld, x_axis)
         max_s = int(10.0 * ld.sample_rate)
         sl = slice(0, min(max_s, len(ld.samples)))
         fig.add_trace(
             go.Scatter(
-                x=t[sl], y=ld.samples[sl],
+                x=x[sl], y=ld.samples[sl],
                 mode="lines",
                 name=ld.label,
                 line=dict(color=lead_color(ld.label), width=1),
                 showlegend=False,
-                hovertemplate=f"{ld.label}<br>%{{x:.3f}}s: %{{y:.3f}}<extra></extra>",
+                hovertemplate=f"{ld.label}<br>%{{x:.3f}}: %{{y:.3f}}<extra></extra>",
             ),
             row=i, col=1,
         )
 
     rl = _find_lead(leads, "II")
     if rl is not None:
-        t = time_axis(rl)
+        x, _, _ = _x_data_i(rl, x_axis)
         fig.add_trace(
             go.Scatter(
-                x=t, y=rl.samples,
+                x=x, y=rl.samples,
                 mode="lines",
                 name="II rhythm",
                 line=dict(color=lead_color("II"), width=1),
                 showlegend=False,
-                hovertemplate="II<br>%{x:.3f}s: %{y:.3f}<extra></extra>",
+                hovertemplate="II<br>%{x:.3f}: %{y:.3f}<extra></extra>",
             ),
             row=total_rows, col=1,
         )
@@ -625,10 +711,15 @@ def iplot_report(
         align="left",
     )
 
+    xlabel = "Sample" if x_axis == "samples" else "Time (s)"
     fig.update_layout(
         height=height,
         hovermode="closest",
         margin=dict(t=60),
     )
-    fig.update_xaxes(title_text="Time (s)", row=total_rows, col=1)
+    fig.update_xaxes(title_text=xlabel, row=total_rows, col=1)
+
+    if show:
+        fig.show()
+
     return fig

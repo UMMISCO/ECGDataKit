@@ -51,6 +51,7 @@ The unified output type returned by every parser.
 | `recording` | `RecordingInfo` | Recording session metadata |
 | `device` | `DeviceInfo` | Acquisition device info |
 | `filters` | `FilterSettings` | Filter settings applied during acquisition |
+| `signal` | `SignalCharacteristics` | Technical signal encoding metadata |
 | `leads` | `list[Lead]` | ECG lead waveforms |
 | `interpretation` | `Interpretation` | Machine or physician interpretation |
 | `measurements` | `GlobalMeasurements` | Global ECG interval/axis measurements |
@@ -100,6 +101,7 @@ The unified output type returned by every parser.
 |-------|------|-------------|
 | `manufacturer` | `str` | Device manufacturer |
 | `model` | `str` | Device model name |
+| `name` | `str` | Device name (distinct from model, when available) |
 | `serial_number` | `str` | Device serial number |
 | `software_version` | `str` | Software version |
 | `institution` | `str` | Institution name |
@@ -115,6 +117,28 @@ The unified output type returned by every parser.
 | `notch` | `float \| None` | Notch frequency (Hz) |
 | `notch_active` | `bool \| None` | Whether notch filter is active |
 | `artifact_filter` | `bool \| None` | Whether artifact filter is active |
+
+### SignalCharacteristics
+
+Technical signal encoding and acquisition metadata. Populated by each parser from format-specific fields.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `bits_per_sample` | `int \| None` | Bits per sample (e.g. 16, 12, 32) |
+| `signal_offset` | `int \| None` | ADC zero/offset value |
+| `signal_signed` | `bool \| None` | Whether samples are signed |
+| `number_channels_allocated` | `int \| None` | Total channels in the file |
+| `number_channels_valid` | `int \| None` | Channels successfully parsed |
+| `electrode_placement` | `str` | Electrode placement code |
+| `compression` | `str` | Compression method (e.g. `"none"`, `"huffman"`) |
+| `data_encoding` | `str` | Data encoding (e.g. `"base64_int16le"`, `"int16"`, `"format_212"`) |
+| `acsetting` | `int \| None` | AC setting code |
+| `filtered` | `bool \| None` | Whether data was pre-filtered |
+| `downsampled` | `bool \| None` | Whether data was downsampled |
+| `upsampled` | `bool \| None` | Whether data was upsampled |
+| `waveform_modified` | `bool \| None` | Whether waveform was modified |
+| `downsampling_method` | `str` | Downsampling method description |
+| `upsampling_method` | `str` | Upsampling method description |
 
 ### Interpretation
 

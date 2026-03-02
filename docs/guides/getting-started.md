@@ -4,24 +4,40 @@ This guide walks you through installing ECGDataKit, parsing your first ECG file,
 
 ## Installation
 
-Install the core library with pip:
+### From PyPI
 
 ```bash
+pip install ecgdatakit
+```
+
+### From GitHub (latest development version)
+
+```bash
+pip install "ecgdatakit @ git+https://github.com/UMMISCO/ECGDataKit.git#subdirectory=lib"
+```
+
+### From source (local clone)
+
+```bash
+git clone https://github.com/UMMISCO/ECGDataKit.git
+cd ECGDataKit/lib
 pip install .
 ```
+
+### Optional extras
 
 ECGDataKit ships several optional dependency groups. Install only what you need:
 
 | Extra | Command | Description |
 |-------|---------|-------------|
-| `processing` | `pip install ".[processing]"` | Signal filtering, peak detection, HRV analysis |
-| `plotting` | `pip install ".[plotting]"` | Static Matplotlib-based plots |
-| `plotting-interactive` | `pip install ".[plotting-interactive]"` | Interactive Plotly-based plots |
-| `holter` | `pip install ".[holter]"` | ISHNE Holter format CRC validation |
-| `dicom` | `pip install ".[dicom]"` | DICOM waveform parsing via pydicom |
-| `cleaning` | `pip install ".[cleaning]"` | BioSPPy + NeuroKit2 ECG cleaning backends |
-| `denoising` | `pip install ".[denoising]"` | DeepFADE neural-net denoiser (torch) |
-| `all` | `pip install ".[all]"` | Everything above (except torch) |
+| `processing` | `pip install "ecgdatakit[processing]"` | Signal filtering, peak detection, HRV analysis |
+| `plotting` | `pip install "ecgdatakit[plotting]"` | Static Matplotlib-based plots |
+| `plotting-interactive` | `pip install "ecgdatakit[plotting-interactive]"` | Interactive Plotly-based plots |
+| `holter` | `pip install "ecgdatakit[holter]"` | ISHNE Holter format CRC validation |
+| `dicom` | `pip install "ecgdatakit[dicom]"` | DICOM waveform parsing via pydicom |
+| `cleaning` | `pip install "ecgdatakit[cleaning]"` | BioSPPy + NeuroKit2 ECG cleaning backends |
+| `denoising` | `pip install "ecgdatakit[denoising]"` | DeepFADE neural-net denoiser (torch) |
+| `all` | `pip install "ecgdatakit[all]"` | Everything above (except torch) |
 
 ## Parsing an ECG file
 
@@ -186,17 +202,22 @@ ECGDataKit provides both static (Matplotlib) and interactive (Plotly) plotting f
 
 ### Static plots
 
+Static plots auto-display by default. Pass `show=False` to get the figure without displaying.
+
 ```python
-from ecgdatakit.plotting import plot_12lead, plot_peaks, plot_hrv_summary
+from ecgdatakit.plotting import plot_12lead, plot_peaks, plot_lead, plot_hrv_summary
 
-# Standard 12-lead ECG layout
+# Displays automatically
 plot_12lead(record)
-
-# Overlay detected R-peaks on a filtered signal
 plot_peaks(filtered, peaks)
-
-# HRV summary plot (Poincare, histogram, tachogram)
 plot_hrv_summary(rr)
+
+# Suppress display to save to file
+fig = plot_12lead(record, show=False)
+fig.savefig("ecg_12lead.png", dpi=150)
+
+# Use sample indices instead of time on x-axis
+plot_lead(filtered, x_axis="samples")
 ```
 
 ### Interactive plots

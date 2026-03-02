@@ -8,8 +8,8 @@ from __future__ import annotations
 
 import numpy as np
 
-from ecgdatakit.models import Lead
-from ecgdatakit.processing._core import new_lead
+from ecgdatakit.models import Lead, LeadLike
+from ecgdatakit.processing._core import ensure_lead, new_lead
 
 
 def _check_compatible(a: Lead, b: Lead) -> None:
@@ -25,29 +25,54 @@ def _check_compatible(a: Lead, b: Lead) -> None:
         )
 
 
-def derive_lead_iii(lead_i: Lead, lead_ii: Lead) -> Lead:
+def derive_lead_iii(
+    lead_i: LeadLike,
+    lead_ii: LeadLike,
+    *,
+    fs: int | None = None,
+) -> Lead:
     """Derive Lead III from Leads I and II (Einthoven's law: III = II - I).
 
     Parameters
     ----------
-    lead_i : Lead
+    lead_i : Lead | NDArray[np.float64]
         Lead I signal.
-    lead_ii : Lead
+    lead_ii : Lead | NDArray[np.float64]
         Lead II signal.
+    fs : int | None
+        Sample rate in Hz.  Required when passing numpy arrays.
     """
+    lead_i = ensure_lead(lead_i, fs=fs, label="I")
+    lead_ii = ensure_lead(lead_ii, fs=fs, label="II")
     _check_compatible(lead_i, lead_ii)
     samples = (lead_ii.samples - lead_i.samples).astype(np.float64)
     return new_lead(lead_i, samples=samples, label="III")
 
 
-def derive_augmented(lead_i: Lead, lead_ii: Lead) -> list[Lead]:
+def derive_augmented(
+    lead_i: LeadLike,
+    lead_ii: LeadLike,
+    *,
+    fs: int | None = None,
+) -> list[Lead]:
     """Derive augmented limb leads aVR, aVL, aVF from Leads I and II.
+
+    Parameters
+    ----------
+    lead_i : Lead | NDArray[np.float64]
+        Lead I signal.
+    lead_ii : Lead | NDArray[np.float64]
+        Lead II signal.
+    fs : int | None
+        Sample rate in Hz.  Required when passing numpy arrays.
 
     Returns
     -------
     list[Lead]
         [aVR, aVL, aVF] in that order.
     """
+    lead_i = ensure_lead(lead_i, fs=fs, label="I")
+    lead_ii = ensure_lead(lead_ii, fs=fs, label="II")
     _check_compatible(lead_i, lead_ii)
     i, ii = lead_i.samples, lead_ii.samples
 
@@ -63,29 +88,41 @@ def derive_augmented(lead_i: Lead, lead_ii: Lead) -> list[Lead]:
 
 
 def derive_standard_12(
-    lead_i: Lead,
-    lead_ii: Lead,
-    v1: Lead,
-    v2: Lead,
-    v3: Lead,
-    v4: Lead,
-    v5: Lead,
-    v6: Lead,
+    lead_i: LeadLike,
+    lead_ii: LeadLike,
+    v1: LeadLike,
+    v2: LeadLike,
+    v3: LeadLike,
+    v4: LeadLike,
+    v5: LeadLike,
+    v6: LeadLike,
+    *,
+    fs: int | None = None,
 ) -> list[Lead]:
     """Assemble a full 12-lead ECG, deriving III, aVR, aVL, aVF.
 
     Parameters
     ----------
-    lead_i, lead_ii : Lead
+    lead_i, lead_ii : Lead | NDArray[np.float64]
         Limb leads I and II.
-    v1..v6 : Lead
+    v1..v6 : Lead | NDArray[np.float64]
         Precordial leads.
+    fs : int | None
+        Sample rate in Hz.  Required when passing numpy arrays.
 
     Returns
     -------
     list[Lead]
         12 leads in standard order: I, II, III, aVR, aVL, aVF, V1–V6.
     """
+    lead_i = ensure_lead(lead_i, fs=fs, label="I")
+    lead_ii = ensure_lead(lead_ii, fs=fs, label="II")
+    v1 = ensure_lead(v1, fs=fs, label="V1")
+    v2 = ensure_lead(v2, fs=fs, label="V2")
+    v3 = ensure_lead(v3, fs=fs, label="V3")
+    v4 = ensure_lead(v4, fs=fs, label="V4")
+    v5 = ensure_lead(v5, fs=fs, label="V5")
+    v6 = ensure_lead(v6, fs=fs, label="V6")
     iii = derive_lead_iii(lead_i, lead_ii)
     avr, avl, avf = derive_augmented(lead_i, lead_ii)
     return [lead_i, lead_ii, iii, avr, avl, avf, v1, v2, v3, v4, v5, v6]

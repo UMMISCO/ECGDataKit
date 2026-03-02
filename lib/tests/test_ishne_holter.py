@@ -83,7 +83,7 @@ class TestISHNEHolterParser:
         assert set(d.keys()) == {
             "source_format", "patient", "recording", "device", "filters",
             "leads", "interpretation", "measurements", "median_beats",
-            "annotations",
+            "annotations", "signal",
         }
 
     def test_to_json_roundtrip(self, ishne_file: Path):

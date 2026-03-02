@@ -23,6 +23,9 @@ All models are Python ``dataclass`` instances defined in ``ecgdatakit.models``.
 .. autoclass:: FilterSettings
    :members:
 
+.. autoclass:: SignalCharacteristics
+   :members:
+
 .. autoclass:: GlobalMeasurements
    :members:
 

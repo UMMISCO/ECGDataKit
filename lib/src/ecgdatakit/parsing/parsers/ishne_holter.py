@@ -13,7 +13,7 @@ from pathlib import Path
 import numpy as np
 
 from ecgdatakit.exceptions import ChecksumError, CorruptedFileError
-from ecgdatakit.models import DeviceInfo, ECGRecord, FilterSettings, Lead, PatientInfo, RecordingInfo
+from ecgdatakit.models import DeviceInfo, ECGRecord, FilterSettings, Lead, PatientInfo, RecordingInfo, SignalCharacteristics
 from ecgdatakit.parsing.parser import Parser
 
 _MAGIC_ECG = b"ISHNE1.0"
@@ -168,6 +168,15 @@ class ISHNEHolterParser(Parser):
             with open(filename, "rb") as f:
                 f.seek(var_block_offset, os.SEEK_SET)
                 variable_block_hex = f.read(var_block_size).hex()
+
+        record.signal = SignalCharacteristics(
+            bits_per_sample=16,
+            signal_signed=True,
+            number_channels_allocated=nleads,
+            number_channels_valid=len(record.leads),
+            data_encoding="int16",
+            compression="none",
+        )
 
         record.raw_metadata["filepath"] = filename
         record.raw_metadata["var_block_size"] = var_block_size

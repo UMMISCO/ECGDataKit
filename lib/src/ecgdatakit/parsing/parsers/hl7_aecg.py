@@ -19,6 +19,7 @@ from ecgdatakit.models import (
     Lead,
     PatientInfo,
     RecordingInfo,
+    SignalCharacteristics,
 )
 from ecgdatakit.parsing.parser import Parser
 
@@ -68,6 +69,56 @@ class HL7aECGParser(Parser):
         measurements, interpretation = self._read_annotations(doc)
         record.measurements = measurements
         record.interpretation = interpretation
+        # Signal characteristics
+        record.signal = SignalCharacteristics(
+            data_encoding="decimal",
+            compression="none",
+            number_channels_valid=len(record.leads),
+            number_channels_allocated=len(record.leads),
+        )
+
+        # Extract device serial number from assignedAuthor/id
+        author_node = find_tag(doc, "author")
+        if author_node is not None:
+            if isinstance(author_node, list):
+                author_node = author_node[0]
+            assigned = find_tag(author_node, "assignedAuthor")
+            if assigned is not None:
+                if isinstance(assigned, list):
+                    assigned = assigned[0]
+                id_node = find_tag(assigned, "id")
+                if id_node is not None:
+                    if isinstance(id_node, list):
+                        id_node = id_node[0]
+                    if isinstance(id_node, dict):
+                        ext = read_path(id_node, "@extension")
+                        if ext and not record.device.serial_number:
+                            record.device.serial_number = str(ext)
+
+        # Extract custodian organization as institution
+        custodian = find_tag(doc, "custodian")
+        if custodian is not None:
+            if isinstance(custodian, list):
+                custodian = custodian[0]
+            org_name = find_tag(custodian, "name")
+            if org_name is not None and not record.device.institution:
+                if isinstance(org_name, str):
+                    record.device.institution = org_name
+                elif isinstance(org_name, list) and org_name:
+                    record.device.institution = str(org_name[0])
+
+        # Extract patient race
+        subject_node = find_tag(doc, "subject")
+        if subject_node is not None:
+            race_node = find_tag(subject_node, "raceCode")
+            if race_node is not None:
+                if isinstance(race_node, list):
+                    race_node = race_node[0]
+                if isinstance(race_node, dict):
+                    race_val = read_path(race_node, "@displayName") or read_path(race_node, "@code")
+                    if race_val:
+                        record.patient.race = str(race_val)
+
         record.raw_metadata["filepath"] = str(file_path)
 
         return record

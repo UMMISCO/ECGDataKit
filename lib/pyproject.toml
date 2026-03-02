@@ -6,6 +6,7 @@ build-backend = "setuptools.build_meta"
 name = "ecgdatakit"
 dynamic = ["version"]
 description = "Multi-format ECG file parsing and signal processing library"
+readme = {file = "README.md", content-type = "text/markdown"}
 authors = [{name = "Ahmad Fall", email = "ahmad.fall@ird.fr"}]
 maintainers = [{name = "Ahmad Fall", email = "ahmad.fall@ird.fr"}]
 license = {text = "Apache-2.0"}

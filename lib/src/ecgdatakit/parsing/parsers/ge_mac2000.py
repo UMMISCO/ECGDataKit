@@ -27,6 +27,7 @@ from ecgdatakit.models import (
     Lead,
     PatientInfo,
     RecordingInfo,
+    SignalCharacteristics,
 )
 from ecgdatakit.parsing.parser import Parser
 
@@ -112,6 +113,13 @@ class GEMAC2000Parser(Parser):
         record.measurements = self._read_measurements(record.annotations)
         record.interpretation = self._read_interpretation(root)
 
+        record.signal = SignalCharacteristics(
+            signal_signed=True,
+            number_channels_valid=len(record.leads),
+            data_encoding="base64_int16le",
+            compression="none",
+        )
+
         record.raw_metadata["filepath"] = str(file_path)
 
         return record
@@ -151,6 +159,24 @@ class GEMAC2000Parser(Parser):
         age_str = self._get_text(demo, "PatientAge") or self._get_text(demo, "Age")
         if age_str and age_str.isdigit():
             info.age = int(age_str)
+
+        height_str = self._get_text(demo, "Height") or self._get_text(demo, "PatientHeight")
+        if height_str:
+            try:
+                info.height = float(height_str)
+            except (ValueError, TypeError):
+                pass
+
+        weight_str = self._get_text(demo, "Weight") or self._get_text(demo, "PatientWeight")
+        if weight_str:
+            try:
+                info.weight = float(weight_str)
+            except (ValueError, TypeError):
+                pass
+
+        race_str = self._get_text(demo, "Race") or self._get_text(demo, "Ethnicity")
+        if race_str:
+            info.race = race_str
 
         return info
 
@@ -192,6 +218,22 @@ class GEMAC2000Parser(Parser):
 
             info.location = self._get_text(test, "Location")
             info.room = self._get_text(test, "Room")
+
+            tech = (
+                self._get_text(test, "TechnicianID") or
+                self._get_text(test, "OperatorID") or
+                self._get_text(test, "Technician")
+            )
+            if tech:
+                info.technician = tech
+
+            ref_phys = (
+                self._get_text(test, "ReferringPhysician") or
+                self._get_text(test, "OrderingPhysician") or
+                self._get_text(test, "AttendingPhysician")
+            )
+            if ref_phys:
+                info.referring_physician = ref_phys
 
         return info
 
@@ -256,7 +298,8 @@ class GEMAC2000Parser(Parser):
             if isinstance(measurements, list):
                 measurements = measurements[0]
             for key in ("VentricularRate", "PRInterval", "QRSDuration",
-                        "QTInterval", "QTCorrected", "PAxis", "RAxis", "TAxis"):
+                        "QTInterval", "QTCorrected", "PAxis", "RAxis", "TAxis",
+                        "RRInterval", "QRSCount", "NumQRS"):
                 val = self._get_text(measurements, key)
                 if val:
                     annotations[key.lower()] = val
@@ -282,10 +325,15 @@ class GEMAC2000Parser(Parser):
             self._get_text(root, "SoftwareVersion")
             or self._get_text(root, "AcquisitionSoftwareVersion")
         )
+        serial_number = (
+            self._get_text(root, "SerialNumber")
+            or self._get_text(root, "DeviceSerialNumber")
+        )
         return DeviceInfo(
             manufacturer="GE",
             model=model,
             software_version=software_version,
+            serial_number=serial_number,
         )
 
     def _read_filters(self, root: dict) -> FilterSettings:
@@ -359,6 +407,8 @@ class GEMAC2000Parser(Parser):
         m.p_axis = _int("paxis")
         m.qrs_axis = _int("raxis")
         m.t_axis = _int("taxis")
+        m.rr_interval = _int("rrinterval")
+        m.qrs_count = _int("qrscount") or _int("numqrs")
 
         return m
 

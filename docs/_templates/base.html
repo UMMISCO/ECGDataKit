@@ -2,80 +2,127 @@
 
 {% block body %}
 {% if pagename == "index" %}
-{# ── Full custom landing page ── #}
+{# ── Full custom landing page (matches ecgdatakit.ummisco.fr) ── #}
 <link rel="stylesheet" href="{{ pathto('_static/custom.css', 1) }}">
 <div class="landing">
 
-  {# ── Navbar ── #}
-  <nav class="top-navbar">
-    <div class="top-navbar-inner">
-      <div class="top-navbar-brand">
-        <a href="{{ pathto('index') }}" class="top-navbar-logo-link">
-          <span class="top-navbar-logo-wrap"><img src="{{ pathto('_static/logo.svg', 1) }}" alt="" class="top-navbar-logo"></span>
-          <span class="top-navbar-title"><span class="top-navbar-title-ecg">ECG</span><span class="top-navbar-title-dk">DataKit</span></span>
-        </a>
-        <span class="top-navbar-version">v{{ release }}</span>
-      </div>
-      <div class="top-navbar-links">
+  {# ── Header ── #}
+  <header class="site-header">
+    <div class="header-inner">
+      <a href="{{ pathto('index') }}" class="logo">
+        <div class="logo-icon">
+          <svg viewBox="0 0 40 40" fill="none">
+            <path d="M4 4H26l6 6V36H4z" fill="#f0f7ff" stroke="#d0e2f2" stroke-width=".8"/>
+            <path d="M26 4v6h6" fill="#d0e2f2" stroke="#d0e2f2" stroke-width=".8" stroke-linejoin="round"/>
+            <polyline stroke="#1B4F72" stroke-width="2.8" stroke-linecap="round" stroke-linejoin="round" points="1,22 7,22 10,22 12,19 14,26 17,7 20,33 22.5,14 24,22 27,22"/>
+            <rect x="28" y="16" width="3" height="8" rx=".8" fill="#42A5F5"/>
+            <rect x="32" y="12" width="3" height="12" rx=".8" fill="#2196F3"/>
+            <rect x="36" y="14" width="3" height="10" rx=".8" fill="#64B5F6"/>
+            <circle cx="29" cy="30" r="1.8" fill="#E91E63"/>
+            <circle cx="34" cy="28" r="1.8" fill="#E91E63"/>
+            <line x1="29" y1="30" x2="34" y2="28" stroke="#E91E63" stroke-width="1.2"/>
+            <polyline stroke="#FF9800" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" fill="none" points="27,35 29,33 31,37 33,32 35,36 37,34"/>
+          </svg>
+        </div>
+        <span class="logo-text"><span class="logo-ecg">ECG</span><span class="logo-dk">DataKit</span></span>
+      </a>
+      <span class="version-badge">v{{ release }}</span>
+      <nav>
         <a href="{{ pathto('guides/getting-started') }}">Getting Started</a>
         <a href="{{ pathto('api/parsing') }}">API Reference</a>
         <a href="{{ pathto('guides/formats') }}">Formats</a>
-        <a href="https://www.ummisco.fr" class="top-navbar-ummisco">
-          <img src="{{ pathto('_static/ummisco_logo.png', 1) }}" alt="UMMISCO" class="top-navbar-ummisco-logo">
-        </a>
-        <a href="https://github.com/UMMISCO/ECGDataKit" class="top-navbar-github">
-          <svg width="22" height="22" viewBox="0 0 16 16" fill="currentColor"><path fill-rule="evenodd" d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"></path></svg>
-        </a>
-      </div>
-      <button class="top-navbar-toggle" onclick="document.querySelector('.top-navbar-links').classList.toggle('show')">
-        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
+      </nav>
+      <a href="https://www.ummisco.fr" class="header-lab" aria-label="UMMISCO" target="_blank" rel="noopener">
+        <img src="{{ pathto('_static/ummisco_logo.png', 1) }}" alt="UMMISCO" class="header-lab-logo">
+      </a>
+      <a href="https://github.com/UMMISCO/ECGDataKit" class="header-github" aria-label="GitHub" target="_blank" rel="noopener">
+        <svg viewBox="0 0 16 16" fill="currentColor"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"/></svg>
+      </a>
+      <button class="hamburger" aria-label="Menu" onclick="document.querySelector('.site-header nav').classList.toggle('show')">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 12h18M3 6h18M3 18h18"/></svg>
       </button>
     </div>
-  </nav>
+  </header>
 
   {# ── Hero ── #}
-  <section class="l-hero">
-    <div class="l-hero-inner">
-      <img src="{{ pathto('_static/logo.svg', 1) }}" alt="ECGDataKit" class="l-hero-logo">
-      <h1 class="l-hero-title"><span class="lh-ecg">ECG</span><span class="lh-dk">DataKit</span></h1>
-      <span class="l-hero-version">v{{ release }}</span>
-      <p class="l-hero-sub">A Python library for parsing, processing, and visualizing multi-format ECG files.</p>
-      <div class="l-pills">
-        <a href="{{ pathto('guides/formats') }}" class="l-pill"><svg width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24"><path d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg> 12 ECG Formats</a>
-        <a href="{{ pathto('api/processing') }}" class="l-pill"><svg width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24"><path d="M13 10V3L4 14h7v7l9-11h-7z"/></svg> Signal Processing</a>
-        <a href="{{ pathto('api/plotting') }}" class="l-pill"><svg width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24"><path d="M4 5a1 1 0 011-1h14a1 1 0 011 1v14a1 1 0 01-1 1H5a1 1 0 01-1-1V5z"/><path d="M4 9h16M8 4v16"/></svg> ECG Plotting</a>
+  <section class="hero-section">
+    <div class="hero-inner">
+      <span class="hero-version">v{{ release }}</span>
+      <div class="hero-logo">
+        <svg class="hero-logo-icon" viewBox="0 0 40 40" fill="none">
+          <path d="M4 4H26l6 6V36H4z" fill="#f0f7ff" stroke="#d0e2f2" stroke-width=".8"/>
+          <path d="M26 4v6h6" fill="#d0e2f2" stroke="#d0e2f2" stroke-width=".8" stroke-linejoin="round"/>
+          <polyline stroke="#1B4F72" stroke-width="2.8" stroke-linecap="round" stroke-linejoin="round" points="1,22 7,22 10,22 12,19 14,26 17,7 20,33 22.5,14 24,22 27,22"/>
+          <rect x="28" y="16" width="3" height="8" rx=".8" fill="#42A5F5"/>
+          <rect x="32" y="12" width="3" height="12" rx=".8" fill="#2196F3"/>
+          <rect x="36" y="14" width="3" height="10" rx=".8" fill="#64B5F6"/>
+          <circle cx="29" cy="30" r="1.8" fill="#E91E63"/>
+          <circle cx="34" cy="28" r="1.8" fill="#E91E63"/>
+          <line x1="29" y1="30" x2="34" y2="28" stroke="#E91E63" stroke-width="1.2"/>
+          <polyline stroke="#FF9800" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" fill="none" points="27,35 29,33 31,37 33,32 35,36 37,34"/>
+        </svg>
+        <h1><span class="logo-ecg">ECG</span><span class="logo-dk">DataKit</span></h1>
       </div>
-      <div class="l-cta">
-        <a href="{{ pathto('guides/getting-started') }}" class="l-btn l-btn-pri">Get Started &rarr;</a>
-        <a href="{{ pathto('api/parsing') }}" class="l-btn l-btn-out">API Reference</a>
+      <p class="hero-tagline">A Python library for parsing, processing, and visualizing multi-format ECG files.</p>
+      <div class="hero-badges">
+        <span class="badge badge-blue">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6A2 2 0 004 4v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+          12 ECG Formats
+        </span>
+        <span class="badge badge-green">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg>
+          Signal Processing
+        </span>
+        <span class="badge badge-purple">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18"/><path d="M9 21V9"/></svg>
+          ECG Plotting
+        </span>
       </div>
-      <div class="l-install">
-        <span class="l-install-dollar">$</span>
-        <span>pip install ecgdatakit</span>
-        <button class="l-install-copy" onclick="navigator.clipboard.writeText('pip install ecgdatakit')" title="Copy">
-          <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg>
+      <div class="hero-cta">
+        <a href="{{ pathto('guides/getting-started') }}" class="btn btn-primary">Get Started
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12h14"/><path d="m12 5 7 7-7 7"/></svg>
+        </a>
+        <a href="{{ pathto('api/parsing') }}" class="btn btn-outline">API Reference</a>
+      </div>
+      <div class="hero-install">
+        <span class="prompt">$</span>
+        <code>pip install ecgdatakit</code>
+        <button class="copy-install" onclick="navigator.clipboard.writeText('pip install ecgdatakit');this.innerHTML='&#10003;';setTimeout(()=>this.innerHTML='<svg width=&quot;16&quot; height=&quot;16&quot; viewBox=&quot;0 0 24 24&quot; fill=&quot;none&quot; stroke=&quot;currentColor&quot; stroke-width=&quot;2&quot;><rect x=&quot;9&quot; y=&quot;9&quot; width=&quot;13&quot; height=&quot;13&quot; rx=&quot;2&quot;/><path d=&quot;M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1&quot;/></svg>',2e3)" aria-label="Copy">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg>
         </button>
       </div>
     </div>
   </section>
 
   {# ── Features ── #}
-  <section class="l-section">
-    <div class="l-container">
-      <div class="l-cards">
-        <div class="l-card">
-          <div class="l-card-icon l-ci-parse"><svg width="26" height="26" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24"><path d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg></div>
-          <h3>Multi-Format Parsing</h3>
+  <section class="features-section">
+    <div class="features-inner">
+      <div class="features-grid">
+        <div class="feature-card">
+          <div class="feature-card-header">
+            <div class="feature-icon feature-icon-blue">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6A2 2 0 004 4v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
+            </div>
+            <h3>Multi-Format Parsing</h3>
+          </div>
           <p>Parse HL7 aECG, Philips Sierra, GE MUSE, SCP-ECG, DICOM, EDF, WFDB, MFER, and more into one unified data structure.</p>
         </div>
-        <div class="l-card">
-          <div class="l-card-icon l-ci-proc"><svg width="26" height="26" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24"><path d="M13 10V3L4 14h7v7l9-11h-7z"/></svg></div>
-          <h3>Signal Processing</h3>
+        <div class="feature-card">
+          <div class="feature-card-header">
+            <div class="feature-icon feature-icon-green">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg>
+            </div>
+            <h3>Signal Processing</h3>
+          </div>
           <p>Butterworth filters, R-peak detection (Pan-Tompkins &amp; Shannon energy), HRV analysis, FFT, signal quality, lead derivation, ECG cleaning, and DeepFADE neural-net denoising.</p>
         </div>
-        <div class="l-card">
-          <div class="l-card-icon l-ci-plot"><svg width="26" height="26" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24"><path d="M4 5a1 1 0 011-1h14a1 1 0 011 1v14a1 1 0 01-1 1H5a1 1 0 01-1-1V5z"/><path d="M4 9h16M8 4v16"/></svg></div>
-          <h3>Visualization</h3>
+        <div class="feature-card">
+          <div class="feature-card-header">
+            <div class="feature-icon feature-icon-purple">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18"/><path d="M9 21V9"/></svg>
+            </div>
+            <h3>Visualization</h3>
+          </div>
           <p>Standard 12-lead grids, R-peak annotations, HRV dashboards, spectrograms, and full ECG reports. Static or interactive.</p>
         </div>
       </div>
@@ -83,85 +130,87 @@
   </section>
 
   {# ── Quick Example ── #}
-  <section class="l-section">
-    <div class="l-container">
-      <h2 class="l-heading">Quick Example</h2>
-      <div class="l-code">
-        <pre><code><span class="k">from</span> <span class="n">ecgdatakit</span> <span class="k">import</span> <span class="n">FileParser</span>
-<span class="k">from</span> <span class="n">ecgdatakit.processing</span> <span class="k">import</span> <span class="n">diagnostic_filter</span>, <span class="n">detect_r_peaks</span>, <span class="n">heart_rate</span>
-<span class="k">from</span> <span class="n">ecgdatakit.plotting</span> <span class="k">import</span> <span class="n">plot_12lead</span>, <span class="n">plot_peaks</span>
+  <section class="home-section">
+    <div class="home-inner">
+      <h2 class="section-heading">Quick Example</h2>
+      <div class="highlight"><pre><code class="language-python"><span class="kn">from</span> <span class="nn">ecgdatakit</span> <span class="kn">import</span> <span class="n">FileParser</span>
+<span class="kn">from</span> <span class="nn">ecgdatakit.processing</span> <span class="kn">import</span> <span class="n">diagnostic_filter</span><span class="p">,</span> <span class="n">detect_r_peaks</span><span class="p">,</span> <span class="n">heart_rate</span>
+<span class="kn">from</span> <span class="nn">ecgdatakit.plotting</span> <span class="kn">import</span> <span class="n">plot_12lead</span><span class="p">,</span> <span class="n">plot_peaks</span>
 
-<span class="c"># Parse any ECG file (auto-detect format)</span>
-<span class="n">record</span> = <span class="n">FileParser</span>().<span class="n">parse</span>(<span class="s">"ecg_file.xml"</span>)
+<span class="c1"># Parse any ECG file (auto-detect format)</span>
+<span class="n">record</span> <span class="o">=</span> <span class="n">FileParser</span><span class="p">()</span><span class="o">.</span><span class="n">parse</span><span class="p">(</span><span class="s2">"ecg_file.xml"</span><span class="p">)</span>
 
-<span class="c"># Filter and detect R-peaks</span>
-<span class="n">lead</span> = <span class="n">record</span>.<span class="n">leads</span>[<span class="m">1</span>]  <span class="c"># Lead II</span>
-<span class="n">filtered</span> = <span class="n">diagnostic_filter</span>(<span class="n">lead</span>)
-<span class="n">peaks</span> = <span class="n">detect_r_peaks</span>(<span class="n">filtered</span>)
-<span class="nb">print</span>(<span class="s">f"Heart rate: {</span><span class="n">heart_rate</span>(<span class="n">filtered</span>, <span class="n">peaks</span>)<span class="s">:.0f} bpm"</span>)
+<span class="c1"># Filter and detect R-peaks</span>
+<span class="n">lead</span> <span class="o">=</span> <span class="n">record</span><span class="o">.</span><span class="n">leads</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span>  <span class="c1"># Lead II</span>
+<span class="n">filtered</span> <span class="o">=</span> <span class="n">diagnostic_filter</span><span class="p">(</span><span class="n">lead</span><span class="p">)</span>
+<span class="n">peaks</span> <span class="o">=</span> <span class="n">detect_r_peaks</span><span class="p">(</span><span class="n">filtered</span><span class="p">)</span>
+<span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">"Heart rate: </span><span class="si">{</span><span class="n">heart_rate</span><span class="p">(</span><span class="n">filtered</span><span class="p">,</span> <span class="n">peaks</span><span class="p">)</span><span class="si">:</span><span class="s2">.0f</span><span class="si">}</span><span class="s2"> bpm"</span><span class="p">)</span>
 
-<span class="c"># Visualize</span>
-<span class="n">fig</span> = <span class="n">plot_12lead</span>(<span class="n">record</span>)
-<span class="n">fig</span>.<span class="n">savefig</span>(<span class="s">"ecg_report.png"</span>, <span class="n">dpi</span>=<span class="m">150</span>)</code></pre>
-      </div>
+<span class="c1"># Visualize</span>
+<span class="n">fig</span> <span class="o">=</span> <span class="n">plot_12lead</span><span class="p">(</span><span class="n">record</span><span class="p">)</span>
+<span class="n">fig</span><span class="o">.</span><span class="n">savefig</span><span class="p">(</span><span class="s2">"ecg_report.png"</span><span class="p">,</span> <span class="n">dpi</span><span class="o">=</span><span class="mi">150</span><span class="p">)</span></code></pre></div>
     </div>
   </section>
 
   {# ── Supported Formats ── #}
-  <section class="l-section">
-    <div class="l-container">
-      <h2 class="l-heading">Supported Formats</h2>
-      <div class="l-formats">
-        <div class="l-fmt"><strong>HL7 aECG</strong><span>Health Level 7 annotated ECG</span></div>
-        <div class="l-fmt"><strong>Philips Sierra XML</strong><span>Philips Sierra ECG format</span></div>
-        <div class="l-fmt"><strong>GE MUSE XML</strong><span>GE MUSE ECG management</span></div>
-        <div class="l-fmt"><strong>ISHNE Holter</strong><span>Holter &amp; Noninvasive ECG</span></div>
-        <div class="l-fmt"><strong>Mortara EL250</strong><span>Mortara ELI 250 device</span></div>
-        <div class="l-fmt"><strong>EDF/EDF+</strong><span>European Data Format</span></div>
-        <div class="l-fmt"><strong>SCP-ECG</strong><span>Standard Comms Protocol</span></div>
-        <div class="l-fmt"><strong>DICOM Waveform</strong><span>Medical imaging standard</span></div>
-        <div class="l-fmt"><strong>WFDB</strong><span>PhysioNet WaveForm DB</span></div>
-        <div class="l-fmt"><strong>MFER</strong><span>Medical waveform encoding</span></div>
-        <div class="l-fmt"><strong>Mindray R12</strong><span>BeneHeart R12 device</span></div>
-        <div class="l-fmt"><strong>GE MAC 2000</strong><span>Resting ECG system</span></div>
+  <section class="home-section">
+    <div class="home-inner">
+      <h2 class="section-heading">Supported Formats</h2>
+      <div class="formats-grid">
+        <div class="format-item"><strong>HL7 aECG</strong><span>Health Level 7 annotated ECG</span></div>
+        <div class="format-item"><strong>Philips Sierra XML</strong><span>Philips Sierra ECG format</span></div>
+        <div class="format-item"><strong>GE MUSE XML</strong><span>GE MUSE ECG management</span></div>
+        <div class="format-item"><strong>ISHNE Holter</strong><span>Holter &amp; Noninvasive ECG</span></div>
+        <div class="format-item"><strong>Mortara EL250</strong><span>Mortara ELI 250 device</span></div>
+        <div class="format-item"><strong>EDF/EDF+</strong><span>European Data Format</span></div>
+        <div class="format-item"><strong>SCP-ECG</strong><span>Standard Comms Protocol</span></div>
+        <div class="format-item"><strong>DICOM Waveform</strong><span>Medical imaging standard</span></div>
+        <div class="format-item"><strong>WFDB</strong><span>PhysioNet WaveForm DB</span></div>
+        <div class="format-item"><strong>MFER</strong><span>Medical waveform encoding</span></div>
+        <div class="format-item"><strong>Mindray R12</strong><span>BeneHeart R12 device</span></div>
+        <div class="format-item"><strong>GE MAC 2000</strong><span>Resting ECG system</span></div>
       </div>
     </div>
   </section>
 
   {# ── Installation ── #}
-  <section class="l-section">
-    <div class="l-container">
-      <h2 class="l-heading">Installation</h2>
-      <div class="l-code">
-        <pre><code><span class="c"># Core (parsing only)</span>
+  <section class="home-section">
+    <div class="home-inner">
+      <h2 class="section-heading">Installation</h2>
+      <div class="highlight"><pre><code class="language-bash"><span class="c1"># From PyPI</span>
 pip install ecgdatakit
 
-<span class="c"># With signal processing (scipy)</span>
-pip install <span class="s">"ecgdatakit[processing]"</span>
+<span class="c1"># From GitHub (package lives in lib/)</span>
+pip install <span class="s2">"ecgdatakit @ git+https://github.com/UMMISCO/ECGDataKit.git#subdirectory=lib"</span>
 
-<span class="c"># With static plots (matplotlib)</span>
-pip install <span class="s">"ecgdatakit[plotting]"</span>
+<span class="c1"># With signal processing (scipy)</span>
+pip install <span class="s2">"ecgdatakit[processing]"</span>
 
-<span class="c"># With interactive plots (plotly)</span>
-pip install <span class="s">"ecgdatakit[plotting-interactive]"</span>
+<span class="c1"># With plotting (matplotlib + plotly)</span>
+pip install <span class="s2">"ecgdatakit[plotting,plotting-interactive]"</span>
 
-<span class="c"># Everything</span>
-pip install <span class="s">"ecgdatakit[all]"</span></code></pre>
-      </div>
+<span class="c1"># ECG cleaning backends (BioSPPy + NeuroKit2)</span>
+pip install <span class="s2">"ecgdatakit[cleaning]"</span>
+
+<span class="c1"># DeepFADE neural-net denoising (requires torch)</span>
+pip install <span class="s2">"ecgdatakit[denoising]"</span>
+
+<span class="c1"># Everything (except torch — install separately)</span>
+pip install <span class="s2">"ecgdatakit[all]"</span></code></pre></div>
     </div>
   </section>
 
   {# ── Footer ── #}
-  <footer class="l-footer">
-    <div class="l-container l-footer-inner">
-      <span>&copy; 2026 Ahmad Fall &mdash; <a href="https://www.ummisco.fr">UMMISCO</a> / <a href="https://www.ird.fr">IRD</a></span>
-      <span>Apache 2.0 License</span>
+  <footer class="site-footer">
+    <div class="footer-inner">
+      <span>ECGDataKit v{{ release }} &mdash; Apache-2.0</span>
+      <span>Built by <strong>Ahmad Fall</strong> &mdash; <a href="https://www.ummisco.fr">UMMISCO</a> / <a href="https://www.ird.fr">IRD</a></span>
     </div>
   </footer>
 </div>
 
 {% else %}
-{# ── Normal pages with navbar ── #}
+{# ── Normal doc pages with navbar ── #}
 <nav class="top-navbar">
   <div class="top-navbar-inner">
     <div class="top-navbar-brand">
@@ -179,11 +228,11 @@ pip install <span class="s">"ecgdatakit[all]"</span></code></pre>
         <img src="{{ pathto('_static/ummisco_logo.png', 1) }}" alt="UMMISCO" class="top-navbar-ummisco-logo">
       </a>
       <a href="https://github.com/UMMISCO/ECGDataKit" class="top-navbar-github">
-        <svg width="22" height="22" viewBox="0 0 16 16" fill="currentColor"><path fill-rule="evenodd" d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"></path></svg>
+        <svg width="20" height="20" viewBox="0 0 16 16" fill="currentColor"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"></path></svg>
       </a>
     </div>
     <button class="top-navbar-toggle" onclick="document.querySelector('.top-navbar-links').classList.toggle('show')">
-      <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 12h18M3 6h18M3 18h18"/></svg>
     </button>
   </div>
 </nav>

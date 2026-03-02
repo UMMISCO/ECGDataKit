@@ -23,6 +23,7 @@ from ecgdatakit.models import (
     Lead,
     PatientInfo,
     RecordingInfo,
+    SignalCharacteristics,
 )
 from ecgdatakit.parsing.parser import Parser
 
@@ -59,6 +60,9 @@ _DEMOGRAPHIC_MAPPING: dict[str, str] = {
     "Age:": "age",
     "Sex": "sex",
     "Sex:": "sex",
+    "Height:": "height",
+    "Weight:": "weight",
+    "Race:": "race",
 }
 
 
@@ -150,6 +154,8 @@ class MortaraEL250Parser(Parser):
         if nf is not None:
             try:
                 filters.notch = float(nf)
+                if filters.notch:
+                    filters.notch_active = True
             except (ValueError, TypeError):
                 pass
         record.filters = filters
@@ -180,6 +186,22 @@ class MortaraEL250Parser(Parser):
                 dob_str = demo.get("dob", "")
                 if dob_str:
                     patient.birth_date = _convert_to_datetime(dob_str)
+
+                height_str = demo.get("height", "")
+                if height_str:
+                    try:
+                        patient.height = float(height_str)
+                    except ValueError:
+                        pass
+                weight_str = demo.get("weight", "")
+                if weight_str:
+                    try:
+                        patient.weight = float(weight_str)
+                    except ValueError:
+                        pass
+                race_str = demo.get("race", "")
+                if race_str:
+                    patient.race = race_str
 
         record.patient = patient
 
@@ -243,6 +265,11 @@ class MortaraEL250Parser(Parser):
             "QRS_AXIS": "qrs_axis",
             "T_AXIS": "t_axis",
             "NUM_QRS": "qrs_count",
+            "RR_INT": "rr_interval",
+            "RR_INTERVAL": "rr_interval",
+            "QTC_INT": "qtc_bazett",
+            "QT_CORRECTED": "qtc_bazett",
+            "QTC_INTERVAL": "qtc_bazett",
         }
         for xml_key, attr_name in _meas_map.items():
             raw = meas_sources.get(xml_key)
@@ -320,6 +347,15 @@ class MortaraEL250Parser(Parser):
         interp.statements = statements
         if statements:
             record.interpretation = interp
+
+        record.signal = SignalCharacteristics(
+            bits_per_sample=16,
+            signal_signed=True,
+            number_channels_valid=len(record.leads),
+            number_channels_allocated=len(xml_leads),
+            data_encoding="base64_int16le",
+            compression="none",
+        )
 
         record.raw_metadata["filepath"] = str(file_path)
 

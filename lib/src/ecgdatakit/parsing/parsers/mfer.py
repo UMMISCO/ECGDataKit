@@ -19,6 +19,7 @@ from ecgdatakit.models import (
     Lead,
     PatientInfo,
     RecordingInfo,
+    SignalCharacteristics,
 )
 from ecgdatakit.parsing.parser import Parser
 
@@ -174,7 +175,14 @@ class MFERParser(Parser):
                 raw_metadata["comment"] = tag_data.decode("utf-8", errors="replace").strip("\x00 ")
 
             elif tag == _TAG_FILTER and length >= 1:
-                if length >= 8:
+                if length >= 12:
+                    filters.highpass = struct.unpack(">f", tag_data[:4])[0]
+                    filters.lowpass = struct.unpack(">f", tag_data[4:8])[0]
+                    notch_val = struct.unpack(">f", tag_data[8:12])[0]
+                    if notch_val > 0:
+                        filters.notch = notch_val
+                        filters.notch_active = True
+                elif length >= 8:
                     filters.highpass = struct.unpack(">f", tag_data[:4])[0]
                     filters.lowpass = struct.unpack(">f", tag_data[4:8])[0]
                 elif length >= 4:
@@ -350,6 +358,25 @@ class MFERParser(Parser):
         if leads and sample_rate > 0:
             duration_s = len(leads[0].samples) / sample_rate
             recording.duration = timedelta(seconds=duration_s)
+
+        # Signal characteristics from data_type
+        if data_type == 0:
+            sig_bits, sig_signed, sig_encoding = 16, True, "int16"
+        elif data_type == 1:
+            sig_bits, sig_signed, sig_encoding = 16, False, "uint16"
+        elif data_type == 2:
+            sig_bits, sig_signed, sig_encoding = 32, True, "int32"
+        else:
+            sig_bits, sig_signed, sig_encoding = 16, True, "int16"
+
+        record.signal = SignalCharacteristics(
+            bits_per_sample=sig_bits,
+            signal_signed=sig_signed,
+            number_channels_allocated=num_channels,
+            number_channels_valid=len(leads),
+            data_encoding=sig_encoding,
+            compression="none",
+        )
 
         record.raw_metadata.update(raw_metadata)
         record.raw_metadata["filepath"] = str(file_path)

@@ -104,6 +104,7 @@ print(record.patient.age)              # 55
 print(record.recording.sample_rate)    # 500
 print(record.measurements.heart_rate)  # 75
 print(record.device.manufacturer)      # "Philips"
+print(record.signal.data_encoding)     # "base64"
 print(len(record.leads))               # 12
 
 json_str = record.to_json()
@@ -141,19 +142,21 @@ cleaned = clean_ecg(lead, method="deepfade")
 
 ```python
 from ecgdatakit.plotting import (
-    plot_12lead, plot_peaks, plot_hrv_summary,
+    plot_lead, plot_12lead, plot_peaks, plot_hrv_summary,
     iplot_lead, iplot_12lead,
 )
 
-# Static 12-lead ECG report (matplotlib)
-fig = plot_12lead(record)
+# Static plots auto-display by default
+plot_12lead(record)
+plot_peaks(filtered, peaks)
+plot_hrv_summary(rr)
+
+# To get the figure without displaying (e.g. for saving):
+fig = plot_12lead(record, show=False)
 fig.savefig("ecg_12lead.png", dpi=150)
 
-# R-peak annotations
-fig = plot_peaks(filtered, peaks)
-
-# HRV dashboard
-fig = plot_hrv_summary(rr)
+# Use sample indices instead of time on the x-axis:
+plot_lead(filtered, x_axis="samples")
 
 # Interactive plots (plotly) — opens in browser
 iplot_lead(filtered, peaks).show()
@@ -179,11 +182,12 @@ All parsers produce the same `ECGRecord`:
 ECGRecord
   patient: PatientInfo        # ID, name, birth date, sex, age, weight, height, medications
   recording: RecordingInfo    # date, duration, sample rate, ADC gain, technician, physician
-  device: DeviceInfo          # manufacturer, model, serial number, software version, institution
+  device: DeviceInfo          # manufacturer, model, name, serial number, software version
   filters: FilterSettings     # highpass, lowpass, notch frequencies
+  signal: SignalCharacteristics  # bits/sample, encoding, compression, channel counts
   leads: list[Lead]           # label, samples (float64 array), sample rate, units
   interpretation: Interpretation  # statements, severity, source, interpreter
-  measurements: GlobalMeasurements  # HR, PR, QRS, QT, QTc, axes
+  measurements: GlobalMeasurements  # HR, PR, QRS, QT, QTc, axes, RR interval
   median_beats: list[Lead]    # median/template beats if available
   annotations: dict[str, str] # additional key-value annotations
   source_format: str          # parser identifier

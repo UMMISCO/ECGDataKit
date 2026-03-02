@@ -21,6 +21,7 @@ from ecgdatakit.models import (
     Lead,
     PatientInfo,
     RecordingInfo,
+    SignalCharacteristics,
 )
 from ecgdatakit.parsing.parser import Parser
 
@@ -260,6 +261,27 @@ class SCPECGParser(Parser):
 
         record.recording = recording
 
+        # Populate signal characteristics
+        sig = SignalCharacteristics(
+            signal_signed=True,
+            number_channels_allocated=num_leads,
+            number_channels_valid=len(record.leads),
+            compression="none",
+            data_encoding="raw",
+        )
+        if 6 in sections:
+            sec6_offset = sections[6][0] + 16
+            if sec6_offset + 6 <= len(data):
+                enc_flag = data[sec6_offset + 4]
+                comp_flag = data[sec6_offset + 5]
+                if comp_flag == 0:
+                    sig.compression = "huffman"
+                if enc_flag == 1:
+                    sig.data_encoding = "second_difference"
+                elif enc_flag == 0:
+                    sig.data_encoding = "first_difference"
+        record.signal = sig
+
         record.raw_metadata["filepath"] = str(file_path)
         record.raw_metadata["crc"] = crc
         record.raw_metadata["file_size"] = file_size
@@ -371,6 +393,10 @@ class SCPECGParser(Parser):
                 age_val = _read_u16(tag_data, 0)
                 if 0 < age_val < 200:
                     info.age = age_val
+            elif tag == 12 and tag_len >= 2:
+                weight_val = _read_u16(tag_data, 0)
+                if 0 < weight_val < 500:
+                    info.weight = float(weight_val)
             elif tag == 13 and tag_len >= 1:
                 extra["referring_physician"] = tag_data.decode("ascii", errors="replace").strip("\x00 ")
             elif tag == 14 and tag_len >= 1:

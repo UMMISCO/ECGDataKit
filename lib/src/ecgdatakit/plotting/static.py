@@ -77,6 +77,23 @@ def _ecg_grid(ax, major_x=0.2, major_y=0.5, minor_x=0.04, minor_y=0.1):
         ax.yaxis.set_minor_locator(AutoMinorLocator())
 
 
+def _style_ax(ax):
+    """Remove top/right spines and set integer x-ticks."""
+    from matplotlib.ticker import AutoMinorLocator, MaxNLocator
+
+    ax.spines["top"].set_visible(False)
+    ax.spines["right"].set_visible(False)
+    ax.xaxis.set_major_locator(MaxNLocator(integer=True))
+    ax.xaxis.set_minor_locator(AutoMinorLocator())
+
+
+def _x_data(lead, x_axis):
+    """Return ``(x_array, xlabel)`` based on *x_axis* mode."""
+    if x_axis == "samples":
+        return np.arange(1, len(lead.samples) + 1), "Sample"
+    return time_axis(lead), "Time (s)"
+
+
 
 def plot_lead(
     lead: LeadLike,
@@ -118,13 +135,7 @@ def plot_lead(
     lead = ensure_lead(lead, fs=fs)
     own_fig = ax is None
     fig, ax = _get_or_create_ax(figsize, ax)
-
-    if x_axis == "samples":
-        x = np.arange(1, len(lead.samples) + 1)
-        xlabel = "Sample"
-    else:
-        x = time_axis(lead)
-        xlabel = "Time (s)"
+    x, xlabel = _x_data(lead, x_axis)
 
     ax.plot(x, lead.samples, color=lead_color(lead.label), linewidth=0.8)
 
@@ -145,14 +156,7 @@ def plot_lead(
         _ecg_grid(ax)
 
     ax.set_xlim(x[0], x[-1])
-
-    ax.spines["top"].set_visible(False)
-    ax.spines["right"].set_visible(False)
-
-    from matplotlib.ticker import AutoMinorLocator, MaxNLocator
-    ax.xaxis.set_major_locator(MaxNLocator(integer=True))
-    ax.xaxis.set_minor_locator(AutoMinorLocator())
-
+    _style_ax(ax)
     fig.tight_layout()
 
     if show and own_fig:
@@ -169,6 +173,9 @@ def plot_leads(
     show_grid: bool = True,
     figsize: tuple[float, float | None] = (12, None),
     share_x: bool = True,
+    *,
+    show: bool = True,
+    x_axis: str = "time",
 ) -> Figure:
     """Plot multiple leads stacked vertically.
 
@@ -186,6 +193,10 @@ def plot_leads(
         Width is fixed; height is auto-calculated (2 in per lead) when ``None``.
     share_x : bool
         Share the x-axis across all subplots (default ``True``).
+    show : bool
+        Display the plot immediately (default ``True``).
+    x_axis : str
+        ``"time"`` for seconds (default) or ``"samples"`` for sample indices.
     """
     require_matplotlib()
     import matplotlib.pyplot as plt
@@ -203,23 +214,28 @@ def plot_leads(
 
     for i, ld in enumerate(lead_list):
         ax = axes[i]
-        t = time_axis(ld)
-        ax.plot(t, ld.samples, color=lead_color(ld.label), linewidth=0.8)
+        x, _ = _x_data(ld, x_axis)
+        ax.plot(x, ld.samples, color=lead_color(ld.label), linewidth=0.8)
 
         if peaks_dict and ld.label in peaks_dict:
             pk = peaks_dict[ld.label]
-            ax.plot(t[pk], ld.samples[pk], "rv", markersize=5)
+            ax.plot(x[pk], ld.samples[pk], "rv", markersize=5)
 
         ax.set_ylabel(ld.label, rotation=0, labelpad=30, fontsize=10)
         ax.yaxis.set_label_position("left")
         if show_grid:
             _ecg_grid(ax)
-        ax.set_xlim(t[0], t[-1])
+        ax.set_xlim(x[0], x[-1])
+        _style_ax(ax)
 
-    axes[-1].set_xlabel("Time (s)")
+    axes[-1].set_xlabel("Sample" if x_axis == "samples" else "Time (s)")
     if title:
         fig.suptitle(title, fontsize=13)
     fig.tight_layout()
+
+    if show:
+        plt.show()
+
     return fig
 
 
@@ -231,6 +247,9 @@ def plot_12lead(
     rhythm_lead: str = "II",
     duration: float = 10.0,
     figsize: tuple[float, float] = (14, 10),
+    *,
+    show: bool = True,
+    x_axis: str = "time",
 ) -> Figure:
     """Standard 12-lead ECG grid layout.
 
@@ -250,6 +269,10 @@ def plot_12lead(
         Seconds of signal to show per cell (default 10.0).
     figsize : tuple
         Figure size.
+    show : bool
+        Display the plot immediately (default ``True``).
+    x_axis : str
+        ``"time"`` for seconds (default) or ``"samples"`` for sample indices.
     """
     require_matplotlib()
     import matplotlib.pyplot as plt
@@ -280,29 +303,39 @@ def plot_12lead(
             ax = fig.add_subplot(gs[row_offset + row_idx, col_idx])
             ld = _find_lead(lead_list, lbl)
             if ld is not None:
-                t = time_axis(ld)
+                x, _ = _x_data(ld, x_axis)
                 max_samples = int(duration * ld.sample_rate)
                 sl = slice(0, min(max_samples, len(ld.samples)))
                 ax.plot(
-                    t[sl], ld.samples[sl], color=lead_color(lbl), linewidth=0.7
+                    x[sl], ld.samples[sl], color=lead_color(lbl), linewidth=0.7
                 )
-                ax.set_xlim(0, duration)
+                if x_axis == "samples":
+                    ax.set_xlim(1, min(max_samples, len(ld.samples)))
+                else:
+                    ax.set_xlim(0, duration)
             ax.set_title(lbl, fontsize=9, loc="left", pad=2)
             _ecg_grid(ax)
             ax.tick_params(labelsize=7)
             if row_idx < 2:
                 ax.set_xticklabels([])
+            _style_ax(ax)
 
     ax_rhythm = fig.add_subplot(gs[row_offset + 3, :])
     rl = _find_lead(lead_list, rhythm_lead)
     if rl is not None:
-        t = time_axis(rl)
-        ax_rhythm.plot(t, rl.samples, color=lead_color(rhythm_lead), linewidth=0.7)
-        ax_rhythm.set_xlim(t[0], t[-1])
+        x, _ = _x_data(rl, x_axis)
+        ax_rhythm.plot(x, rl.samples, color=lead_color(rhythm_lead), linewidth=0.7)
+        ax_rhythm.set_xlim(x[0], x[-1])
     ax_rhythm.set_title(f"{rhythm_lead} rhythm strip", fontsize=9, loc="left", pad=2)
     _ecg_grid(ax_rhythm)
-    ax_rhythm.set_xlabel("Time (s)", fontsize=8)
+    ax_rhythm.set_xlabel("Sample" if x_axis == "samples" else "Time (s)", fontsize=8)
     ax_rhythm.tick_params(labelsize=7)
+    _style_ax(ax_rhythm)
+
+    fig.tight_layout()
+
+    if show:
+        plt.show()
 
     return fig
 
@@ -352,7 +385,7 @@ def _draw_header(ax, record: ECGRecord) -> None:
     if m.qtc_bazett is not None:
         meas.append(f"QTc: {m.qtc_bazett} ms")
     if m.qrs_axis is not None:
-        meas.append(f"Axis: {m.qrs_axis}°")
+        meas.append(f"Axis: {m.qrs_axis}\u00b0")
     if meas:
         lines.append("  |  ".join(meas))
 
@@ -376,6 +409,8 @@ def plot_peaks(
     ax: Axes | None = None,
     *,
     fs: int | None = None,
+    show: bool = True,
+    x_axis: str = "time",
 ) -> Figure:
     """Plot lead with R-peak markers and RR interval annotations.
 
@@ -387,6 +422,10 @@ def plot_peaks(
         R-peak indices. Auto-detected if ``None``.
     fs : int | None
         Sample rate in Hz.  Required when *lead* is a numpy array.
+    show : bool
+        Display the plot immediately (default ``True``).
+    x_axis : str
+        ``"time"`` for seconds (default) or ``"samples"`` for sample indices.
     """
     from ecgdatakit.processing.peaks import detect_r_peaks
 
@@ -394,20 +433,21 @@ def plot_peaks(
     if peaks is None:
         peaks = detect_r_peaks(lead)
 
+    own_fig = ax is None
     fig, ax = _get_or_create_ax(figsize, ax)
-    t = time_axis(lead)
+    x, xlabel = _x_data(lead, x_axis)
 
-    ax.plot(t, lead.samples, color=lead_color(lead.label), linewidth=0.8)
+    ax.plot(x, lead.samples, color=lead_color(lead.label), linewidth=0.8)
     if len(peaks) > 0:
-        ax.plot(t[peaks], lead.samples[peaks], "rv", markersize=7, label="R-peaks")
+        ax.plot(x[peaks], lead.samples[peaks], "rv", markersize=7, label="R-peaks")
 
         for i in range(1, min(len(peaks), 20)):
             rr_ms = (peaks[i] - peaks[i - 1]) / lead.sample_rate * 1000
-            mid_t = (t[peaks[i]] + t[peaks[i - 1]]) / 2
+            mid_x = (x[peaks[i]] + x[peaks[i - 1]]) / 2
             y_pos = max(lead.samples[peaks[i]], lead.samples[peaks[i - 1]])
             ax.annotate(
                 f"{rr_ms:.0f}ms",
-                xy=(mid_t, y_pos),
+                xy=(mid_x, y_pos),
                 fontsize=7,
                 ha="center",
                 va="bottom",
@@ -423,12 +463,18 @@ def plot_peaks(
                 bbox=dict(boxstyle="round,pad=0.3", facecolor="white", alpha=0.8),
             )
 
-    ax.set_xlabel("Time (s)")
+    ax.set_xlabel(xlabel)
     ax.set_ylabel(f"Amplitude ({lead.units})" if lead.units else "Amplitude")
-    ax.set_title(title or f"{lead.label} — R-peaks")
+    ax.set_title(title or f"{lead.label} \u2014 R-peaks")
     _ecg_grid(ax)
-    ax.set_xlim(t[0], t[-1])
+    ax.set_xlim(x[0], x[-1])
+    _style_ax(ax)
     fig.tight_layout()
+
+    if show and own_fig:
+        import matplotlib.pyplot as plt
+        plt.show()
+
     return fig
 
 
@@ -441,6 +487,7 @@ def plot_beats(
     ax: Axes | None = None,
     *,
     fs: int | None = None,
+    show: bool = True,
 ) -> Figure:
     """Plot segmented heartbeats.
 
@@ -456,6 +503,8 @@ def plot_beats(
         ``True``: overlay all beats; ``False``: waterfall display.
     fs : int | None
         Sample rate in Hz.  Required when *lead* is a numpy array.
+    show : bool
+        Display the plot immediately (default ``True``).
     """
     from ecgdatakit.processing.transforms import average_beat, segment_beats
 
@@ -463,6 +512,7 @@ def plot_beats(
     if beats is None:
         beats = segment_beats(lead, peaks)
 
+    own_fig = ax is None
     fig, ax = _get_or_create_ax(figsize, ax)
 
     if not beats:
@@ -487,8 +537,14 @@ def plot_beats(
 
     ax.set_xlabel("Time relative to R-peak (ms)")
     ax.set_ylabel("Amplitude")
-    ax.set_title(f"{lead.label} — Segmented beats ({len(beats)})")
+    ax.set_title(f"{lead.label} \u2014 Segmented beats ({len(beats)})")
+    _style_ax(ax)
     fig.tight_layout()
+
+    if show and own_fig:
+        import matplotlib.pyplot as plt
+        plt.show()
+
     return fig
 
 
@@ -501,8 +557,9 @@ def plot_average_beat(
     ax: Axes | None = None,
     *,
     fs: int | None = None,
+    show: bool = True,
 ) -> Figure:
-    """Plot ensemble-averaged beat with ±1 SD shading.
+    """Plot ensemble-averaged beat with \u00b11 SD shading.
 
     Parameters
     ----------
@@ -516,12 +573,15 @@ def plot_average_beat(
         Seconds after R-peak.
     fs : int | None
         Sample rate in Hz.  Required when *lead* is a numpy array.
+    show : bool
+        Display the plot immediately (default ``True``).
     """
     from ecgdatakit.processing.transforms import segment_beats
 
     lead = ensure_lead(lead, fs=fs)
     beats = segment_beats(lead, peaks, before, after)
 
+    own_fig = ax is None
     fig, ax = _get_or_create_ax(figsize, ax)
 
     if not beats:
@@ -541,9 +601,15 @@ def plot_average_beat(
 
     ax.set_xlabel("Time (ms)")
     ax.set_ylabel("Amplitude")
-    ax.set_title(f"{lead.label} — Average beat (n={len(beats)})")
+    ax.set_title(f"{lead.label} \u2014 Average beat (n={len(beats)})")
     ax.legend(fontsize=8)
+    _style_ax(ax)
     fig.tight_layout()
+
+    if show and own_fig:
+        import matplotlib.pyplot as plt
+        plt.show()
+
     return fig
 
 
@@ -555,6 +621,7 @@ def plot_spectrum(
     ax: Axes | None = None,
     *,
     fs: int | None = None,
+    show: bool = True,
 ) -> Figure:
     """Plot power spectral density or FFT magnitude spectrum.
 
@@ -566,11 +633,14 @@ def plot_spectrum(
         ``"welch"`` for PSD or ``"fft"`` for magnitude spectrum.
     fs : int | None
         Sample rate in Hz.  Required when *lead* is a numpy array.
+    show : bool
+        Display the plot immediately (default ``True``).
     """
     lead = ensure_lead(lead, fs=fs)
     from ecgdatakit.processing.transforms import fft as ecg_fft
     from ecgdatakit.processing.transforms import power_spectrum
 
+    own_fig = ax is None
     fig, ax = _get_or_create_ax(figsize, ax)
 
     if method == "welch":
@@ -583,14 +653,20 @@ def plot_spectrum(
         ax.plot(freqs, mags, color=lead_color(lead.label), linewidth=0.8)
         ax.set_ylabel("Magnitude")
 
-    ax.axvspan(0.05, 150, alpha=0.05, color="green", label="ECG band (0.05–150 Hz)")
+    ax.axvspan(0.05, 150, alpha=0.05, color="green", label="ECG band (0.05\u2013150 Hz)")
     ax.axvspan(0, 0.05, alpha=0.05, color="red", label="Baseline drift")
 
     ax.set_xlabel("Frequency (Hz)")
-    ax.set_title(f"{lead.label} — {'PSD (Welch)' if method == 'welch' else 'FFT Magnitude'}")
+    ax.set_title(f"{lead.label} \u2014 {'PSD (Welch)' if method == 'welch' else 'FFT Magnitude'}")
     ax.set_xlim(0, min(lead.sample_rate / 2, 250))
     ax.legend(fontsize=7, loc="upper right")
+    _style_ax(ax)
     fig.tight_layout()
+
+    if show and own_fig:
+        import matplotlib.pyplot as plt
+        plt.show()
+
     return fig
 
 
@@ -601,6 +677,7 @@ def plot_spectrogram(
     ax: Axes | None = None,
     *,
     fs: int | None = None,
+    show: bool = True,
 ) -> Figure:
     """Plot time-frequency spectrogram (STFT).
 
@@ -612,11 +689,14 @@ def plot_spectrogram(
         Segment length for STFT.
     fs : int | None
         Sample rate in Hz.  Required when *lead* is a numpy array.
+    show : bool
+        Display the plot immediately (default ``True``).
     """
     from ecgdatakit.processing._core import require_scipy
 
     lead = ensure_lead(lead, fs=fs)
     sig = require_scipy("signal")
+    own_fig = ax is None
     fig, ax = _get_or_create_ax(figsize, ax)
 
     nperseg = min(nperseg, len(lead.samples))
@@ -628,9 +708,15 @@ def plot_spectrogram(
     ax.pcolormesh(t_spec, f, Sxx_db, shading="gouraud", cmap="viridis")
     ax.set_ylabel("Frequency (Hz)")
     ax.set_xlabel("Time (s)")
-    ax.set_title(f"{lead.label} — Spectrogram")
+    ax.set_title(f"{lead.label} \u2014 Spectrogram")
     ax.set_ylim(0, min(lead.sample_rate / 2, 150))
+    _style_ax(ax)
     fig.tight_layout()
+
+    if show and own_fig:
+        import matplotlib.pyplot as plt
+        plt.show()
+
     return fig
 
 
@@ -639,6 +725,8 @@ def plot_rr_tachogram(
     rr_ms: NDArray[np.float64],
     figsize: tuple[float, float] = (10, 3),
     ax: Axes | None = None,
+    *,
+    show: bool = True,
 ) -> Figure:
     """Plot RR interval tachogram.
 
@@ -646,7 +734,10 @@ def plot_rr_tachogram(
     ----------
     rr_ms : NDArray
         RR intervals in milliseconds.
+    show : bool
+        Display the plot immediately (default ``True``).
     """
+    own_fig = ax is None
     fig, ax = _get_or_create_ax(figsize, ax)
 
     beats = np.arange(len(rr_ms))
@@ -655,14 +746,20 @@ def plot_rr_tachogram(
     mean_rr = rr_ms.mean()
     std_rr = rr_ms.std()
     ax.axhline(mean_rr, color="red", linestyle="--", linewidth=0.8, label=f"Mean: {mean_rr:.0f} ms")
-    ax.axhline(mean_rr + std_rr, color="orange", linestyle=":", linewidth=0.6, label=f"±SD: {std_rr:.0f} ms")
+    ax.axhline(mean_rr + std_rr, color="orange", linestyle=":", linewidth=0.6, label=f"\u00b1SD: {std_rr:.0f} ms")
     ax.axhline(mean_rr - std_rr, color="orange", linestyle=":", linewidth=0.6)
 
     ax.set_xlabel("Beat number")
     ax.set_ylabel("RR interval (ms)")
     ax.set_title("RR Tachogram")
     ax.legend(fontsize=8)
+    _style_ax(ax)
     fig.tight_layout()
+
+    if show and own_fig:
+        import matplotlib.pyplot as plt
+        plt.show()
+
     return fig
 
 
@@ -670,20 +767,25 @@ def plot_poincare(
     rr_ms: NDArray[np.float64],
     figsize: tuple[float, float] = (6, 6),
     ax: Axes | None = None,
+    *,
+    show: bool = True,
 ) -> Figure:
-    """Poincaré plot: RR(n) vs RR(n+1) with SD1/SD2 ellipse.
+    """Poincar\u00e9 plot: RR(n) vs RR(n+1) with SD1/SD2 ellipse.
 
     Parameters
     ----------
     rr_ms : NDArray
         RR intervals in milliseconds.
+    show : bool
+        Display the plot immediately (default ``True``).
     """
     from matplotlib.patches import Ellipse
 
+    own_fig = ax is None
     fig, ax = _get_or_create_ax(figsize, ax)
 
     if len(rr_ms) < 2:
-        ax.text(0.5, 0.5, "Need ≥2 RR intervals", transform=ax.transAxes, ha="center")
+        ax.text(0.5, 0.5, "Need \u22652 RR intervals", transform=ax.transAxes, ha="center")
         return fig
 
     x = rr_ms[:-1]
@@ -709,39 +811,57 @@ def plot_poincare(
 
     ax.set_xlabel("RR(n) (ms)")
     ax.set_ylabel("RR(n+1) (ms)")
-    ax.set_title("Poincaré Plot")
+    ax.set_title("Poincar\u00e9 Plot")
     ax.set_aspect("equal", adjustable="datalim")
     ax.legend(fontsize=8)
+    _style_ax(ax)
     fig.tight_layout()
+
+    if show and own_fig:
+        import matplotlib.pyplot as plt
+        plt.show()
+
     return fig
 
 
 def plot_hrv_summary(
     rr_ms: NDArray[np.float64],
     figsize: tuple[float, float] = (14, 8),
+    *,
+    show: bool = True,
 ) -> Figure:
-    """Combined HRV dashboard: tachogram, Poincaré, frequency bands, metrics.
+    """Combined HRV dashboard: tachogram, Poincar\u00e9, frequency bands, metrics.
 
     Parameters
     ----------
     rr_ms : NDArray
         RR intervals in milliseconds.
+    show : bool
+        Display the plot immediately (default ``True``).
     """
     require_matplotlib()
     import matplotlib.pyplot as plt
 
     fig, axes = plt.subplots(2, 2, figsize=figsize)
 
-    plot_rr_tachogram(rr_ms, ax=axes[0, 0])
+    plot_rr_tachogram(rr_ms, ax=axes[0, 0], show=False)
 
-    plot_poincare(rr_ms, ax=axes[0, 1])
+    plot_poincare(rr_ms, ax=axes[0, 1], show=False)
 
     _plot_hrv_frequency(rr_ms, ax=axes[1, 0])
 
     _plot_hrv_table(rr_ms, ax=axes[1, 1])
 
+    # Style the HRV frequency axis (sub-functions styled their own axes)
+    axes[1, 0].spines["top"].set_visible(False)
+    axes[1, 0].spines["right"].set_visible(False)
+
     fig.suptitle("HRV Summary", fontsize=14, y=1.01)
     fig.tight_layout()
+
+    if show:
+        plt.show()
+
     return fig
 
 
@@ -750,7 +870,7 @@ def _plot_hrv_frequency(rr_ms: NDArray[np.float64], ax) -> None:
     from ecgdatakit.processing._core import require_scipy
 
     if len(rr_ms) < 4:
-        ax.text(0.5, 0.5, "Need ≥4 RR intervals", transform=ax.transAxes, ha="center")
+        ax.text(0.5, 0.5, "Need \u22654 RR intervals", transform=ax.transAxes, ha="center")
         return
 
     sig = require_scipy("signal")
@@ -773,7 +893,7 @@ def _plot_hrv_frequency(rr_ms: NDArray[np.float64], ax) -> None:
     ax.fill_between(freqs, psd, where=(freqs >= 0.15) & (freqs < 0.40), alpha=0.3, color="#1f77b4", label="HF")
 
     ax.set_xlabel("Frequency (Hz)")
-    ax.set_ylabel("PSD (ms²/Hz)")
+    ax.set_ylabel("PSD (ms\u00b2/Hz)")
     ax.set_title("HRV Frequency Domain")
     ax.set_xlim(0, 0.5)
     ax.legend(fontsize=8)
@@ -812,6 +932,8 @@ def _plot_hrv_table(rr_ms: NDArray[np.float64], ax) -> None:
 def plot_quality(
     leads: list[Lead] | ECGRecord,
     figsize: tuple[float, float] = (10, 5),
+    *,
+    show: bool = True,
 ) -> Figure:
     """Signal quality dashboard: SQI bar chart per lead.
 
@@ -819,6 +941,8 @@ def plot_quality(
     ----------
     leads : list[Lead] | ECGRecord
         Leads to assess.
+    show : bool
+        Display the plot immediately (default ``True``).
     """
     require_matplotlib()
     import matplotlib.pyplot as plt
@@ -863,12 +987,18 @@ def plot_quality(
     from matplotlib.patches import Patch
     legend_elements = [
         Patch(facecolor="#2ca02c", label="Excellent (>0.8)"),
-        Patch(facecolor="#ff7f0e", label="Acceptable (0.5–0.8)"),
+        Patch(facecolor="#ff7f0e", label="Acceptable (0.5\u20130.8)"),
         Patch(facecolor="#d62728", label="Unacceptable (<0.5)"),
     ]
     ax.legend(handles=legend_elements, fontsize=8, loc="upper right")
 
+    ax.spines["top"].set_visible(False)
+    ax.spines["right"].set_visible(False)
     fig.tight_layout()
+
+    if show:
+        plt.show()
+
     return fig
 
 
@@ -876,6 +1006,8 @@ def plot_quality(
 def plot_report(
     record: ECGRecord,
     figsize: tuple[float, float] = (16, 20),
+    *,
+    show: bool = True,
 ) -> Figure:
     """Comprehensive ECG report page.
 
@@ -886,6 +1018,8 @@ def plot_report(
     ----------
     record : ECGRecord
         Full ECG record.
+    show : bool
+        Display the plot immediately (default ``True``).
     """
     require_matplotlib()
     import matplotlib.pyplot as plt
@@ -914,6 +1048,7 @@ def plot_report(
             ax.tick_params(labelsize=6)
             if row_idx < 2:
                 ax.set_xticklabels([])
+            _style_ax(ax)
 
     ax_rhythm = fig.add_subplot(gs[4, :])
     rl = _find_lead(leads, "II")
@@ -925,6 +1060,7 @@ def plot_report(
     _ecg_grid(ax_rhythm)
     ax_rhythm.set_xlabel("Time (s)", fontsize=8)
     ax_rhythm.tick_params(labelsize=6)
+    _style_ax(ax_rhythm)
 
     ax_qi = fig.add_subplot(gs[5, :2])
     ax_qi.axis("off")
@@ -938,6 +1074,10 @@ def plot_report(
         fig.tight_layout()
     except Exception:
         pass
+
+    if show:
+        plt.show()
+
     return fig
 
 

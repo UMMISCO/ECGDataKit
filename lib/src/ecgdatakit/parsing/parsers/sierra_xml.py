@@ -26,6 +26,7 @@ from ecgdatakit.models import (
     Lead,
     PatientInfo,
     RecordingInfo,
+    SignalCharacteristics,
 )
 from ecgdatakit.parsing.parser import Parser
 
@@ -75,6 +76,7 @@ PATIENT_FIELDS: dict[str, XMLField] = {
     "sex": XMLField("generalpatientdata", "sex", "str"),
     "weight": XMLField("generalpatientdata", "kg", "float"),
     "height": XMLField("generalpatientdata", "cm", "float"),
+    "race": XMLField("generalpatientdata", "race", "str"),
 }
 
 RECORDING_FIELDS: dict[str, XMLField] = {
@@ -322,6 +324,7 @@ class SierraXMLParser(Parser):
         record.filters = self._read_filters(doc)
         record.measurements = self._read_measurements(doc)
         record.interpretation = self._read_interpretation(doc)
+        record.signal = self._read_signal(doc)
         record.raw_metadata["signal_characteristics"] = self._read_signal_characteristics(doc)
         record.raw_metadata["filepath"] = str(file_path)
 
@@ -332,6 +335,23 @@ class SierraXMLParser(Parser):
         order_info = self._read_order_info(doc)
         if order_info is not None:
             record.raw_metadata["order_info"] = order_info
+            if isinstance(order_info, dict):
+                if not record.recording.referring_physician:
+                    for key in ("referringphysician", "orderingphysician"):
+                        val = order_info.get(key)
+                        if val and isinstance(val, str):
+                            record.recording.referring_physician = val
+                            break
+                if not record.recording.room:
+                    val = order_info.get("room")
+                    if val and isinstance(val, str):
+                        record.recording.room = val
+
+        # Extract technician from dataacquisition node
+        tech_field = XMLField("dataacquisition", "operatorid", "str")
+        tech = tech_field.get_value(doc)
+        if tech and not record.recording.technician:
+            record.recording.technician = str(tech)
 
         if record.leads:
             record.recording.sample_rate = record.leads[0].sample_rate
@@ -357,6 +377,8 @@ class SierraXMLParser(Parser):
                     info.weight = float(value)
                 elif field_name == "height":
                     info.height = float(value)
+                elif field_name == "race":
+                    info.race = str(value)
         return info
 
     def _read_recording(self, doc: dict) -> RecordingInfo:
@@ -556,6 +578,45 @@ class SierraXMLParser(Parser):
         """Extract <orderinfo> section as raw data."""
         data = find_tag(doc, "orderinfo")
         return data
+
+    def _read_signal(self, doc: dict) -> SignalCharacteristics:
+        sig = SignalCharacteristics()
+        for fields_entry in SIGNAL_CHARACTERISTICS_FIELDS:
+            for field_name, field_def in fields_entry.items():
+                if not isinstance(field_def, XMLField):
+                    continue
+                value = field_def.get_value(doc)
+                if value is None:
+                    continue
+                if field_name == "bits_per_sample" and sig.bits_per_sample is None:
+                    sig.bits_per_sample = int(value)
+                elif field_name == "signal_offset" and sig.signal_offset is None:
+                    sig.signal_offset = int(value)
+                elif field_name == "signal_signed" and sig.signal_signed is None:
+                    sig.signal_signed = bool(value)
+                elif field_name == "number_channels_allocated" and sig.number_channels_allocated is None:
+                    sig.number_channels_allocated = int(value)
+                elif field_name == "number_channels_valid" and sig.number_channels_valid is None:
+                    sig.number_channels_valid = int(value)
+                elif field_name == "electrode_placement" and not sig.electrode_placement:
+                    sig.electrode_placement = str(value)
+                elif field_name == "acsetting" and sig.acsetting is None:
+                    sig.acsetting = int(value)
+                elif field_name == "compression" and not sig.compression:
+                    sig.compression = str(value)
+                elif field_name == "data_encoding" and not sig.data_encoding:
+                    sig.data_encoding = str(value)
+                elif field_name == "upsampled" and sig.upsampled is None:
+                    sig.upsampled = bool(value)
+                elif field_name == "upsampling_method" and not sig.upsampling_method:
+                    sig.upsampling_method = str(value)
+                elif field_name == "downsampled" and sig.downsampled is None:
+                    sig.downsampled = bool(value)
+                elif field_name == "waveform_modified" and sig.waveform_modified is None:
+                    sig.waveform_modified = bool(value)
+                elif field_name == "artifact_filtered" and sig.filtered is None:
+                    sig.filtered = bool(value)
+        return sig
 
     def _read_signal_characteristics(self, doc: dict) -> list[dict]:
         result: list[dict] = []
