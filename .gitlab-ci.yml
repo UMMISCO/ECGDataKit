@@ -1,0 +1,16 @@
+pages:
+  stage: deploy
+  image: python:3.12-slim
+  script:
+    - pip install -r docs/requirements.txt
+    - pip install -e "./lib[all]"
+    - sphinx-build -b html docs public
+  artifacts:
+    paths:
+      - public
+  only:
+    - main
+  changes:
+    - docs/**/*
+    - lib/src/**/*
+    - .gitlab-ci.yml

@@ -171,6 +171,17 @@ code, pre, .highlight {
 .header-github:hover { color: #fff; background: rgba(255,255,255,8%); }
 .header-github svg { width: 20px; height: 20px; }
 
+.header-gitlab {
+  display: flex; align-items: center; justify-content: center;
+  width: 36px; height: 36px;
+  border-radius: 8px;
+  color: #94a3b8;
+  transition: color .15s var(--ease), background .15s var(--ease);
+  text-decoration: none;
+}
+.header-gitlab:hover { color: #e24329; background: rgba(255,255,255,8%); }
+.header-gitlab svg { width: 20px; height: 20px; }
+
 /* Hamburger */
 .hamburger {
   display: none;
@@ -686,6 +697,14 @@ html:has(.landing) {
 }
 .top-navbar-github:hover { color: #fff; background: rgba(255,255,255,8%); }
 .top-navbar-github svg { width: 20px; height: 20px; }
+
+.top-navbar-gitlab {
+  display: flex !important; align-items: center; justify-content: center;
+  width: 36px; height: 36px; border-radius: 8px;
+  color: #94a3b8; transition: color .15s var(--ease), background .15s var(--ease);
+}
+.top-navbar-gitlab:hover { color: #e24329; background: rgba(255,255,255,8%); }
+.top-navbar-gitlab svg { width: 20px; height: 20px; }
 
 .top-navbar-toggle {
   display: none; background: none; border: none;
