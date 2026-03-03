@@ -15,7 +15,9 @@ from numpy.typing import NDArray
 from ecgdatakit.models import ECGRecord, Lead, LeadLike
 from ecgdatakit.plotting._core import (
     GRID_12LEAD,
+    STANDARD_12LEAD,
     _find_lead,
+    _grid_shape,
     _resolve_leads,
     ensure_lead,
     lead_color,
@@ -122,8 +124,10 @@ def iplot_leads(
     fs: int | None = None,
     show: bool = True,
     x_axis: str = "time",
+    rows: int | None = None,
+    cols: int | None = None,
 ) -> go.Figure:
-    """Interactive stacked leads with synchronized X-axis zoom.
+    """Interactive leads in a grid layout (vertical stack by default).
 
     Parameters
     ----------
@@ -142,6 +146,11 @@ def iplot_leads(
         Display the plot immediately (default ``True``).
     x_axis : str
         ``"time"`` for seconds (default) or ``"samples"`` for sample indices.
+    rows : int | None
+        Number of rows in the subplot grid. Derived from *cols* or defaults
+        to one row per lead when neither is given.
+    cols : int | None
+        Number of columns in the subplot grid (default ``1``).
     """
     require_plotly()
     import plotly.graph_objects as go
@@ -152,17 +161,19 @@ def iplot_leads(
     if n == 0:
         return go.Figure()
 
-    h = height or max(300, 150 * n)
-    subplot_titles = [ld.label for ld in lead_list]
+    r, c = _grid_shape(n, rows, cols)
+    h = height or max(300, 150 * r)
+    subplot_titles = [ld.label for ld in lead_list] + [""] * (r * c - n)
 
     fig = make_subplots(
-        rows=n, cols=1,
+        rows=r, cols=c,
         shared_xaxes=True,
         subplot_titles=subplot_titles,
-        vertical_spacing=0.02,
+        vertical_spacing=max(0.02, 0.12 / r),
     )
 
-    for i, ld in enumerate(lead_list, start=1):
+    for i, ld in enumerate(lead_list):
+        ri, ci = divmod(i, c)
         x, _, _ = _x_data_i(ld, x_axis)
         fig.add_trace(
             go.Scatter(
@@ -172,7 +183,7 @@ def iplot_leads(
                 line=dict(color=lead_color(ld.label), width=1),
                 hovertemplate="%{y:.3f}<extra></extra>",
             ),
-            row=i, col=1,
+            row=ri + 1, col=ci + 1,
         )
 
         if peaks_dict and ld.label in peaks_dict:
@@ -185,7 +196,7 @@ def iplot_leads(
                     marker=dict(color="red", size=6, symbol="triangle-down"),
                     showlegend=False,
                 ),
-                row=i, col=1,
+                row=ri + 1, col=ci + 1,
             )
 
     xlabel = "Sample" if x_axis == "samples" else "Time (s)"
@@ -195,7 +206,9 @@ def iplot_leads(
         hovermode="x unified",
         showlegend=True,
     )
-    fig.update_xaxes(title_text=xlabel, row=n, col=1)
+    # X-axis label on bottom row only
+    for ci in range(1, c + 1):
+        fig.update_xaxes(title_text=xlabel, row=r, col=ci)
 
     if show:
         fig.show()
@@ -206,14 +219,19 @@ def iplot_leads(
 def iplot_12lead(
     leads: list[Lead] | ECGRecord | NDArray[np.float64] | list[NDArray[np.float64]],
     record: ECGRecord | None = None,
-    duration: float = 10.0,
-    height: int = 800,
+    height: int | None = None,
     *,
     fs: int | None = None,
     show: bool = True,
     x_axis: str = "time",
+    rows: int | None = None,
+    cols: int | None = None,
 ) -> go.Figure:
-    """Interactive 12-lead grid.
+    """Interactive 12-lead plot with standard lead names.
+
+    Unlike :func:`iplot_leads`, this function assigns the standard 12-lead
+    names (I, II, III, aVR, …, V6) when the input contains unnamed leads.
+    The full signal is plotted without cropping.
 
     Parameters
     ----------
@@ -222,16 +240,19 @@ def iplot_12lead(
         (n_leads × n_samples) or a list of 1-D numpy arrays.
     record : ECGRecord | None
         Optional record for header annotations.
-    duration : float
-        Seconds per cell (default 10).
-    height : int
-        Figure height in pixels.
+    height : int | None
+        Figure height in pixels (auto-calculated if ``None``).
     fs : int | None
         Sample rate in Hz.  Required when *leads* is a numpy array.
     show : bool
         Display the plot immediately (default ``True``).
     x_axis : str
         ``"time"`` for seconds (default) or ``"samples"`` for sample indices.
+    rows : int | None
+        Number of rows in the subplot grid. Derived from *cols* or defaults
+        to one row per lead when neither is given.
+    cols : int | None
+        Number of columns in the subplot grid (default ``1``).
     """
     require_plotly()
     import plotly.graph_objects as go
@@ -241,58 +262,39 @@ def iplot_12lead(
     if record is not None:
         rec = record
 
-    subplot_titles = []
-    for row_labels in GRID_12LEAD:
-        subplot_titles.extend(row_labels)
-    subplot_titles.append("II Rhythm Strip")
-    while len(subplot_titles) < 16:
-        subplot_titles.append("")
+    n = len(lead_list)
+    if n == 0:
+        return go.Figure()
+
+    # Assign standard 12-lead names when leads are unnamed
+    for i, ld in enumerate(lead_list):
+        if i < len(STANDARD_12LEAD) and ld.label.startswith("Lead "):
+            ld.label = STANDARD_12LEAD[i]
+
+    r, c = _grid_shape(n, rows, cols)
+    h = height or max(300, 150 * r)
+    subplot_titles = [ld.label for ld in lead_list] + [""] * (r * c - n)
 
     fig = make_subplots(
-        rows=4, cols=4,
-        subplot_titles=subplot_titles[:16],
-        vertical_spacing=0.06,
-        horizontal_spacing=0.04,
-        specs=[
-            [{"type": "xy"}, {"type": "xy"}, {"type": "xy"}, {"type": "xy"}],
-            [{"type": "xy"}, {"type": "xy"}, {"type": "xy"}, {"type": "xy"}],
-            [{"type": "xy"}, {"type": "xy"}, {"type": "xy"}, {"type": "xy"}],
-            [{"type": "xy", "colspan": 4}, None, None, None],
-        ],
+        rows=r, cols=c,
+        shared_xaxes=True,
+        subplot_titles=subplot_titles,
+        vertical_spacing=max(0.02, 0.12 / r),
     )
 
-    for row_idx, row_labels in enumerate(GRID_12LEAD):
-        for col_idx, lbl in enumerate(row_labels):
-            ld = _find_lead(lead_list, lbl)
-            if ld is not None:
-                x, _, _ = _x_data_i(ld, x_axis)
-                max_s = int(duration * ld.sample_rate)
-                sl = slice(0, min(max_s, len(ld.samples)))
-                fig.add_trace(
-                    go.Scatter(
-                        x=x[sl], y=ld.samples[sl],
-                        mode="lines",
-                        name=lbl,
-                        line=dict(color=lead_color(lbl), width=1),
-                        showlegend=False,
-                        hovertemplate=f"{lbl}<br>%{{x:.3f}}: %{{y:.3f}}<extra></extra>",
-                    ),
-                    row=row_idx + 1, col=col_idx + 1,
-                )
-
-    rl = _find_lead(lead_list, "II")
-    if rl is not None:
-        x, _, _ = _x_data_i(rl, x_axis)
+    for i, ld in enumerate(lead_list):
+        ri, ci = divmod(i, c)
+        x, _, _ = _x_data_i(ld, x_axis)
         fig.add_trace(
             go.Scatter(
-                x=x, y=rl.samples,
+                x=x, y=ld.samples,
                 mode="lines",
-                name="II rhythm",
-                line=dict(color=lead_color("II"), width=1),
+                name=ld.label,
+                line=dict(color=lead_color(ld.label), width=1),
                 showlegend=False,
-                hovertemplate="II<br>%{x:.3f}: %{y:.3f}<extra></extra>",
+                hovertemplate=f"{ld.label}<br>%{{x:.3f}}: %{{y:.3f}}<extra></extra>",
             ),
-            row=4, col=1,
+            row=ri + 1, col=ci + 1,
         )
 
     if rec is not None:
@@ -306,11 +308,14 @@ def iplot_12lead(
             align="left",
         )
 
+    xlabel = "Sample" if x_axis == "samples" else "Time (s)"
     fig.update_layout(
-        height=height,
+        height=h,
         hovermode="closest",
         margin=dict(t=80 if rec else 40),
     )
+    for ci in range(1, c + 1):
+        fig.update_xaxes(title_text=xlabel, row=r, col=ci)
 
     if show:
         fig.show()

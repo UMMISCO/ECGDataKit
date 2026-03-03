@@ -34,12 +34,12 @@ All static plot functions display the figure automatically by default (`show=Tru
       <td>Single lead waveform with optional R-peak markers. ECG-style grid with major lines every 0.2s / 0.5mV. Accepts <code>Lead</code> or numpy array. Set <code>x_axis="samples"</code> for sample indices instead of time.</td>
     </tr>
     <tr>
-      <td><code><a href="reference.html#ecgdatakit.plotting.plot_leads">plot_leads</a>(leads, peaks_dict=None, title=None, show_grid=True, figsize=(12,None), share_x=True, *, fs=None, show=True, x_axis="time")</code></td>
-      <td>Multiple leads stacked vertically, shared X-axis. Accepts <code>list[Lead]</code>, <code>ECGRecord</code>, 2-D numpy array, or list of 1-D arrays. Height auto-calculated.</td>
+      <td><code><a href="reference.html#ecgdatakit.plotting.plot_leads">plot_leads</a>(leads, peaks_dict=None, title=None, show_grid=True, figsize=(12,None), share_x=True, *, fs=None, show=True, x_axis="time", rows=None, cols=None)</code></td>
+      <td>Multiple leads in a grid layout (vertical stack by default). Use <code>rows</code>/<code>cols</code> to arrange in a grid (e.g. <code>cols=2</code> for 2 columns). Accepts <code>list[Lead]</code>, <code>ECGRecord</code>, 2-D numpy array, or list of 1-D arrays.</td>
     </tr>
     <tr>
-      <td><code><a href="reference.html#ecgdatakit.plotting.plot_12lead">plot_12lead</a>(leads, record=None, paper_speed=25, amplitude=10, rhythm_lead="II", duration=10.0, figsize=(14,10), *, fs=None, show=True, x_axis="time")</code></td>
-      <td>Standard 12-lead grid (4x3) with rhythm strip. Paper-style grid. Optional header with patient info and measurements when <code>record</code> is provided. Accepts <code>list[Lead]</code>, <code>ECGRecord</code>, 2-D numpy array, or list of 1-D arrays.</td>
+      <td><code><a href="reference.html#ecgdatakit.plotting.plot_12lead">plot_12lead</a>(leads, record=None, show_grid=True, figsize=(12,None), share_x=True, *, fs=None, show=True, x_axis="time", rows=None, cols=None)</code></td>
+      <td>Plot 12 leads with standard names (I, II, III, aVR, …, V6). Assigns names automatically when input is unnamed (e.g. numpy array). Full signal, no cropping. Use <code>rows</code>/<code>cols</code> for grid layout. Optional header when <code>record</code> is provided.</td>
     </tr>
   </tbody>
 </table>
@@ -62,8 +62,14 @@ plot_lead(lead, x_axis="samples")
 signals = np.random.randn(3, 5000)
 plot_leads(signals, fs=500)
 
-# Multi-lead from a list of 1-D numpy arrays
-plot_12lead([arr_i, arr_ii, arr_iii, ...], fs=500)
+# Multi-lead in a 3×2 grid layout
+plot_leads(np.random.randn(6, 5000), fs=500, cols=2)
+
+# 12-lead with standard names from a numpy array
+plot_12lead(np.random.randn(12, 5000), fs=500)
+
+# 12-lead in a 4×3 grid
+plot_12lead(np.random.randn(12, 5000), fs=500, cols=3)
 
 # Suppress display to save to file
 fig = plot_12lead(record, show=False)
@@ -175,12 +181,12 @@ All interactive plot functions display the figure automatically by default (`sho
       <td>Interactive single lead with rangeslider, crosshair spikes, hover showing time and amplitude. Accepts <code>Lead</code> or numpy array.</td>
     </tr>
     <tr>
-      <td><code><a href="reference.html#ecgdatakit.plotting.iplot_leads">iplot_leads</a>(leads, peaks_dict=None, title=None, height=None, *, fs=None, show=True, x_axis="time")</code></td>
-      <td>Stacked leads with synchronized X-axis zoom. Toggle visibility via legend. Accepts <code>list[Lead]</code>, <code>ECGRecord</code>, 2-D numpy array, or list of 1-D arrays.</td>
+      <td><code><a href="reference.html#ecgdatakit.plotting.iplot_leads">iplot_leads</a>(leads, peaks_dict=None, title=None, height=None, *, fs=None, show=True, x_axis="time", rows=None, cols=None)</code></td>
+      <td>Interactive leads in a grid layout (vertical stack by default). Use <code>rows</code>/<code>cols</code> for grid arrangement. Synchronized X-axis zoom. Accepts <code>list[Lead]</code>, <code>ECGRecord</code>, 2-D numpy array, or list of 1-D arrays.</td>
     </tr>
     <tr>
-      <td><code><a href="reference.html#ecgdatakit.plotting.iplot_12lead">iplot_12lead</a>(leads, record=None, duration=10.0, height=800, *, fs=None, show=True, x_axis="time")</code></td>
-      <td>Interactive 4x3 grid + rhythm strip. Header annotation when record provided. Accepts <code>list[Lead]</code>, <code>ECGRecord</code>, 2-D numpy array, or list of 1-D arrays.</td>
+      <td><code><a href="reference.html#ecgdatakit.plotting.iplot_12lead">iplot_12lead</a>(leads, record=None, height=None, *, fs=None, show=True, x_axis="time", rows=None, cols=None)</code></td>
+      <td>Interactive 12-lead plot with standard names (I, II, …, V6). Assigns names automatically for unnamed leads. Full signal, no cropping. Use <code>rows</code>/<code>cols</code> for grid layout. Header annotation when record provided.</td>
     </tr>
   </tbody>
 </table>
@@ -200,8 +206,14 @@ iplot_lead(signal, fs=500)
 signals = np.random.randn(12, 5000)
 iplot_leads(signals, fs=500)
 
-# Multi-lead from a list of 1-D arrays
-iplot_12lead([arr_i, arr_ii, arr_iii, ...], fs=500)
+# Multi-lead in a grid layout
+iplot_leads(np.random.randn(6, 5000), fs=500, cols=2)
+
+# 12-lead with standard names
+iplot_12lead(np.random.randn(12, 5000), fs=500)
+
+# 12-lead in a 4×3 grid
+iplot_12lead(np.random.randn(12, 5000), fs=500, cols=3)
 
 # Suppress display
 fig = iplot_12lead(record, show=False)

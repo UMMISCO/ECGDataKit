@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import math
 from types import ModuleType
 
 import numpy as np
@@ -80,6 +81,11 @@ GRID_12LEAD: list[list[str]] = [
     ["I", "aVR", "V1", "V4"],
     ["II", "aVL", "V2", "V5"],
     ["III", "aVF", "V3", "V6"],
+]
+
+STANDARD_12LEAD: list[str] = [
+    "I", "II", "III", "aVR", "aVL", "aVF",
+    "V1", "V2", "V3", "V4", "V5", "V6",
 ]
 
 LEAD_COLORS: dict[str, str] = {
@@ -167,3 +173,23 @@ def _find_lead(leads: list[Lead], label: str) -> Lead | None:
         if lead.label.lower() == target:
             return lead
     return None
+
+
+def _grid_shape(
+    n: int,
+    rows: int | None = None,
+    cols: int | None = None,
+) -> tuple[int, int]:
+    """Compute (rows, cols) for a subplot grid holding *n* items.
+
+    If both *rows* and *cols* are given they are returned as-is.
+    If only one is given the other is derived.
+    If neither is given the default is ``(n, 1)`` (vertical stack).
+    """
+    if rows and cols:
+        return rows, cols
+    if rows:
+        return rows, math.ceil(n / rows)
+    if cols:
+        return math.ceil(n / cols), cols
+    return n, 1

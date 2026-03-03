@@ -17,7 +17,9 @@ from numpy.typing import NDArray
 from ecgdatakit.models import ECGRecord, Lead, LeadLike
 from ecgdatakit.plotting._core import (
     GRID_12LEAD,
+    STANDARD_12LEAD,
     _find_lead,
+    _grid_shape,
     _resolve_leads,
     ensure_lead,
     lead_color,
@@ -177,8 +179,10 @@ def plot_leads(
     fs: int | None = None,
     show: bool = True,
     x_axis: str = "time",
+    rows: int | None = None,
+    cols: int | None = None,
 ) -> Figure:
-    """Plot multiple leads stacked vertically.
+    """Plot multiple leads in a grid layout (vertical stack by default).
 
     Parameters
     ----------
@@ -192,7 +196,7 @@ def plot_leads(
     show_grid : bool
         Draw ECG paper-style grid.
     figsize : tuple
-        Width is fixed; height is auto-calculated (2 in per lead) when ``None``.
+        Width is fixed; height is auto-calculated (2 in per row) when ``None``.
     share_x : bool
         Share the x-axis across all subplots (default ``True``).
     fs : int | None
@@ -201,6 +205,11 @@ def plot_leads(
         Display the plot immediately (default ``True``).
     x_axis : str
         ``"time"`` for seconds (default) or ``"samples"`` for sample indices.
+    rows : int | None
+        Number of rows in the subplot grid. Derived from *cols* or defaults
+        to one row per lead when neither is given.
+    cols : int | None
+        Number of columns in the subplot grid (default ``1``).
     """
     require_matplotlib()
     import matplotlib.pyplot as plt
@@ -211,13 +220,13 @@ def plot_leads(
         fig, _ = plt.subplots(figsize=(figsize[0], 3))
         return fig
 
-    h = figsize[1] if figsize[1] is not None else max(3, 2 * n)
-    fig, axes = plt.subplots(n, 1, figsize=(figsize[0], h), sharex=share_x)
-    if n == 1:
-        axes = [axes]
+    r, c = _grid_shape(n, rows, cols)
+    h = figsize[1] if figsize[1] is not None else max(3, 2 * r)
+    fig, axes = plt.subplots(r, c, figsize=(figsize[0], h), sharex=share_x, squeeze=False)
 
     for i, ld in enumerate(lead_list):
-        ax = axes[i]
+        ri, ci = divmod(i, c)
+        ax = axes[ri][ci]
         x, _ = _x_data(ld, x_axis)
         ax.plot(x, ld.samples, color=lead_color(ld.label), linewidth=0.8)
 
@@ -232,7 +241,15 @@ def plot_leads(
         ax.set_xlim(x[0], x[-1])
         _style_ax(ax)
 
-    axes[-1].set_xlabel("Sample" if x_axis == "samples" else "Time (s)")
+    # Hide empty subplots
+    for j in range(n, r * c):
+        ri, ci = divmod(j, c)
+        axes[ri][ci].set_visible(False)
+
+    # X-axis label on bottom row
+    for ci in range(c):
+        axes[-1][ci].set_xlabel("Sample" if x_axis == "samples" else "Time (s)")
+
     if title:
         fig.suptitle(title, fontsize=13)
     fig.tight_layout()
@@ -246,17 +263,21 @@ def plot_leads(
 def plot_12lead(
     leads: list[Lead] | ECGRecord | NDArray[np.float64] | list[NDArray[np.float64]],
     record: ECGRecord | None = None,
-    paper_speed: float = 25,
-    amplitude: float = 10,
-    rhythm_lead: str = "II",
-    duration: float = 10.0,
-    figsize: tuple[float, float] = (14, 10),
+    show_grid: bool = True,
+    figsize: tuple[float, float | None] = (12, None),
+    share_x: bool = True,
     *,
     fs: int | None = None,
     show: bool = True,
     x_axis: str = "time",
+    rows: int | None = None,
+    cols: int | None = None,
 ) -> Figure:
-    """Standard 12-lead ECG grid layout.
+    """Plot 12 leads with standard lead names (I, II, III, aVR, …, V6).
+
+    Unlike :func:`plot_leads`, this function assigns the standard 12-lead
+    names when the input contains unnamed leads (e.g. a raw numpy array).
+    The full signal is plotted without cropping.
 
     Parameters
     ----------
@@ -264,81 +285,81 @@ def plot_12lead(
         Leads (or full record) to plot.  Also accepts a 2-D numpy array
         (n_leads × n_samples) or a list of 1-D numpy arrays.
     record : ECGRecord | None
-        If provided, header with patient/device/measurement info is shown.
-    paper_speed : float
-        Paper speed in mm/s (default 25).
-    amplitude : float
-        Amplitude scale in mm/mV (default 10).
-    rhythm_lead : str
-        Lead used for the full-length rhythm strip (default ``"II"``).
-    duration : float
-        Seconds of signal to show per cell (default 10.0).
+        If provided, a header with patient/device/measurement info is shown.
+    show_grid : bool
+        Draw ECG paper-style grid (default ``True``).
     figsize : tuple
-        Figure size.
+        Width is fixed; height is auto-calculated (2 in per row) when ``None``.
+    share_x : bool
+        Share the x-axis across all subplots (default ``True``).
     fs : int | None
         Sample rate in Hz.  Required when *leads* is a numpy array.
     show : bool
         Display the plot immediately (default ``True``).
     x_axis : str
         ``"time"`` for seconds (default) or ``"samples"`` for sample indices.
+    rows : int | None
+        Number of rows in the subplot grid. Derived from *cols* or defaults
+        to one row per lead when neither is given.
+    cols : int | None
+        Number of columns in the subplot grid (default ``1``).
     """
     require_matplotlib()
     import matplotlib.pyplot as plt
-    import matplotlib.gridspec as gridspec
 
     lead_list, rec = _resolve_leads(leads, fs=fs)
     if record is not None:
         rec = record
 
+    n = len(lead_list)
+    if n == 0:
+        fig, _ = plt.subplots(figsize=(figsize[0], 3))
+        return fig
+
+    # Assign standard 12-lead names when leads are unnamed
+    for i, ld in enumerate(lead_list):
+        if i < len(STANDARD_12LEAD) and ld.label.startswith("Lead "):
+            ld.label = STANDARD_12LEAD[i]
+
+    r, c = _grid_shape(n, rows, cols)
+    h = figsize[1] if figsize[1] is not None else max(3, 2 * r)
+
     has_header = rec is not None
-    nrows = 5 if has_header else 4
-    height_ratios = [0.8, 1, 1, 1, 0.8] if has_header else [1, 1, 1, 0.8]
-
-    fig = plt.figure(figsize=figsize)
-    gs = gridspec.GridSpec(
-        nrows, 4, figure=fig, height_ratios=height_ratios, hspace=0.3, wspace=0.15
-    )
-
-    row_offset = 1 if has_header else 0
-
-    if has_header and rec is not None:
-        ax_hdr = fig.add_subplot(gs[0, :])
+    if has_header:
+        fig, all_axes = plt.subplots(
+            r + 1, c, figsize=(figsize[0], h + 1.5),
+            sharex=False, squeeze=False,
+            gridspec_kw={"height_ratios": [0.4] + [1] * r},
+        )
+        # Merge top row into one header axes
+        for ci in range(c):
+            all_axes[0][ci].set_visible(False)
+        ax_hdr = fig.add_subplot(r + 1, 1, 1)
         ax_hdr.axis("off")
         _draw_header(ax_hdr, rec)
+        axes = all_axes[1:]
+    else:
+        fig, axes = plt.subplots(r, c, figsize=(figsize[0], h), sharex=share_x, squeeze=False)
 
-    for row_idx, row_labels in enumerate(GRID_12LEAD):
-        for col_idx, lbl in enumerate(row_labels):
-            ax = fig.add_subplot(gs[row_offset + row_idx, col_idx])
-            ld = _find_lead(lead_list, lbl)
-            if ld is not None:
-                x, _ = _x_data(ld, x_axis)
-                max_samples = int(duration * ld.sample_rate)
-                sl = slice(0, min(max_samples, len(ld.samples)))
-                ax.plot(
-                    x[sl], ld.samples[sl], color=lead_color(lbl), linewidth=0.7
-                )
-                if x_axis == "samples":
-                    ax.set_xlim(1, min(max_samples, len(ld.samples)))
-                else:
-                    ax.set_xlim(0, duration)
-            ax.set_title(lbl, fontsize=9, loc="left", pad=2)
+    for i, ld in enumerate(lead_list):
+        ri, ci = divmod(i, c)
+        ax = axes[ri][ci]
+        x, _ = _x_data(ld, x_axis)
+        ax.plot(x, ld.samples, color=lead_color(ld.label), linewidth=0.8)
+        ax.set_title(ld.label, fontsize=9, loc="left", pad=2)
+        if show_grid:
             _ecg_grid(ax)
-            ax.tick_params(labelsize=7)
-            if row_idx < 2:
-                ax.set_xticklabels([])
-            _style_ax(ax)
+        ax.set_xlim(x[0], x[-1])
+        _style_ax(ax)
 
-    ax_rhythm = fig.add_subplot(gs[row_offset + 3, :])
-    rl = _find_lead(lead_list, rhythm_lead)
-    if rl is not None:
-        x, _ = _x_data(rl, x_axis)
-        ax_rhythm.plot(x, rl.samples, color=lead_color(rhythm_lead), linewidth=0.7)
-        ax_rhythm.set_xlim(x[0], x[-1])
-    ax_rhythm.set_title(f"{rhythm_lead} rhythm strip", fontsize=9, loc="left", pad=2)
-    _ecg_grid(ax_rhythm)
-    ax_rhythm.set_xlabel("Sample" if x_axis == "samples" else "Time (s)", fontsize=8)
-    ax_rhythm.tick_params(labelsize=7)
-    _style_ax(ax_rhythm)
+    # Hide empty subplots
+    for j in range(n, r * c):
+        ri, ci = divmod(j, c)
+        axes[ri][ci].set_visible(False)
+
+    # X-axis label on bottom row
+    for ci in range(c):
+        axes[-1][ci].set_xlabel("Sample" if x_axis == "samples" else "Time (s)")
 
     fig.tight_layout()
 
