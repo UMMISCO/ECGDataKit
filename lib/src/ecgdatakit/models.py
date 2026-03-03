@@ -258,6 +258,10 @@ class Lead:
 LeadLike = Lead | NDArray[np.float64]
 """Type alias: accepts a :class:`Lead` or a raw numpy array of samples."""
 
+LeadsLike = "list[Lead] | ECGRecord | NDArray[np.float64] | list[NDArray[np.float64]]"
+"""Type alias: accepts a list of :class:`Lead`, an :class:`ECGRecord`,
+a 2-D numpy array (n_leads × n_samples), or a list of 1-D numpy arrays."""
+
 
 @dataclass
 class ECGRecord:

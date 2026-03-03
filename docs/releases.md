@@ -4,7 +4,17 @@ All notable changes to ECGDataKit are documented here.
 
 ---
 
-## v0.0.7
+## v0.0.8
+
+### Visualization
+
+- Multi-lead plotting functions (`plot_leads`, `plot_12lead`, `plot_quality`, `iplot_leads`, `iplot_12lead`) now accept raw numpy arrays directly with `fs=` parameter — pass a 2D array (n_leads × n_samples) or a list of 1D arrays alongside the sample rate
+- New `LeadsLike` type alias for multi-lead inputs: `list[Lead] | ECGRecord | NDArray | list[NDArray]`
+- Static plots no longer force the `Agg` backend — plots display inline in Jupyter and GUI environments by default
+
+---
+
+## v0.0.7 - Signal Characteristics, Flexible Inputs & Sphinx Docs Latest
 
 ### Parsing
 
@@ -39,6 +49,7 @@ All notable changes to ECGDataKit are documented here.
 
 ---
 
+(v0-0-6)=
 ## v0.0.6 — Initial Release
 
 **Release date:** March 2, 2026

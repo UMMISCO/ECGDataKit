@@ -167,13 +167,14 @@ def plot_lead(
 
 
 def plot_leads(
-    leads: list[Lead] | ECGRecord,
+    leads: list[Lead] | ECGRecord | NDArray[np.float64] | list[NDArray[np.float64]],
     peaks_dict: dict[str, NDArray[np.intp]] | None = None,
     title: str | None = None,
     show_grid: bool = True,
     figsize: tuple[float, float | None] = (12, None),
     share_x: bool = True,
     *,
+    fs: int | None = None,
     show: bool = True,
     x_axis: str = "time",
 ) -> Figure:
@@ -181,8 +182,9 @@ def plot_leads(
 
     Parameters
     ----------
-    leads : list[Lead] | ECGRecord
-        Leads to plot.
+    leads : list[Lead] | ECGRecord | NDArray | list[NDArray]
+        Leads to plot.  Also accepts a 2-D numpy array
+        (n_leads × n_samples) or a list of 1-D numpy arrays.
     peaks_dict : dict | None
         ``{label: peaks_array}`` for per-lead R-peak markers.
     title : str | None
@@ -193,6 +195,8 @@ def plot_leads(
         Width is fixed; height is auto-calculated (2 in per lead) when ``None``.
     share_x : bool
         Share the x-axis across all subplots (default ``True``).
+    fs : int | None
+        Sample rate in Hz.  Required when *leads* is a numpy array.
     show : bool
         Display the plot immediately (default ``True``).
     x_axis : str
@@ -201,7 +205,7 @@ def plot_leads(
     require_matplotlib()
     import matplotlib.pyplot as plt
 
-    lead_list, _ = _resolve_leads(leads)
+    lead_list, _ = _resolve_leads(leads, fs=fs)
     n = len(lead_list)
     if n == 0:
         fig, _ = plt.subplots(figsize=(figsize[0], 3))
@@ -240,7 +244,7 @@ def plot_leads(
 
 
 def plot_12lead(
-    leads: list[Lead] | ECGRecord,
+    leads: list[Lead] | ECGRecord | NDArray[np.float64] | list[NDArray[np.float64]],
     record: ECGRecord | None = None,
     paper_speed: float = 25,
     amplitude: float = 10,
@@ -248,6 +252,7 @@ def plot_12lead(
     duration: float = 10.0,
     figsize: tuple[float, float] = (14, 10),
     *,
+    fs: int | None = None,
     show: bool = True,
     x_axis: str = "time",
 ) -> Figure:
@@ -255,8 +260,9 @@ def plot_12lead(
 
     Parameters
     ----------
-    leads : list[Lead] | ECGRecord
-        Leads (or full record) to plot.
+    leads : list[Lead] | ECGRecord | NDArray | list[NDArray]
+        Leads (or full record) to plot.  Also accepts a 2-D numpy array
+        (n_leads × n_samples) or a list of 1-D numpy arrays.
     record : ECGRecord | None
         If provided, header with patient/device/measurement info is shown.
     paper_speed : float
@@ -269,6 +275,8 @@ def plot_12lead(
         Seconds of signal to show per cell (default 10.0).
     figsize : tuple
         Figure size.
+    fs : int | None
+        Sample rate in Hz.  Required when *leads* is a numpy array.
     show : bool
         Display the plot immediately (default ``True``).
     x_axis : str
@@ -278,7 +286,7 @@ def plot_12lead(
     import matplotlib.pyplot as plt
     import matplotlib.gridspec as gridspec
 
-    lead_list, rec = _resolve_leads(leads)
+    lead_list, rec = _resolve_leads(leads, fs=fs)
     if record is not None:
         rec = record
 
@@ -930,17 +938,21 @@ def _plot_hrv_table(rr_ms: NDArray[np.float64], ax) -> None:
 
 
 def plot_quality(
-    leads: list[Lead] | ECGRecord,
+    leads: list[Lead] | ECGRecord | NDArray[np.float64] | list[NDArray[np.float64]],
     figsize: tuple[float, float] = (10, 5),
     *,
+    fs: int | None = None,
     show: bool = True,
 ) -> Figure:
     """Signal quality dashboard: SQI bar chart per lead.
 
     Parameters
     ----------
-    leads : list[Lead] | ECGRecord
-        Leads to assess.
+    leads : list[Lead] | ECGRecord | NDArray | list[NDArray]
+        Leads to assess.  Also accepts a 2-D numpy array
+        (n_leads × n_samples) or a list of 1-D numpy arrays.
+    fs : int | None
+        Sample rate in Hz.  Required when *leads* is a numpy array.
     show : bool
         Display the plot immediately (default ``True``).
     """
@@ -948,7 +960,7 @@ def plot_quality(
     import matplotlib.pyplot as plt
     from ecgdatakit.processing.quality import signal_quality_index, snr_estimate
 
-    lead_list, _ = _resolve_leads(leads)
+    lead_list, _ = _resolve_leads(leads, fs=fs)
     if not lead_list:
         fig, _ = plt.subplots(figsize=figsize)
         return fig

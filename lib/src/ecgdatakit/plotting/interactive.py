@@ -114,11 +114,12 @@ def iplot_lead(
 
 
 def iplot_leads(
-    leads: list[Lead] | ECGRecord,
+    leads: list[Lead] | ECGRecord | NDArray[np.float64] | list[NDArray[np.float64]],
     peaks_dict: dict[str, NDArray[np.intp]] | None = None,
     title: str | None = None,
     height: int | None = None,
     *,
+    fs: int | None = None,
     show: bool = True,
     x_axis: str = "time",
 ) -> go.Figure:
@@ -126,14 +127,17 @@ def iplot_leads(
 
     Parameters
     ----------
-    leads : list[Lead] | ECGRecord
-        Leads to plot.
+    leads : list[Lead] | ECGRecord | NDArray | list[NDArray]
+        Leads to plot.  Also accepts a 2-D numpy array
+        (n_leads × n_samples) or a list of 1-D numpy arrays.
     peaks_dict : dict | None
         ``{label: peaks_array}`` for per-lead peak markers.
     title : str | None
         Overall title.
     height : int | None
         Figure height (auto-calculated if ``None``).
+    fs : int | None
+        Sample rate in Hz.  Required when *leads* is a numpy array.
     show : bool
         Display the plot immediately (default ``True``).
     x_axis : str
@@ -143,7 +147,7 @@ def iplot_leads(
     import plotly.graph_objects as go
     from plotly.subplots import make_subplots
 
-    lead_list, _ = _resolve_leads(leads)
+    lead_list, _ = _resolve_leads(leads, fs=fs)
     n = len(lead_list)
     if n == 0:
         return go.Figure()
@@ -200,11 +204,12 @@ def iplot_leads(
 
 
 def iplot_12lead(
-    leads: list[Lead] | ECGRecord,
+    leads: list[Lead] | ECGRecord | NDArray[np.float64] | list[NDArray[np.float64]],
     record: ECGRecord | None = None,
     duration: float = 10.0,
     height: int = 800,
     *,
+    fs: int | None = None,
     show: bool = True,
     x_axis: str = "time",
 ) -> go.Figure:
@@ -212,14 +217,17 @@ def iplot_12lead(
 
     Parameters
     ----------
-    leads : list[Lead] | ECGRecord
-        Leads (or record) to plot.
+    leads : list[Lead] | ECGRecord | NDArray | list[NDArray]
+        Leads (or record) to plot.  Also accepts a 2-D numpy array
+        (n_leads × n_samples) or a list of 1-D numpy arrays.
     record : ECGRecord | None
         Optional record for header annotations.
     duration : float
         Seconds per cell (default 10).
     height : int
         Figure height in pixels.
+    fs : int | None
+        Sample rate in Hz.  Required when *leads* is a numpy array.
     show : bool
         Display the plot immediately (default ``True``).
     x_axis : str
@@ -229,7 +237,7 @@ def iplot_12lead(
     import plotly.graph_objects as go
     from plotly.subplots import make_subplots
 
-    lead_list, rec = _resolve_leads(leads)
+    lead_list, rec = _resolve_leads(leads, fs=fs)
     if record is not None:
         rec = record
 

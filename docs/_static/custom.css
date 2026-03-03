@@ -35,6 +35,49 @@
   --ease: cubic-bezier(0.4, 0, 0.2, 1);
 }
 
+/* ── Dark-mode variable overrides ─────────────────────── */
+body[data-theme="dark"] {
+  --primary: #6ee7b7;
+  --primary-dark: #34d399;
+  --primary-light: #0f2a1f;
+  --primary-wash: #0f2a1f;
+  --text: #e2e8f0;
+  --text-secondary: #cbd5e1;
+  --text-muted: #94a3b8;
+  --text-inverse: #0f172a;
+  --bg: #131a25;
+  --bg-alt: #1e293b;
+  --bg-code-inline: #1e293b;
+  --border: #334155;
+  --border-light: #1e293b;
+  --shadow-sm: 0 1px 2px rgba(0,0,0,.25);
+  --shadow: 0 1px 3px rgba(0,0,0,.3), 0 1px 2px rgba(0,0,0,.2);
+  --shadow-md: 0 4px 6px -1px rgba(0,0,0,.3), 0 2px 4px -2px rgba(0,0,0,.2);
+  --shadow-lg: 0 10px 15px -3px rgba(0,0,0,.3), 0 4px 6px -4px rgba(0,0,0,.2);
+}
+
+@media (prefers-color-scheme: dark) {
+  body:not([data-theme="light"]) {
+    --primary: #6ee7b7;
+    --primary-dark: #34d399;
+    --primary-light: #0f2a1f;
+    --primary-wash: #0f2a1f;
+    --text: #e2e8f0;
+    --text-secondary: #cbd5e1;
+    --text-muted: #94a3b8;
+    --text-inverse: #0f172a;
+    --bg: #131a25;
+    --bg-alt: #1e293b;
+    --bg-code-inline: #1e293b;
+    --border: #334155;
+    --border-light: #1e293b;
+    --shadow-sm: 0 1px 2px rgba(0,0,0,.25);
+    --shadow: 0 1px 3px rgba(0,0,0,.3), 0 1px 2px rgba(0,0,0,.2);
+    --shadow-md: 0 4px 6px -1px rgba(0,0,0,.3), 0 2px 4px -2px rgba(0,0,0,.2);
+    --shadow-lg: 0 10px 15px -3px rgba(0,0,0,.3), 0 4px 6px -4px rgba(0,0,0,.2);
+  }
+}
+
 /* ── Fonts ─────────────────────────────────────────────── */
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;450;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap');
 
@@ -729,4 +772,559 @@ html:has(.landing) {
   }
   .top-navbar-links.show { display: flex; }
   .top-navbar-links a { padding: 10px 16px; width: 100%; }
+}
+
+
+/* ══════════════════════════════════════════════════════════
+   Activity Dashboard
+   ══════════════════════════════════════════════════════════ */
+
+.activity-dashboard {
+  margin-bottom: 32px;
+}
+
+/* Stats cards row */
+.activity-stats {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-bottom: 20px;
+}
+
+.activity-stat-card {
+  flex: 1 1 120px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 16px 20px;
+  text-align: center;
+  transition: border-color 0.2s ease, box-shadow 0.2s ease;
+}
+
+.activity-stat-card:hover {
+  border-color: var(--primary);
+  box-shadow: var(--shadow);
+}
+
+.activity-stat-value {
+  font-size: 22px;
+  font-weight: 700;
+  color: var(--text);
+  line-height: 1.2;
+}
+
+.activity-stat-label {
+  font-size: 12px;
+  color: var(--text-muted);
+  margin-top: 4px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+/* Contribution heatmap */
+.activity-heatmap-wrap {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  padding: 20px;
+  margin-bottom: 16px;
+}
+
+.activity-heatmap-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text);
+  margin-bottom: 12px;
+}
+
+.activity-heatmap-scroll {
+  overflow-x: auto;
+}
+
+/* SVG heatmap — light/dark visibility */
+.activity-heatmap-svg {
+  display: block;
+}
+.activity-heatmap-svg.dark {
+  display: none;
+}
+
+body[data-theme="dark"] .activity-heatmap-svg.light {
+  display: none;
+}
+body[data-theme="dark"] .activity-heatmap-svg.dark {
+  display: block;
+}
+
+/* SVG text styles */
+.activity-svg-month {
+  fill: var(--text-muted);
+  font-size: 11px;
+  font-family: var(--font);
+}
+
+.activity-svg-day {
+  fill: var(--text-muted);
+  font-size: 10px;
+  font-family: var(--font);
+}
+
+body[data-theme="dark"] .activity-svg-month {
+  fill: #94a3b8;
+}
+
+body[data-theme="dark"] .activity-svg-day {
+  fill: #94a3b8;
+}
+
+/* Legend */
+.activity-heatmap-legend {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  justify-content: flex-end;
+  margin-top: 8px;
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+.activity-heatmap-legend-cell {
+  width: 11px;
+  height: 11px;
+  border-radius: 2px;
+}
+
+.activity-heatmap-legend-cell.level-0 { background: #ebedf0; }
+.activity-heatmap-legend-cell.level-1 { background: #9be9a8; }
+.activity-heatmap-legend-cell.level-2 { background: #40c463; }
+.activity-heatmap-legend-cell.level-3 { background: #30a14e; }
+.activity-heatmap-legend-cell.level-4 { background: #216e39; }
+
+body[data-theme="dark"] .activity-heatmap-legend-cell.level-0 { background: #161b22; }
+body[data-theme="dark"] .activity-heatmap-legend-cell.level-1 { background: #0e4429; }
+body[data-theme="dark"] .activity-heatmap-legend-cell.level-2 { background: #006d32; }
+body[data-theme="dark"] .activity-heatmap-legend-cell.level-3 { background: #26a641; }
+body[data-theme="dark"] .activity-heatmap-legend-cell.level-4 { background: #39d353; }
+
+/* Filter buttons */
+.activity-filters {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-bottom: 8px;
+}
+
+.activity-filters-label {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text-muted);
+}
+
+.activity-filter-btn {
+  font-size: 13px;
+  padding: 5px 14px;
+  border: 1px solid var(--border);
+  border-radius: 20px;
+  background: var(--bg);
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: all 0.2s ease;
+  font-family: inherit;
+}
+
+.activity-filter-btn:hover {
+  border-color: var(--primary);
+  color: var(--primary);
+}
+
+.activity-filter-btn.active {
+  background: var(--primary);
+  border-color: var(--primary);
+  color: #fff;
+}
+
+/* ── Dark theme for dashboard ── */
+body[data-theme="dark"] .activity-stat-card {
+  background: #1e293b;
+  border-color: #334155;
+}
+
+body[data-theme="dark"] .activity-stat-card:hover {
+  border-color: var(--primary);
+}
+
+body[data-theme="dark"] .activity-heatmap-wrap {
+  background: #1e293b;
+  border-color: #334155;
+}
+
+body[data-theme="dark"] .activity-filter-btn {
+  background: #1e293b;
+  border-color: #334155;
+  color: #94a3b8;
+}
+
+body[data-theme="dark"] .activity-filter-btn:hover {
+  border-color: var(--primary);
+  color: var(--primary);
+}
+
+body[data-theme="dark"] .activity-filter-btn.active {
+  background: var(--primary);
+  border-color: var(--primary);
+  color: #0f172a;
+}
+
+/* ══════════════════════════════════════════════════════════
+   Activity Timeline
+   ══════════════════════════════════════════════════════════ */
+
+.activity-timeline {
+  position: relative;
+  padding: 0;
+  margin: 8px 0 32px;
+}
+
+.activity-timeline::before {
+  content: '';
+  position: absolute;
+  left: 15px;
+  top: 0;
+  bottom: 0;
+  width: 2px;
+  background: var(--border);
+}
+
+.activity-year-group {
+  position: relative;
+  margin-bottom: 8px;
+}
+
+.activity-year-header {
+  position: relative;
+  padding: 12px 0 8px;
+  z-index: 1;
+}
+
+.activity-year-badge {
+  display: inline-block;
+  background: var(--primary);
+  color: #fff;
+  font-size: 14px;
+  font-weight: 700;
+  padding: 4px 16px;
+  border-radius: 20px;
+  letter-spacing: 0.5px;
+  margin-left: 4px;
+  box-shadow: var(--shadow-sm);
+}
+
+/* Day sub-group */
+.activity-day-group {
+  position: relative;
+  margin-bottom: 4px;
+}
+
+.activity-day-header {
+  position: relative;
+  padding: 8px 0 4px 40px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.activity-day-label {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-secondary, var(--text));
+  letter-spacing: 0.2px;
+}
+
+.activity-dot-day {
+  width: 10px;
+  height: 10px;
+  background: var(--primary) !important;
+  border: none !important;
+}
+
+/* Release marker */
+.activity-release {
+  position: relative;
+  padding: 6px 0 6px 40px;
+}
+
+.activity-dot-release {
+  width: 12px;
+  height: 12px;
+  background: #8b5cf6 !important;
+  border: none !important;
+  left: 10px;
+  top: 14px;
+}
+
+.activity-release-content {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  background: linear-gradient(135deg, #f5f3ff, #ede9fe);
+  border: 1px solid #c4b5fd;
+  border-radius: 20px;
+  padding: 6px 16px;
+  font-size: 13px;
+  text-decoration: none;
+  transition: border-color 0.2s ease, box-shadow 0.2s ease;
+}
+
+.activity-release-content:hover {
+  border-color: #8b5cf6;
+  box-shadow: 0 2px 8px rgba(139, 92, 246, 0.2);
+  text-decoration: none;
+}
+
+.activity-release-icon {
+  color: #8b5cf6;
+  flex-shrink: 0;
+}
+
+.activity-release-name {
+  font-weight: 700;
+  color: #6d28d9;
+}
+
+.activity-release-date {
+  color: #7c3aed;
+  font-size: 12px;
+  opacity: 0.8;
+}
+
+body[data-theme="dark"] .activity-release-content {
+  background: linear-gradient(135deg, #1e1b4b, #312e81);
+  border-color: #4c1d95;
+}
+
+body[data-theme="dark"] .activity-release-content:hover {
+  border-color: #a78bfa;
+  box-shadow: 0 2px 8px rgba(139, 92, 246, 0.3);
+}
+
+body[data-theme="dark"] .activity-hash:hover {
+  background: var(--primary);
+  color: #0f172a;
+}
+
+body[data-theme="dark"] .activity-release-icon { color: #a78bfa; }
+body[data-theme="dark"] .activity-release-name { color: #c4b5fd; }
+body[data-theme="dark"] .activity-release-date { color: #a78bfa; }
+
+/* Scrollable commit list within a day */
+.activity-day-commits {
+  max-height: 480px;
+  overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: var(--border) transparent;
+}
+
+.activity-day-commits::-webkit-scrollbar {
+  width: 5px;
+}
+
+.activity-day-commits::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.activity-day-commits::-webkit-scrollbar-thumb {
+  background: var(--border);
+  border-radius: 3px;
+}
+
+.activity-day-commits::-webkit-scrollbar-thumb:hover {
+  background: var(--text-muted);
+}
+
+/* Individual commit entry */
+.activity-entry {
+  position: relative;
+  padding: 4px 0 4px 40px;
+  min-height: 28px;
+}
+
+/* Timeline dot */
+.activity-dot {
+  position: absolute;
+  left: 11px;
+  top: 12px;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--bg);
+  border: 2px solid var(--primary);
+  z-index: 1;
+  transition: background 0.2s ease, border-color 0.2s ease;
+}
+
+.activity-entry:hover .activity-dot {
+  background: var(--primary);
+  border-color: var(--primary);
+}
+
+/* Content card */
+.activity-content {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 10px 14px;
+  transition: box-shadow 0.2s ease, border-color 0.2s ease;
+}
+
+.activity-entry:hover .activity-content {
+  border-color: var(--primary);
+  box-shadow: var(--shadow);
+}
+
+/* Commit message */
+.activity-message {
+  font-size: 14px;
+  color: var(--text);
+  line-height: 1.4;
+  margin-bottom: 4px;
+}
+
+/* Meta line: hash + author + changes */
+.activity-meta {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.activity-hash {
+  font-family: var(--font-mono, 'JetBrains Mono', monospace);
+  font-size: 11px;
+  background: var(--bg-code-inline);
+  color: var(--primary);
+  padding: 1px 7px;
+  border-radius: 4px;
+  font-weight: 500;
+  text-decoration: none;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+
+.activity-hash:hover {
+  background: var(--primary);
+  color: #fff;
+  text-decoration: none;
+}
+
+.activity-author {
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.activity-author::before {
+  content: 'by ';
+}
+
+.activity-changes {
+  font-family: var(--font-mono, 'JetBrains Mono', monospace);
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+/* ── Dark theme ── */
+body[data-theme="dark"] .activity-year-badge {
+  background: var(--primary);
+  color: #0f172a;
+}
+
+body[data-theme="dark"] .activity-dot {
+  background: #1e293b;
+  border-color: var(--primary);
+}
+
+body[data-theme="dark"] .activity-entry:hover .activity-dot {
+  background: var(--primary);
+}
+
+body[data-theme="dark"] .activity-content {
+  background: #1e293b;
+  border-color: #334155;
+}
+
+body[data-theme="dark"] .activity-entry:hover .activity-content {
+  border-color: var(--primary);
+}
+
+body[data-theme="dark"] .activity-hash {
+  background: #0f172a;
+  color: var(--primary);
+}
+
+/* ── Auto dark mode (prefers-color-scheme) for activity page ── */
+@media (prefers-color-scheme: dark) {
+  /* SVG heatmap visibility */
+  body:not([data-theme="light"]) .activity-heatmap-svg.light { display: none; }
+  body:not([data-theme="light"]) .activity-heatmap-svg.dark { display: block; }
+
+  /* SVG text */
+  body:not([data-theme="light"]) .activity-svg-month { fill: #94a3b8; }
+  body:not([data-theme="light"]) .activity-svg-day { fill: #94a3b8; }
+
+  /* Legend cells */
+  body:not([data-theme="light"]) .activity-heatmap-legend-cell.level-0 { background: #161b22; }
+  body:not([data-theme="light"]) .activity-heatmap-legend-cell.level-1 { background: #0e4429; }
+  body:not([data-theme="light"]) .activity-heatmap-legend-cell.level-2 { background: #006d32; }
+  body:not([data-theme="light"]) .activity-heatmap-legend-cell.level-3 { background: #26a641; }
+  body:not([data-theme="light"]) .activity-heatmap-legend-cell.level-4 { background: #39d353; }
+
+  /* Dashboard cards */
+  body:not([data-theme="light"]) .activity-stat-card { background: #1e293b; border-color: #334155; }
+  body:not([data-theme="light"]) .activity-stat-card:hover { border-color: var(--primary); }
+  body:not([data-theme="light"]) .activity-heatmap-wrap { background: #1e293b; border-color: #334155; }
+
+  /* Filter buttons */
+  body:not([data-theme="light"]) .activity-filter-btn { background: #1e293b; border-color: #334155; color: #94a3b8; }
+  body:not([data-theme="light"]) .activity-filter-btn:hover { border-color: var(--primary); color: var(--primary); }
+  body:not([data-theme="light"]) .activity-filter-btn.active { background: var(--primary); border-color: var(--primary); color: #0f172a; }
+
+  /* Timeline */
+  body:not([data-theme="light"]) .activity-year-badge { background: var(--primary); color: #0f172a; }
+  body:not([data-theme="light"]) .activity-dot { background: #1e293b; border-color: var(--primary); }
+  body:not([data-theme="light"]) .activity-entry:hover .activity-dot { background: var(--primary); }
+  body:not([data-theme="light"]) .activity-content { background: #1e293b; border-color: #334155; }
+  body:not([data-theme="light"]) .activity-entry:hover .activity-content { border-color: var(--primary); }
+  body:not([data-theme="light"]) .activity-hash { background: #0f172a; color: var(--primary); }
+
+  /* Release marker */
+  body:not([data-theme="light"]) .activity-release-content { background: linear-gradient(135deg, #1e1b4b, #312e81); border-color: #4c1d95; }
+  body:not([data-theme="light"]) .activity-release-content:hover { border-color: #a78bfa; box-shadow: 0 2px 8px rgba(139, 92, 246, 0.3); }
+  body:not([data-theme="light"]) .activity-release-icon { color: #a78bfa; }
+  body:not([data-theme="light"]) .activity-release-name { color: #c4b5fd; }
+  body:not([data-theme="light"]) .activity-release-date { color: #a78bfa; }
+  body:not([data-theme="light"]) .activity-hash:hover { background: var(--primary); color: #0f172a; }
+
+  /* Code & tables (non-activity, needed on this page too) */
+  body:not([data-theme="light"]) code.literal { background: #1e293b; color: #fbbf24; }
+  body:not([data-theme="light"]) table { border-color: #334155; }
+  body:not([data-theme="light"]) th,
+  body:not([data-theme="light"]) td { border-bottom-color: #334155; }
+  body:not([data-theme="light"]) th { background: #1e293b; color: #94a3b8; }
+  body:not([data-theme="light"]) tr:hover td { background: #0f2a1f; }
+}
+
+/* ── Responsive ── */
+@media (max-width: 640px) {
+  .activity-stats { gap: 8px; }
+  .activity-stat-card { padding: 12px 14px; flex: 1 1 80px; }
+  .activity-stat-value { font-size: 18px; }
+  .activity-heatmap-wrap { padding: 14px; }
+  .activity-filters { gap: 6px; }
+  .activity-filter-btn { padding: 4px 10px; font-size: 12px; }
+  .activity-timeline::before { left: 11px; }
+  .activity-day-header { padding-left: 32px; }
+  .activity-release { padding-left: 32px; }
+  .activity-entry { padding-left: 32px; }
+  .activity-dot { left: 6px; }
+  .activity-content { padding: 8px 10px; }
+  .activity-meta { flex-direction: column; align-items: flex-start; gap: 2px; }
 }

@@ -36,4 +36,5 @@ api/exceptions
 :caption: Project
 
 releases
+activity
 ```

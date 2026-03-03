@@ -108,12 +108,55 @@ def lead_color(label: str) -> str:
     return LEAD_COLORS.get(label, DEFAULT_COLOR)
 
 
-def _resolve_leads(leads_or_record):
-    """Accept list[Lead] or ECGRecord and return (leads, record|None)."""
+def _resolve_leads(leads_or_record, *, fs: int | None = None):
+    """Accept list[Lead], ECGRecord, 2-D ndarray, or list of 1-D ndarrays.
+
+    When numpy arrays are provided, *fs* (sample rate in Hz) is required.
+    Returns ``(list[Lead], ECGRecord | None)``.
+    """
     from ecgdatakit.models import ECGRecord
 
     if isinstance(leads_or_record, ECGRecord):
         return leads_or_record.leads, leads_or_record
+
+    # 2-D numpy array  →  one lead per row
+    if isinstance(leads_or_record, np.ndarray) and leads_or_record.ndim == 2:
+        if fs is None:
+            raise TypeError(
+                "fs (sample rate) is required when passing a numpy array "
+                "instead of Lead objects"
+            )
+        lead_list = [
+            Lead(
+                label=f"Lead {i}",
+                samples=np.asarray(row, dtype=np.float64),
+                sample_rate=fs,
+            )
+            for i, row in enumerate(leads_or_record)
+        ]
+        return lead_list, None
+
+    # list of 1-D numpy arrays
+    if (
+        isinstance(leads_or_record, list)
+        and leads_or_record
+        and isinstance(leads_or_record[0], np.ndarray)
+    ):
+        if fs is None:
+            raise TypeError(
+                "fs (sample rate) is required when passing numpy arrays "
+                "instead of Lead objects"
+            )
+        lead_list = [
+            Lead(
+                label=f"Lead {i}",
+                samples=np.asarray(arr, dtype=np.float64),
+                sample_rate=fs,
+            )
+            for i, arr in enumerate(leads_or_record)
+        ]
+        return lead_list, None
+
     return leads_or_record, None
 
 
