@@ -1,16 +1,12 @@
-pages:
-  stage: deploy
-  image: python:3.12-slim
+test:
+  stage: test
+  image: python:${PYTHON_VERSION}-slim
+  parallel:
+    matrix:
+      - PYTHON_VERSION: ["3.10", "3.11", "3.12", "3.13"]
   script:
-    - pip install -r docs/requirements.txt
-    - pip install -e "./lib[all]"
-    - sphinx-build -b html docs public
-  artifacts:
-    paths:
-      - public
+    - pip install -e "./lib[all,dev,holter,dicom]"
+    - pytest lib/tests/ -v
   rules:
     - if: $CI_COMMIT_BRANCH == "main"
-      changes:
-        - docs/**/*
-        - lib/src/**/*
-        - .gitlab-ci.yml
+    - if: $CI_MERGE_REQUEST_TARGET_BRANCH_NAME == "main"
