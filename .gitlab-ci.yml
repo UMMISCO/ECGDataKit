@@ -8,9 +8,9 @@ pages:
   artifacts:
     paths:
       - public
-  only:
-    - main
-  changes:
-    - docs/**/*
-    - lib/src/**/*
-    - .gitlab-ci.yml
+  rules:
+    - if: $CI_COMMIT_BRANCH == "main"
+      changes:
+        - docs/**/*
+        - lib/src/**/*
+        - .gitlab-ci.yml
