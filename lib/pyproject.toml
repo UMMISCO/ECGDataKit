@@ -17,7 +17,7 @@ dependencies = [
     "xmltodict>=1.0",
     "python-dateutil>=2.9",
 ]
-keywords = ["ecg", "electrocardiogram", "signal-processing", "medical", "waveform", "hl7", "dicom", "edf", "scp-ecg", "wfdb"]
+keywords = ["ecg", "electrocardiogram", "signal-processing", "medical", "waveform", "hl7", "dicom", "edf", "scp-ecg", "wfdb", "cardiology", "ecg-parser", "ecg-processing", "mfer", "muse", "physionet", "heart-rate", "hrv"]
 classifiers = [
     "Development Status :: 3 - Alpha",
     "Intended Audience :: Science/Research",
@@ -34,10 +34,11 @@ classifiers = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/UMMISCO/ECGDataKit"
+Homepage = "https://ecgdatakit.ummisco.fr"
 Documentation = "https://ecgdatakit.ummisco.fr"
 Repository = "https://github.com/UMMISCO/ECGDataKit"
 Issues = "https://github.com/UMMISCO/ECGDataKit/issues"
+Changelog = "https://ecgdatakit.ummisco.fr/releases.html"
 Mirror = "https://git.ummisco.fr/open/ecgdatakit"
 UMMISCO = "https://www.ummisco.fr"
 IRD = "https://www.ird.fr"
@@ -65,6 +66,8 @@ docs = [
     "myst-parser>=4.0",
     "sphinx-autodoc-typehints>=2.0",
     "sphinx-copybutton>=0.5",
+    "sphinx-sitemap>=2.6",
+    "sphinxext-opengraph>=0.9",
 ]
 
 [tool.setuptools.packages.find]

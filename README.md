@@ -1,10 +1,12 @@
 # ECGDataKit
 
+[![PyPI](https://img.shields.io/pypi/v/ecgdatakit)](https://pypi.org/project/ecgdatakit/)
 [![Version](https://img.shields.io/badge/version-0.0.7-orange.svg)](https://github.com/UMMISCO/ECGDataKit/releases)
 [![Tests](https://github.com/UMMISCO/ECGDataKit/actions/workflows/tests.yml/badge.svg?branch=main)](https://github.com/UMMISCO/ECGDataKit/actions/workflows/tests.yml)
 [![Docs](https://github.com/UMMISCO/ECGDataKit/actions/workflows/docs.yml/badge.svg?branch=main)](https://ecgdatakit.ummisco.fr)
 [![Python 3.10+](https://img.shields.io/badge/python-3.10%2B-blue.svg)](https://www.python.org/downloads/)
 [![License](https://img.shields.io/badge/license-Apache%202.0-green.svg)](LICENSE)
+[![GitLab](https://img.shields.io/badge/GitLab-mirror-orange?logo=gitlab)](https://git.ummisco.fr/open/ecgdatakit)
 
 **A Python library for parsing, processing, and visualizing multi-format ECG files.**
 

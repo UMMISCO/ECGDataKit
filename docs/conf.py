@@ -29,6 +29,8 @@ extensions = [
     "sphinx.ext.viewcode",
     "sphinx_autodoc_typehints",
     "sphinx_copybutton",
+    "sphinx_sitemap",
+    "sphinxext.opengraph",
 ]
 
 # ---------------------------------------------------------------------------
@@ -129,6 +131,23 @@ html_theme_options = {
 # ---------------------------------------------------------------------------
 copybutton_prompt_text = r">>> |\.\.\. |\$ "
 copybutton_prompt_is_regexp = True
+
+# ---------------------------------------------------------------------------
+# Sitemap
+# ---------------------------------------------------------------------------
+html_baseurl = "https://ecgdatakit.ummisco.fr/"
+sitemap_url_scheme = "{link}"
+
+# ---------------------------------------------------------------------------
+# Open Graph / social sharing
+# ---------------------------------------------------------------------------
+ogp_site_url = "https://ecgdatakit.ummisco.fr/"
+ogp_site_name = "ECGDataKit"
+ogp_description_length = 200
+ogp_type = "website"
+ogp_custom_meta_tags = [
+    '<meta name="twitter:card" content="summary" />',
+]
 
 # ---------------------------------------------------------------------------
 # Suppress specific warnings

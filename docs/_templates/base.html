@@ -1,5 +1,33 @@
 {% extends "furo/base.html" %}
 
+{% block extrahead %}
+{{ super() }}
+<meta name="google-site-verification" content="n1XU77PFIW6cI6noHvrsqNi_DIkUECEEqJm5D1HGqv0" />
+{% if pagename == "index" %}
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "SoftwareSourceCode",
+  "name": "ECGDataKit",
+  "description": "A Python library for parsing, processing, and visualizing multi-format ECG files.",
+  "url": "https://ecgdatakit.ummisco.fr",
+  "codeRepository": "https://github.com/UMMISCO/ECGDataKit",
+  "programmingLanguage": "Python",
+  "license": "https://www.apache.org/licenses/LICENSE-2.0",
+  "author": {
+    "@type": "Person",
+    "name": "Ahmad Fall",
+    "affiliation": [
+      {"@type": "Organization", "name": "UMMISCO", "url": "https://www.ummisco.fr"},
+      {"@type": "Organization", "name": "IRD", "url": "https://www.ird.fr"}
+    ]
+  },
+  "keywords": ["ECG", "electrocardiogram", "signal processing", "Python", "medical", "cardiology"]
+}
+</script>
+{% endif %}
+{% endblock %}
+
 {% block body %}
 {% if pagename == "index" %}
 {# ── Full custom landing page (matches ecgdatakit.ummisco.fr) ── #}
