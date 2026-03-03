@@ -141,6 +141,10 @@ def _reconstruct_second_difference(diffs: list[int]) -> list[int]:
 class SCPECGParser(Parser):
     """Parser for SCP-ECG binary ECG files (ISO 13730)."""
 
+    FORMAT_NAME = "SCP-ECG"
+    FORMAT_DESCRIPTION = "Standard Communications Protocol for ECG (ISO 13730)"
+    FILE_EXTENSIONS = [".scp", ".ecg"]
+
     @staticmethod
     def can_parse(file_path: Path, header: bytes) -> bool:
         if len(header) < 16:

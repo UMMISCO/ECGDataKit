@@ -69,6 +69,10 @@ _DEMOGRAPHIC_MAPPING: dict[str, str] = {
 class MortaraEL250Parser(Parser):
     """Parser for Mortara EL250 XML ECG files."""
 
+    FORMAT_NAME = "Mortara EL250"
+    FORMAT_DESCRIPTION = "Mortara EL250 XML ECG format"
+    FILE_EXTENSIONS = [".xml"]
+
     @staticmethod
     def can_parse(file_path: Path, header: bytes) -> bool:
         try:

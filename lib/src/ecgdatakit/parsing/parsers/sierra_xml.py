@@ -303,6 +303,10 @@ def _read_sierra_leads(filepath: Path) -> tuple[list[str], list[npt.NDArray[np.i
 class SierraXMLParser(Parser):
     """Parser for Philips Sierra ECG XML files."""
 
+    FORMAT_NAME = "Philips Sierra XML"
+    FORMAT_DESCRIPTION = "Philips Sierra ECG XML format"
+    FILE_EXTENSIONS = [".xml"]
+
     @staticmethod
     def can_parse(file_path: Path, header: bytes) -> bool:
         try:

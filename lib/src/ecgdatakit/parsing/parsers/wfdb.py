@@ -33,6 +33,10 @@ _HEADER_RE = re.compile(
 class WFDBParser(Parser):
     """Parser for WFDB (PhysioNet/MIT) ECG files."""
 
+    FORMAT_NAME = "WFDB"
+    FORMAT_DESCRIPTION = "WaveForm DataBase / PhysioNet MIT format"
+    FILE_EXTENSIONS = [".hea", ".dat"]
+
     @staticmethod
     def can_parse(file_path: Path, header: bytes) -> bool:
         if file_path.suffix.lower() != ".hea":

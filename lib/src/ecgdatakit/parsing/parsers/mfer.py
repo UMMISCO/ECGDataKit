@@ -91,6 +91,10 @@ def _read_mfer_uint(data: bytes, length: int) -> int:
 class MFERParser(Parser):
     """Parser for MFER binary ECG files (ISO 22077)."""
 
+    FORMAT_NAME = "MFER"
+    FORMAT_DESCRIPTION = "Medical waveform Format Encoding Rules (ISO 22077)"
+    FILE_EXTENSIONS = [".mfer", ".mfr"]
+
     @staticmethod
     def can_parse(file_path: Path, header: bytes) -> bool:
         if len(header) < 6:

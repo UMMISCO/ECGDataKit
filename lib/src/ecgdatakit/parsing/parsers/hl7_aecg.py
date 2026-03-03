@@ -46,6 +46,10 @@ def _parse_str_datetime(value: str | None) -> datetime | None:
 class HL7aECGParser(Parser):
     """Parser for HL7 Annotated ECG (aECG) XML files."""
 
+    FORMAT_NAME = "HL7 aECG"
+    FORMAT_DESCRIPTION = "HL7 Annotated ECG XML format (FDA submission standard)"
+    FILE_EXTENSIONS = [".xml"]
+
     @staticmethod
     def can_parse(file_path: Path, header: bytes) -> bool:
         try:

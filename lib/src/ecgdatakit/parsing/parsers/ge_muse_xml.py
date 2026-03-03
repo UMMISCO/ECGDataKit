@@ -38,6 +38,10 @@ def _decode_waveform_data(base64_str: str, dtype: str = "<i2") -> np.ndarray:
 class GEMuseXMLParser(Parser):
     """Parser for GE MUSE XML ECG exports."""
 
+    FORMAT_NAME = "GE MUSE XML"
+    FORMAT_DESCRIPTION = "GE MUSE ECG management system XML export"
+    FILE_EXTENSIONS = [".xml"]
+
     @staticmethod
     def can_parse(file_path: Path, header: bytes) -> bool:
         try:

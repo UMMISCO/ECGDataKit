@@ -63,6 +63,10 @@ def _decode_lead_data(data_str: str) -> np.ndarray:
 class BeneHeartR12Parser(Parser):
     """Parser for Mindray BeneHeart R12 XML ECG files (beta)."""
 
+    FORMAT_NAME = "Mindray BeneHeart R12"
+    FORMAT_DESCRIPTION = "Mindray BeneHeart R12 XML ECG format (beta)"
+    FILE_EXTENSIONS = [".xml"]
+
     @staticmethod
     def can_parse(file_path: Path, header: bytes) -> bool:
         try:

@@ -13,6 +13,10 @@ from ecgdatakit.models import ECGRecord
 class Parser(ABC):
     """Base class for all ECG format parsers."""
 
+    FORMAT_NAME: str = ""
+    FORMAT_DESCRIPTION: str = ""
+    FILE_EXTENSIONS: list[str] = []
+
     @staticmethod
     @abstractmethod
     def can_parse(file_path: Path, header: bytes) -> bool:
@@ -56,6 +60,24 @@ class FileParser:
     @property
     def parsers(self) -> list[type[Parser]]:
         return list(self._parsers)
+
+    def supported_formats(self) -> list[dict[str, str | list[str]]]:
+        """Return a description of every supported ECG format.
+
+        Each entry contains:
+
+        - ``name`` – short format name (e.g. ``"HL7 aECG"``)
+        - ``description`` – one-line description
+        - ``extensions`` – list of typical file extensions
+        """
+        return [
+            {
+                "name": p.FORMAT_NAME or p.__name__,
+                "description": p.FORMAT_DESCRIPTION or (p.__doc__ or "").strip(),
+                "extensions": list(p.FILE_EXTENSIONS),
+            }
+            for p in self._parsers
+        ]
 
     def parse(self, file_path: str | Path) -> ECGRecord:
         """Parse an ECG file, auto-detecting the format.

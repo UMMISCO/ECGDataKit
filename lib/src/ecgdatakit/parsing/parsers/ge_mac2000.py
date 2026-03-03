@@ -64,6 +64,10 @@ def _decode_lead_data(data_str: str) -> np.ndarray:
 class GEMAC2000Parser(Parser):
     """Parser for GE MAC 2000 XML ECG files (beta)."""
 
+    FORMAT_NAME = "GE MAC 2000"
+    FORMAT_DESCRIPTION = "GE MAC 2000 XML ECG format (beta)"
+    FILE_EXTENSIONS = [".xml"]
+
     @staticmethod
     def can_parse(file_path: Path, header: bytes) -> bool:
         try:

@@ -60,6 +60,10 @@ _LEAD_SPECS: dict[int, str] = {
 class ISHNEHolterParser(Parser):
     """Parser for ISHNE Holter binary ECG files."""
 
+    FORMAT_NAME = "ISHNE Holter"
+    FORMAT_DESCRIPTION = "ISHNE Holter standard binary format"
+    FILE_EXTENSIONS = [".ecg", ".ann"]
+
     @staticmethod
     def can_parse(file_path: Path, header: bytes) -> bool:
         return header[:8] in (_MAGIC_ECG, _MAGIC_ANN)

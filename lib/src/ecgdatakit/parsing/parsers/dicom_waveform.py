@@ -41,6 +41,10 @@ def _import_pydicom():
 class DICOMWaveformParser(Parser):
     """Parser for DICOM Waveform ECG files."""
 
+    FORMAT_NAME = "DICOM Waveform"
+    FORMAT_DESCRIPTION = "DICOM Waveform ECG (Part 10, requires pydicom)"
+    FILE_EXTENSIONS = [".dcm", ".dicom"]
+
     @staticmethod
     def can_parse(file_path: Path, header: bytes) -> bool:
         if len(header) < 132:

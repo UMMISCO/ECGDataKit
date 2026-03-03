@@ -197,6 +197,10 @@ def _parse_prefiltering(prefilter_str: str) -> FilterSettings:
 class EDFParser(Parser):
     """Parser for EDF and EDF+ ECG files."""
 
+    FORMAT_NAME = "EDF/EDF+"
+    FORMAT_DESCRIPTION = "European Data Format (EDF and EDF+)"
+    FILE_EXTENSIONS = [".edf"]
+
     @staticmethod
     def can_parse(file_path: Path, header: bytes) -> bool:
         if len(header) < 256:
