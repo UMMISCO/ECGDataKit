@@ -19,7 +19,7 @@ pip install "ecgdatakit @ git+https://github.com/UMMISCO/ECGDataKit.git#subdirec
 ### From GitLab (development version)
 
 ```bash
-pip install "ecgdatakit @ git+https://gitlab.ummisco.fr/music/ECGDataKit.git#subdirectory=lib"
+pip install "ecgdatakit @ git+https://git.ummisco.fr/open/ecgdatakit.git#subdirectory=lib"
 ```
 
 ### From source (local clone)
@@ -29,7 +29,7 @@ pip install "ecgdatakit @ git+https://gitlab.ummisco.fr/music/ECGDataKit.git#sub
 git clone https://github.com/UMMISCO/ECGDataKit.git
 
 # GitLab (development)
-git clone https://gitlab.ummisco.fr/music/ECGDataKit.git
+git clone https://git.ummisco.fr/open/ecgdatakit.git
 
 cd ECGDataKit/lib
 pip install .
