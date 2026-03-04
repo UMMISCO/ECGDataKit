@@ -286,6 +286,117 @@ class ECGRecord:
     source_format: str = ""
     raw_metadata: dict = field(default_factory=dict)
 
+    def __repr__(self) -> str:
+        parts: list[str] = []
+        fmt = f" ({self.source_format})" if self.source_format else ""
+        parts.append(f"ECGRecord{fmt}")
+
+        # Patient
+        p = self.patient
+        p_parts: list[str] = []
+        name = f"{p.first_name} {p.last_name}".strip()
+        if name:
+            p_parts.append(name)
+        if p.patient_id:
+            p_parts.append(f"ID: {p.patient_id}")
+        if p.age is not None:
+            p_parts.append(f"Age: {p.age}")
+        if p.sex:
+            p_parts.append(f"Sex: {p.sex}")
+        if p_parts:
+            parts.append(f"  Patient      : {' | '.join(p_parts)}")
+
+        # Recording
+        r = self.recording
+        r_parts: list[str] = []
+        if r.date:
+            r_parts.append(r.date.strftime("%Y-%m-%d %H:%M"))
+        if r.sample_rate:
+            r_parts.append(f"{r.sample_rate} Hz")
+        dur = r.duration
+        if dur is None and self.leads and self.leads[0].sample_rate:
+            dur_s = len(self.leads[0].samples) / self.leads[0].sample_rate
+            r_parts.append(f"{dur_s:.1f}s")
+        elif dur is not None:
+            r_parts.append(f"{dur.total_seconds():.1f}s")
+        if r_parts:
+            parts.append(f"  Recording    : {' | '.join(r_parts)}")
+
+        # Device
+        d = self.device
+        d_parts: list[str] = []
+        dev_name = " ".join(filter(None, [d.manufacturer, d.model])) or d.name
+        if dev_name:
+            d_parts.append(dev_name)
+        if d.serial_number:
+            d_parts.append(f"SN: {d.serial_number}")
+        if d.institution:
+            d_parts.append(d.institution)
+        if d_parts:
+            parts.append(f"  Device       : {' | '.join(d_parts)}")
+
+        # Filters
+        f = self.filters
+        f_parts: list[str] = []
+        if f.highpass is not None:
+            f_parts.append(f"HP: {f.highpass} Hz")
+        if f.lowpass is not None:
+            f_parts.append(f"LP: {f.lowpass} Hz")
+        if f.notch is not None:
+            f_parts.append(f"Notch: {f.notch} Hz")
+        if f_parts:
+            parts.append(f"  Filters      : {' | '.join(f_parts)}")
+
+        # Leads
+        if self.leads:
+            names = ", ".join(ld.label for ld in self.leads)
+            parts.append(f"  Leads ({len(self.leads):>2})  : {names}")
+
+        # Measurements
+        m = self.measurements
+        m_parts: list[str] = []
+        if m.heart_rate is not None:
+            m_parts.append(f"HR: {m.heart_rate} bpm")
+        if m.pr_interval is not None:
+            m_parts.append(f"PR: {m.pr_interval} ms")
+        if m.qrs_duration is not None:
+            m_parts.append(f"QRS: {m.qrs_duration} ms")
+        if m.qt_interval is not None:
+            m_parts.append(f"QT: {m.qt_interval} ms")
+        if m.qtc_bazett is not None:
+            m_parts.append(f"QTc: {m.qtc_bazett} ms")
+        if m.qrs_axis is not None:
+            m_parts.append(f"Axis: {m.qrs_axis}\u00b0")
+        if m_parts:
+            parts.append(f"  Measurements : {' | '.join(m_parts)}")
+
+        # Medications
+        if self.patient.medications:
+            parts.append(f"  Medications  : {', '.join(self.patient.medications)}")
+
+        # Interpretation
+        if self.interpretation.statements:
+            parts.append(f"  Interpretation: {'; '.join(self.interpretation.statements[:3])}")
+
+        return "\n".join(parts)
+
+    def plot(self, show: bool = True, **kwargs):
+        """Plot the ECG record with patient/device header and all leads.
+
+        Parameters
+        ----------
+        show : bool
+            Display the plot immediately (default ``True``).
+        **kwargs
+            Extra arguments forwarded to the underlying plot function
+            (e.g. ``rows``, ``cols``, ``figsize``, ``x_axis``).
+        """
+        from ecgdatakit.plotting.static import plot_12lead, plot_leads
+
+        if len(self.leads) >= 12:
+            return plot_12lead(self, record=self, show=show, **kwargs)
+        return plot_leads(self, show=show, **kwargs)
+
     def to_dict(self, include_samples: bool = True) -> dict:
         """Convert the record to the **unified JSON schema**.
 
