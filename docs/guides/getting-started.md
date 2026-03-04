@@ -10,16 +10,27 @@ This guide walks you through installing ECGDataKit, parsing your first ECG file,
 pip install ecgdatakit
 ```
 
-### From GitHub (latest development version)
+### From GitHub (latest stable version)
 
 ```bash
 pip install "ecgdatakit @ git+https://github.com/UMMISCO/ECGDataKit.git#subdirectory=lib"
 ```
 
+### From GitLab (development version)
+
+```bash
+pip install "ecgdatakit @ git+https://gitlab.ummisco.fr/music/ECGDataKit.git#subdirectory=lib"
+```
+
 ### From source (local clone)
 
 ```bash
+# GitHub (stable)
 git clone https://github.com/UMMISCO/ECGDataKit.git
+
+# GitLab (development)
+git clone https://gitlab.ummisco.fr/music/ECGDataKit.git
+
 cd ECGDataKit/lib
 pip install .
 ```
