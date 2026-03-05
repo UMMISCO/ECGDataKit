@@ -23,11 +23,10 @@ guides/formats
 :caption: API Reference
 
 api/parsing
+api/exceptions
 api/processing
 api/plotting
 api/reference
-api/models
-api/exceptions
 ```
 
 ```{toctree}

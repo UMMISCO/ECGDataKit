@@ -286,11 +286,13 @@ class DICOMWaveformParser(Parser):
                         except (ValueError, TypeError):
                             pass
 
-                samples = (channels[:, ch_idx].astype(np.float64) - baseline) * sensitivity
+                samples = channels[:, ch_idx].astype(np.float64)
                 leads.append(Lead(
                     label=label,
                     samples=samples,
                     sample_rate=int(sample_rate),
+                    resolution=sensitivity,
+                    offset=-baseline * sensitivity,
                     units=units,
                 ))
 

@@ -347,7 +347,7 @@ class MFERParser(Parser):
                 for ch in range(num_channels):
                     label = channel_labels[ch] if ch < len(channel_labels) else f"Ch{ch + 1}"
                     units = channel_units[ch] if ch < len(channel_units) else ""
-                    samples = channels[:, ch].astype(np.float64) * resolution
+                    samples = channels[:, ch].astype(np.float64)
 
                     leads.append(Lead(
                         label=label,

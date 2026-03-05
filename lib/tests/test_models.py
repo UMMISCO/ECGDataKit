@@ -8,6 +8,7 @@ from datetime import datetime, timedelta
 import numpy as np
 import pytest
 
+from ecgdatakit.exceptions import RawSamplesError
 from ecgdatakit.models import (
     DeviceInfo,
     ECGRecord,
@@ -269,7 +270,149 @@ class TestECGRecord:
         lead = Lead(label="I", samples=np.array([1.0]), sample_rate=500)
         d = lead.to_dict()
         expected = {
-            "label", "sample_count", "sample_rate", "resolution", "samples",
-            "units", "quality", "transducer", "prefiltering",
+            "label", "sample_count", "sample_rate", "resolution", "offset",
+            "samples", "units", "is_raw", "quality", "transducer", "prefiltering",
         }
         assert set(d.keys()) == expected
+
+
+class TestLeadConversion:
+    def test_to_physical_basic(self):
+        lead = Lead(
+            label="I", samples=np.array([100.0, 200.0, 300.0]),
+            sample_rate=500, resolution=0.005, units="mV",
+        )
+        physical = lead.to_physical()
+        assert not physical.is_raw
+        np.testing.assert_allclose(physical.samples, [0.5, 1.0, 1.5])
+        assert physical.units == "mV"
+
+    def test_to_physical_with_offset(self):
+        lead = Lead(
+            label="I", samples=np.array([100.0, 200.0]),
+            sample_rate=500, resolution=2.0, offset=-50.0, units="uV",
+        )
+        physical = lead.to_physical()
+        np.testing.assert_allclose(physical.samples, [150.0, 350.0])
+
+    def test_to_physical_idempotent(self):
+        lead = Lead(
+            label="I", samples=np.array([1.0, 2.0]),
+            sample_rate=500, resolution=0.005, is_raw=False, units="mV",
+        )
+        result = lead.to_physical()
+        assert result is lead
+
+    def test_to_physical_zero_resolution_raises(self):
+        lead = Lead(
+            label="I", samples=np.array([1.0]),
+            sample_rate=500, resolution=0.0,
+        )
+        with pytest.raises(ValueError, match="resolution is 0"):
+            lead.to_physical()
+
+    def test_convert_units_raw_raises(self):
+        lead = Lead(
+            label="I", samples=np.array([100.0]),
+            sample_rate=500, is_raw=True,
+        )
+        with pytest.raises(RawSamplesError):
+            lead.convert_units("mV")
+
+    def test_convert_units_uv_to_mv(self):
+        lead = Lead(
+            label="I", samples=np.array([1000.0, 2000.0]),
+            sample_rate=500, is_raw=False, units="uV",
+        )
+        result = lead.convert_units("mV")
+        np.testing.assert_allclose(result.samples, [1.0, 2.0])
+        assert result.units == "mV"
+
+    def test_convert_units_mv_to_v(self):
+        lead = Lead(
+            label="I", samples=np.array([1.0]),
+            sample_rate=500, is_raw=False, units="mV",
+        )
+        result = lead.convert_units("V")
+        np.testing.assert_allclose(result.samples, [0.001])
+        assert result.units == "V"
+
+    def test_convert_units_same_returns_self(self):
+        lead = Lead(
+            label="I", samples=np.array([1.0]),
+            sample_rate=500, is_raw=False, units="mV",
+        )
+        result = lead.convert_units("mV")
+        assert result is lead
+
+    def test_convert_units_unknown_target_raises(self):
+        lead = Lead(
+            label="I", samples=np.array([1.0]),
+            sample_rate=500, is_raw=False, units="mV",
+        )
+        with pytest.raises(ValueError, match="Unknown target unit"):
+            lead.convert_units("dB")
+
+    def test_convert_units_unknown_current_raises(self):
+        lead = Lead(
+            label="I", samples=np.array([1.0]),
+            sample_rate=500, is_raw=False, units="nV",
+        )
+        with pytest.raises(ValueError, match="not a recognized voltage unit"):
+            lead.convert_units("mV")
+
+    def test_chaining_to_physical_then_convert(self):
+        lead = Lead(
+            label="I", samples=np.array([1000.0, 2000.0]),
+            sample_rate=500, resolution=1.0, units="uV",
+        )
+        result = lead.to_physical().convert_units("mV")
+        np.testing.assert_allclose(result.samples, [1.0, 2.0])
+        assert result.units == "mV"
+        assert not result.is_raw
+
+    def test_to_dict_includes_new_fields(self):
+        lead = Lead(
+            label="I", samples=np.array([1.0]),
+            sample_rate=500, resolution=0.005, offset=-10.0,
+            units="mV", is_raw=True,
+        )
+        d = lead.to_dict()
+        assert d["offset"] == -10.0
+        assert d["is_raw"] is True
+
+
+class TestECGRecordConversion:
+    def test_record_to_physical(self):
+        record = ECGRecord(
+            leads=[
+                Lead(label="I", samples=np.array([100.0, 200.0]),
+                     sample_rate=500, resolution=0.01, units="mV"),
+                Lead(label="II", samples=np.array([300.0, 400.0]),
+                     sample_rate=500, resolution=0.01, units="mV"),
+            ],
+        )
+        physical = record.to_physical()
+        assert all(not lead.is_raw for lead in physical.leads)
+        np.testing.assert_allclose(physical.leads[0].samples, [1.0, 2.0])
+
+    def test_record_convert_units(self):
+        record = ECGRecord(
+            leads=[
+                Lead(label="I", samples=np.array([1.0]),
+                     sample_rate=500, is_raw=False, units="mV"),
+            ],
+        )
+        result = record.convert_units("uV")
+        np.testing.assert_allclose(result.leads[0].samples, [1000.0])
+        assert result.leads[0].units == "uV"
+
+    def test_record_convert_units_raw_raises(self):
+        record = ECGRecord(
+            leads=[
+                Lead(label="I", samples=np.array([1.0]),
+                     sample_rate=500, is_raw=True),
+            ],
+        )
+        with pytest.raises(RawSamplesError):
+            record.convert_units("mV")

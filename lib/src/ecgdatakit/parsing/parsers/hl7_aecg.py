@@ -32,6 +32,28 @@ LEAD_NAMES = [
 ]
 
 
+def _increment_to_hz(value: float, unit: str | None) -> int:
+    """Convert an HL7 increment value to a sample rate in Hz.
+
+    The increment can be in seconds (``"s"``), milliseconds (``"ms"``),
+    or microseconds (``"us"``).  When the unit is missing, a heuristic
+    is used: values < 1 are treated as seconds, values >= 1 as
+    microseconds (legacy behaviour).
+    """
+    if unit is not None:
+        u = unit.strip().lower()
+        if u == "s":
+            return int(round(1.0 / value))
+        if u == "ms":
+            return int(round(1_000.0 / value))
+        if u in ("us", "µs"):
+            return int(round(1_000_000.0 / value))
+    # No unit — heuristic: values < 1 are seconds, >= 1 are microseconds
+    if value < 1:
+        return int(round(1.0 / value))
+    return int(round(1_000_000.0 / value))
+
+
 def _parse_str_datetime(value: str | None) -> datetime | None:
     if value is None:
         return None
@@ -195,17 +217,21 @@ class HL7aECGParser(Parser):
             if isinstance(increment_node, list):
                 increment_node = increment_node[0]
             inc_val = None
+            inc_unit = None
             if isinstance(increment_node, dict):
                 inc_val = read_path(increment_node, "value/@value") or read_path(
                     increment_node, "@value"
+                )
+                inc_unit = read_path(increment_node, "value/@unit") or read_path(
+                    increment_node, "@unit"
                 )
             elif isinstance(increment_node, str):
                 inc_val = increment_node
             if inc_val is not None:
                 try:
-                    increment_us = float(inc_val)
-                    if increment_us > 0:
-                        info.sample_rate = int(round(1_000_000 / increment_us))
+                    inc_f = float(inc_val)
+                    if inc_f > 0:
+                        info.sample_rate = _increment_to_hz(inc_f, inc_unit)
                 except (ValueError, ZeroDivisionError):
                     pass
 
@@ -237,6 +263,31 @@ class HL7aECGParser(Parser):
 
         if not isinstance(nodes, list):
             nodes = [nodes]
+
+        # Extract shared sample rate from the TIME_RELATIVE sequence
+        shared_sample_rate = 0
+        for node in nodes:
+            code = read_path(node, "sequence/code/@code")
+            if code == "TIME_RELATIVE":
+                inc_node = find_tag(node, "increment")
+                if inc_node is not None:
+                    if isinstance(inc_node, list):
+                        inc_node = inc_node[0]
+                    inc_val = None
+                    inc_unit = None
+                    if isinstance(inc_node, dict):
+                        inc_val = read_path(inc_node, "@value")
+                        inc_unit = read_path(inc_node, "@unit")
+                    elif isinstance(inc_node, str):
+                        inc_val = inc_node
+                    if inc_val is not None:
+                        try:
+                            inc_f = float(inc_val)
+                            if inc_f > 0:
+                                shared_sample_rate = _increment_to_hz(inc_f, inc_unit)
+                        except (ValueError, ZeroDivisionError):
+                            pass
+                break
 
         for node in nodes:
             code = read_path(node, "sequence/code/@code")
@@ -280,31 +331,48 @@ class HL7aECGParser(Parser):
                         except ValueError:
                             pass
 
-            sample_rate = 0
+            # Per-lead increment (rare), fall back to shared rate
+            sample_rate = shared_sample_rate
             inc_node = find_tag(node, "increment")
             if inc_node is not None:
                 if isinstance(inc_node, list):
                     inc_node = inc_node[0]
                 inc_val = None
+                inc_unit = None
                 if isinstance(inc_node, dict):
                     inc_val = read_path(inc_node, "@value")
+                    inc_unit = read_path(inc_node, "@unit")
                 elif isinstance(inc_node, str):
                     inc_val = inc_node
                 if inc_val is not None:
                     try:
-                        increment_us = float(inc_val)
-                        if increment_us > 0:
-                            sample_rate = int(round(1_000_000 / increment_us))
+                        inc_f = float(inc_val)
+                        if inc_f > 0:
+                            sample_rate = _increment_to_hz(inc_f, inc_unit)
                     except (ValueError, ZeroDivisionError):
                         pass
 
             label = code.replace("MDC_ECG_LEAD_", "").replace("AV", "aV")
-            samples = np.array(signal, dtype=np.float64) * scale + origin
+            samples = np.array(signal, dtype=np.float64)
+
+            # Determine units from scale node
+            units = ""
+            scale_node = find_tag(node, "scale")
+            if scale_node is not None:
+                if isinstance(scale_node, list):
+                    scale_node = scale_node[0]
+                if isinstance(scale_node, dict):
+                    u = read_path(scale_node, "@unit")
+                    if u:
+                        units = str(u)
+
             leads.append(Lead(
                 label=label,
                 samples=samples,
                 sample_rate=sample_rate,
                 resolution=scale,
+                offset=origin,
+                units=units,
             ))
 
         return leads

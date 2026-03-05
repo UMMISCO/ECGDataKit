@@ -1,0 +1,16 @@
+{% extends "!page.html" %}
+
+{% block content %}
+{% if parents %}
+<nav class="breadcrumbs" aria-label="Breadcrumb">
+  <a href="{{ pathto(master_doc) }}">Home</a>
+  {% for parent in parents %}
+  <span class="bc-sep">›</span>
+  <a href="{{ parent.link }}">{{ parent.title }}</a>
+  {% endfor %}
+  <span class="bc-sep">›</span>
+  <span class="bc-current">{{ title | striptags }}</span>
+</nav>
+{% endif %}
+{{ super() }}
+{% endblock %}

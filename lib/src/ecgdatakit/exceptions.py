@@ -19,3 +19,10 @@ class MissingElementError(ECGDataKitError):
 
 class ChecksumError(ECGDataKitError):
     """File checksum validation failed."""
+
+
+class RawSamplesError(ECGDataKitError):
+    """Operation requires physical-unit samples but samples are still raw ADC.
+
+    Call :meth:`Lead.to_physical` or :meth:`ECGRecord.to_physical` first.
+    """

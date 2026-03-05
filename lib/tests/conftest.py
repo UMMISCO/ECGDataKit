@@ -3,12 +3,36 @@
 from __future__ import annotations
 
 import base64
+import os
 import struct
 import textwrap
 from pathlib import Path
 
+# Prevent plots from opening GUI windows during tests
+os.environ.setdefault("MPLBACKEND", "Agg")
+
 import numpy as np
 import pytest
+
+
+@pytest.fixture(autouse=True)
+def _no_plot_display(monkeypatch):
+    """Suppress all plot display during tests."""
+    # Matplotlib: use non-interactive Agg backend
+    try:
+        import matplotlib
+        matplotlib.use("Agg")
+        import matplotlib.pyplot as plt
+        monkeypatch.setattr(plt, "show", lambda *a, **kw: None)
+    except ImportError:
+        pass
+    # Plotly: prevent browser opening
+    try:
+        import plotly.io as pio
+        pio.renderers.default = "json"
+        monkeypatch.setattr(pio, "show", lambda *a, **kw: None)
+    except ImportError:
+        pass
 
 
 FIXTURES_DIR = Path(__file__).parent / "fixtures"

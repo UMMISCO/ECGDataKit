@@ -20,6 +20,7 @@ from ecgdatakit.exceptions import (
     CorruptedFileError,
     MissingElementError,
     ChecksumError,
+    RawSamplesError,
 )
 from ecgdatakit.parsing.batch import parse_batch
 
@@ -40,5 +41,6 @@ __all__ = [
     "CorruptedFileError",
     "MissingElementError",
     "ChecksumError",
+    "RawSamplesError",
     "parse_batch",
 ]

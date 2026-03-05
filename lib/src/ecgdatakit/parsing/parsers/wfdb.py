@@ -342,13 +342,15 @@ class WFDBParser(Parser):
                         spec = signal_specs[sig_idx]
                         gain = spec["gain"] if spec["gain"] != 0 else 200.0
                         baseline = spec["baseline"]
-                        samples = (channels[:, ch_offset].astype(np.float64) - baseline) / gain
+                        samples = channels[:, ch_offset].astype(np.float64)
                         label = spec["description"] or f"Ch{sig_idx}"
 
                         leads.append(Lead(
                             label=label,
                             samples=samples,
                             sample_rate=sample_rate,
+                            resolution=1.0 / gain,
+                            offset=-baseline / gain,
                             units=spec["units"],
                         ))
 
@@ -361,7 +363,7 @@ class WFDBParser(Parser):
                     baseline = spec["baseline"]
 
                     if ch_offset < all_samples.shape[1]:
-                        samples = (all_samples[:, ch_offset].astype(np.float64) - baseline) / gain
+                        samples = all_samples[:, ch_offset].astype(np.float64)
                     else:
                         samples = np.array([], dtype=np.float64)
 
@@ -370,6 +372,8 @@ class WFDBParser(Parser):
                         label=label,
                         samples=samples,
                         sample_rate=sample_rate,
+                        resolution=1.0 / gain,
+                        offset=-baseline / gain,
                         units=spec["units"],
                     ))
 

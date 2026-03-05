@@ -2,12 +2,113 @@
 
 from __future__ import annotations
 
+import dataclasses
 import json
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, fields
 from datetime import datetime, timedelta
 
 import numpy as np
 from numpy.typing import NDArray
+
+from ecgdatakit.exceptions import RawSamplesError
+
+
+# ---------------------------------------------------------------------------
+# Repr helpers
+# ---------------------------------------------------------------------------
+
+def _is_empty(value: object) -> bool:
+    """Return True if value should be hidden in repr (empty or null)."""
+    if value is None:
+        return True
+    if isinstance(value, str) and value == "":
+        return True
+    if isinstance(value, (list, dict)) and len(value) == 0:
+        return True
+    return False
+
+
+def _format_value(value: object) -> str:
+    """Format a single value for YAML-style display."""
+    if isinstance(value, datetime):
+        return value.strftime("%Y-%m-%d %H:%M:%S")
+    if isinstance(value, timedelta):
+        total = value.total_seconds()
+        if total >= 3600:
+            h, rem = divmod(total, 3600)
+            m, s = divmod(rem, 60)
+            parts = [f"{int(h)}h"]
+            if m:
+                parts.append(f"{int(m)}m")
+            if s:
+                parts.append(f"{s:.0f}s")
+            return " ".join(parts)
+        if total >= 60:
+            m, s = divmod(total, 60)
+            parts = [f"{int(m)}m"]
+            if s:
+                parts.append(f"{s:.0f}s")
+            return " ".join(parts)
+        return f"{total:.1f}s"
+    if isinstance(value, np.ndarray):
+        if value.ndim == 1:
+            return f"{len(value)} samples ({value.dtype})"
+        return f"ndarray(shape={value.shape}, dtype={value.dtype})"
+    if isinstance(value, list):
+        return "[" + ", ".join(str(v) for v in value) + "]"
+    if isinstance(value, bool):
+        return str(value)
+    return str(value)
+
+
+def _yaml_repr(obj: object) -> str:
+    """Build YAML-style repr for a dataclass, skipping empty/null fields."""
+    cls_name = type(obj).__name__
+    field_lines: list[str] = []
+    for f in fields(obj):  # type: ignore[arg-type]
+        value = getattr(obj, f.name)
+        if _is_empty(value):
+            continue
+        field_lines.append(f"  {f.name}: {_format_value(value)}")
+    if not field_lines:
+        return f"{cls_name}: (empty)"
+    return "\n".join([f"{cls_name}:"] + field_lines)
+
+
+def _section_lines(obj: object) -> list[str]:
+    """Return indented field lines for a nested dataclass section."""
+    result: list[str] = []
+    for f in fields(obj):  # type: ignore[arg-type]
+        value = getattr(obj, f.name)
+        if _is_empty(value):
+            continue
+        result.append(f"    {f.name}: {_format_value(value)}")
+    return result
+
+
+# ---------------------------------------------------------------------------
+# Unit conversion helpers
+# ---------------------------------------------------------------------------
+
+_UNIT_ALIASES: dict[str, str] = {
+    "uV": "uV", "uv": "uV", "\u00b5V": "uV", "\u00b5v": "uV",
+    "microvolt": "uV", "microvolts": "uV",
+    "mV": "mV", "mv": "mV", "millivolt": "mV", "millivolts": "mV",
+    "V": "V", "v": "V", "volt": "V", "volts": "V",
+}
+"""Map of recognized voltage unit strings to their canonical form."""
+
+_TO_UV: dict[str, float] = {
+    "uV": 1.0,
+    "mV": 1_000.0,
+    "V": 1_000_000.0,
+}
+"""Conversion factors: multiply a value in the given unit to get microvolts."""
+
+
+# ---------------------------------------------------------------------------
+# Data models
+# ---------------------------------------------------------------------------
 
 
 @dataclass
@@ -15,16 +116,30 @@ class PatientInfo:
     """Patient demographic information."""
 
     patient_id: str = ""
+    """Patient identifier."""
     first_name: str = ""
+    """First name."""
     last_name: str = ""
+    """Last name."""
     birth_date: datetime | None = None
+    """Date of birth."""
     sex: str = ""
+    """Sex (``"M"``, ``"F"``, or ``"U"``)."""
     race: str = ""
+    """Race/ethnicity."""
     age: int | None = None
+    """Age in years."""
     weight: float | None = None
+    """Weight in kg."""
     height: float | None = None
+    """Height in cm."""
     medications: list[str] = field(default_factory=list)
+    """Current medications."""
     clinical_history: str = ""
+    """Clinical history notes."""
+
+    def __repr__(self) -> str:
+        return _yaml_repr(self)
 
     def to_dict(self) -> dict:
         """Convert to a JSON-serialisable dictionary."""
@@ -48,13 +163,24 @@ class DeviceInfo:
     """Acquisition device metadata."""
 
     manufacturer: str = ""
+    """Device manufacturer."""
     model: str = ""
+    """Device model name."""
     name: str = ""
+    """Device name (distinct from model, when available)."""
     serial_number: str = ""
+    """Device serial number."""
     software_version: str = ""
+    """Software version."""
     institution: str = ""
+    """Institution name."""
     department: str = ""
+    """Department name."""
     acquisition_type: str = ""
+    """Acquisition type."""
+
+    def __repr__(self) -> str:
+        return _yaml_repr(self)
 
     def to_dict(self) -> dict:
         """Convert to a JSON-serialisable dictionary."""
@@ -75,10 +201,18 @@ class FilterSettings:
     """Signal filtering applied during acquisition or processing."""
 
     highpass: float | None = None
+    """Highpass cutoff frequency (Hz)."""
     lowpass: float | None = None
+    """Lowpass cutoff frequency (Hz)."""
     notch: float | None = None
+    """Notch filter frequency (Hz)."""
     notch_active: bool | None = None
+    """Whether notch filter is active."""
     artifact_filter: bool | None = None
+    """Whether artifact filter is active."""
+
+    def __repr__(self) -> str:
+        return _yaml_repr(self)
 
     def to_dict(self) -> dict:
         """Convert to a JSON-serialisable dictionary."""
@@ -96,10 +230,18 @@ class Interpretation:
     """Machine or physician ECG interpretation."""
 
     statements: list[str] = field(default_factory=list)
+    """Interpretation text statements."""
     severity: str = ""
+    """Severity (``"NORMAL"``, ``"ABNORMAL"``, ``"BORDERLINE"``)."""
     source: str = ""
+    """Source (``"machine"``, ``"overread"``, ``"confirmed"``)."""
     interpreter: str = ""
+    """Physician name (if overread)."""
     interpretation_date: datetime | None = None
+    """When interpretation was made."""
+
+    def __repr__(self) -> str:
+        return _yaml_repr(self)
 
     def to_dict(self) -> dict:
         """Convert to a JSON-serialisable dictionary."""
@@ -120,16 +262,30 @@ class GlobalMeasurements:
     """Global ECG interval and axis measurements."""
 
     heart_rate: int | None = None
+    """Heart rate (bpm)."""
     rr_interval: int | None = None
+    """RR interval (ms)."""
     pr_interval: int | None = None
+    """PR interval (ms)."""
     qrs_duration: int | None = None
+    """QRS duration (ms)."""
     qt_interval: int | None = None
+    """QT interval (ms)."""
     qtc_bazett: int | None = None
+    """QTc Bazett (ms)."""
     qtc_fridericia: int | None = None
+    """QTc Fridericia (ms)."""
     p_axis: int | None = None
+    """P-wave axis (degrees)."""
     qrs_axis: int | None = None
+    """QRS axis (degrees)."""
     t_axis: int | None = None
+    """T-wave axis (degrees)."""
     qrs_count: int | None = None
+    """Total QRS count."""
+
+    def __repr__(self) -> str:
+        return _yaml_repr(self)
 
     def to_dict(self) -> dict:
         """Convert to a JSON-serialisable dictionary."""
@@ -153,20 +309,38 @@ class SignalCharacteristics:
     """Technical signal encoding and acquisition metadata."""
 
     bits_per_sample: int | None = None
+    """Bits per sample (e.g. 16, 12, 32)."""
     signal_offset: int | None = None
+    """ADC zero/offset value."""
     signal_signed: bool | None = None
+    """Whether samples are signed."""
     number_channels_allocated: int | None = None
+    """Total channels in the file."""
     number_channels_valid: int | None = None
+    """Channels successfully parsed."""
     electrode_placement: str = ""
+    """Electrode placement code."""
     compression: str = ""
+    """Compression method (e.g. ``"none"``, ``"huffman"``)."""
     data_encoding: str = ""
+    """Data encoding (e.g. ``"base64_int16le"``, ``"int16"``, ``"format_212"``)."""
     acsetting: int | None = None
+    """AC setting code."""
     filtered: bool | None = None
+    """Whether data was pre-filtered."""
     downsampled: bool | None = None
+    """Whether data was downsampled."""
     upsampled: bool | None = None
+    """Whether data was upsampled."""
     waveform_modified: bool | None = None
+    """Whether waveform was modified."""
     downsampling_method: str = ""
+    """Downsampling method description."""
     upsampling_method: str = ""
+    """Upsampling method description."""
+
+    def __repr__(self) -> str:
+        return _yaml_repr(self)
 
     def to_dict(self) -> dict:
         """Convert to a JSON-serialisable dictionary."""
@@ -194,14 +368,26 @@ class RecordingInfo:
     """Recording session metadata."""
 
     date: datetime | None = None
+    """Recording start time."""
     end_date: datetime | None = None
+    """Recording end time."""
     duration: timedelta | None = None
+    """Recording duration."""
     sample_rate: int = 0
+    """Samples per second (Hz)."""
     adc_gain: float = 1.0
+    """ADC gain factor (default ``1.0``)."""
     technician: str = ""
+    """Technician name."""
     referring_physician: str = ""
+    """Referring physician name."""
     room: str = ""
+    """Room identifier."""
     location: str = ""
+    """Facility/location."""
+
+    def __repr__(self) -> str:
+        return _yaml_repr(self)
 
     def to_dict(self) -> dict:
         """Convert to a JSON-serialisable dictionary."""
@@ -220,16 +406,127 @@ class RecordingInfo:
 
 @dataclass
 class Lead:
-    """Single ECG lead with signal data."""
+    """Single ECG lead with signal data.
+
+    Samples are stored as raw ADC values by default (``is_raw=True``).
+    Call :meth:`to_physical` to convert to physical voltage units using
+    the ``resolution`` and ``offset`` metadata set by the parser.
+    """
 
     label: str
+    """Lead name (e.g. ``"I"``, ``"V1"``)."""
     samples: NDArray[np.float64]
+    """Signal sample values (raw ADC or physical, depending on ``is_raw``)."""
     sample_rate: int
+    """Samples per second (Hz)."""
     resolution: float = 1.0
+    """Scale factor for ADC-to-physical conversion (default ``1.0``)."""
+    offset: float = 0.0
+    """Additive offset for ADC-to-physical conversion (default ``0.0``)."""
     units: str = ""
+    """Signal units after conversion (e.g. ``"mV"``, ``"uV"``)."""
+    is_raw: bool = True
+    """``True`` if samples are raw ADC values, ``False`` if physical."""
     quality: int | None = None
+    """Signal quality indicator (format-specific)."""
     transducer: str = ""
+    """Transducer type."""
     prefiltering: str = ""
+    """Pre-filtering description."""
+
+    def __repr__(self) -> str:
+        lines = ["Lead:"]
+        lines.append(f"  label: {self.label}")
+        n = len(self.samples)
+        sr = self.sample_rate
+        dur = f" ({n / sr:.1f}s)" if sr else ""
+        lines.append(f"  samples: {n} samples{dur}")
+        lines.append(f"  sample_rate: {sr}")
+        lines.append(f"  is_raw: {self.is_raw}")
+        lines.append(f"  resolution: {self.resolution}")
+        if self.offset != 0.0:
+            lines.append(f"  offset: {self.offset}")
+        if self.units:
+            lines.append(f"  units: {self.units}")
+        if self.quality is not None:
+            lines.append(f"  quality: {self.quality}")
+        if self.transducer:
+            lines.append(f"  transducer: {self.transducer}")
+        if self.prefiltering:
+            lines.append(f"  prefiltering: {self.prefiltering}")
+        return "\n".join(lines)
+
+    def to_physical(self) -> Lead:
+        """Convert raw ADC samples to physical voltage units.
+
+        Applies ``physical = samples * resolution + offset`` and returns
+        a **new** :class:`Lead` with ``is_raw=False``.  If this lead is
+        already in physical units, returns ``self`` unchanged.
+
+        Raises
+        ------
+        ValueError
+            If ``resolution`` is zero (conversion undefined).
+        """
+        if not self.is_raw:
+            return self
+        if self.resolution == 0.0:
+            raise ValueError(
+                f"Lead '{self.label}': resolution is 0, "
+                "cannot convert to physical units"
+            )
+        return dataclasses.replace(
+            self,
+            samples=self.samples * self.resolution + self.offset,
+            is_raw=False,
+        )
+
+    def convert_units(self, target: str) -> Lead:
+        """Convert between physical voltage units (uV, mV, V).
+
+        Parameters
+        ----------
+        target : str
+            Target unit string (``"uV"``, ``"mV"``, ``"V"`` and common
+            aliases like ``"\u00b5V"``).
+
+        Returns
+        -------
+        Lead
+            A new :class:`Lead` with samples scaled to *target*.
+
+        Raises
+        ------
+        RawSamplesError
+            If samples are still raw ADC (``is_raw=True``).
+        ValueError
+            If the current or target unit is not a recognized voltage unit.
+        """
+        if self.is_raw:
+            raise RawSamplesError(
+                f"Lead '{self.label}': cannot convert units on raw ADC "
+                "samples. Call to_physical() first."
+            )
+        target_norm = _UNIT_ALIASES.get(target)
+        if target_norm is None:
+            raise ValueError(
+                f"Unknown target unit '{target}'. "
+                "Accepted units: uV, mV, V (and aliases)."
+            )
+        current_norm = _UNIT_ALIASES.get(self.units)
+        if current_norm is None:
+            raise ValueError(
+                f"Lead '{self.label}': current unit '{self.units}' is not "
+                "a recognized voltage unit. Cannot convert."
+            )
+        if current_norm == target_norm:
+            return self
+        factor = _TO_UV[current_norm] / _TO_UV[target_norm]
+        return dataclasses.replace(
+            self,
+            samples=self.samples * factor,
+            units=target_norm,
+        )
 
     def to_dict(self, include_samples: bool = True) -> dict:
         """Convert to a JSON-serialisable dictionary.
@@ -245,7 +542,9 @@ class Lead:
             "sample_count": len(self.samples),
             "sample_rate": self.sample_rate,
             "resolution": self.resolution,
+            "offset": self.offset,
             "units": self.units,
+            "is_raw": self.is_raw,
             "quality": self.quality,
             "transducer": self.transducer,
             "prefiltering": self.prefiltering,
@@ -271,131 +570,148 @@ class ECGRecord:
     :meth:`to_dict` or :meth:`to_json` to obtain a format-agnostic,
     JSON-serialisable representation that is identical regardless of the
     original file format.
+
+    Samples are stored as raw ADC values by default.  Call
+    :meth:`to_physical` to convert all leads to physical voltage units,
+    then :meth:`convert_units` to switch between ``uV``, ``mV``, or ``V``.
     """
 
     patient: PatientInfo = field(default_factory=PatientInfo)
+    """Patient demographics."""
     recording: RecordingInfo = field(default_factory=RecordingInfo)
+    """Recording session metadata."""
     device: DeviceInfo = field(default_factory=DeviceInfo)
+    """Acquisition device info."""
     filters: FilterSettings = field(default_factory=FilterSettings)
+    """Filter settings applied during acquisition."""
     signal: SignalCharacteristics = field(default_factory=SignalCharacteristics)
+    """Technical signal encoding metadata."""
     leads: list[Lead] = field(default_factory=list)
+    """ECG lead waveforms."""
     interpretation: Interpretation = field(default_factory=Interpretation)
+    """Machine or physician interpretation."""
     measurements: GlobalMeasurements = field(default_factory=GlobalMeasurements)
+    """Global ECG interval/axis measurements."""
     median_beats: list[Lead] = field(default_factory=list)
+    """Median/template beats if available."""
     annotations: dict[str, str] = field(default_factory=dict)
+    """Additional key-value annotations."""
     source_format: str = ""
+    """Parser identifier (e.g. ``"hl7_aecg"``, ``"dicom"``)."""
     raw_metadata: dict = field(default_factory=dict)
+    """Original format-specific metadata from the source file."""
 
     def __repr__(self) -> str:
-        parts: list[str] = []
-        fmt = f" ({self.source_format})" if self.source_format else ""
-        parts.append(f"ECGRecord{fmt}")
+        lines = ["ECGRecord:"]
 
-        # Patient
-        p = self.patient
-        p_parts: list[str] = []
-        name = f"{p.first_name} {p.last_name}".strip()
-        if name:
-            p_parts.append(name)
-        if p.patient_id:
-            p_parts.append(f"ID: {p.patient_id}")
-        if p.age is not None:
-            p_parts.append(f"Age: {p.age}")
-        if p.sex:
-            p_parts.append(f"Sex: {p.sex}")
-        if p_parts:
-            parts.append(f"  Patient      : {' | '.join(p_parts)}")
+        if self.source_format:
+            lines.append(f"  source_format: {self.source_format}")
 
-        # Recording
-        r = self.recording
-        r_parts: list[str] = []
-        if r.date:
-            r_parts.append(r.date.strftime("%Y-%m-%d %H:%M"))
-        if r.sample_rate:
-            r_parts.append(f"{r.sample_rate} Hz")
-        dur = r.duration
-        if dur is None and self.leads and self.leads[0].sample_rate:
-            dur_s = len(self.leads[0].samples) / self.leads[0].sample_rate
-            r_parts.append(f"{dur_s:.1f}s")
-        elif dur is not None:
-            r_parts.append(f"{dur.total_seconds():.1f}s")
-        if r_parts:
-            parts.append(f"  Recording    : {' | '.join(r_parts)}")
-
-        # Device
-        d = self.device
-        d_parts: list[str] = []
-        dev_name = " ".join(filter(None, [d.manufacturer, d.model])) or d.name
-        if dev_name:
-            d_parts.append(dev_name)
-        if d.serial_number:
-            d_parts.append(f"SN: {d.serial_number}")
-        if d.institution:
-            d_parts.append(d.institution)
-        if d_parts:
-            parts.append(f"  Device       : {' | '.join(d_parts)}")
-
-        # Filters
-        f = self.filters
-        f_parts: list[str] = []
-        if f.highpass is not None:
-            f_parts.append(f"HP: {f.highpass} Hz")
-        if f.lowpass is not None:
-            f_parts.append(f"LP: {f.lowpass} Hz")
-        if f.notch is not None:
-            f_parts.append(f"Notch: {f.notch} Hz")
-        if f_parts:
-            parts.append(f"  Filters      : {' | '.join(f_parts)}")
+        # Nested dataclass sections
+        sections = [
+            ("patient", self.patient),
+            ("recording", self.recording),
+            ("device", self.device),
+            ("filters", self.filters),
+            ("signal", self.signal),
+            ("measurements", self.measurements),
+            ("interpretation", self.interpretation),
+        ]
+        for name, obj in sections:
+            slines = _section_lines(obj)
+            if slines:
+                lines.append(f"  {name}:")
+                lines.extend(slines)
 
         # Leads
         if self.leads:
-            names = ", ".join(ld.label for ld in self.leads)
-            parts.append(f"  Leads ({len(self.leads):>2})  : {names}")
+            lines.append(f"  leads:")
+            for lead in self.leads:
+                n = len(lead.samples)
+                sr = lead.sample_rate
+                dur = f", {n / sr:.1f}s" if sr else ""
+                status = "raw" if lead.is_raw else (lead.units or "physical")
+                lines.append(
+                    f"    - {lead.label}: {n} samples, {sr} Hz{dur}, {status}"
+                )
 
-        # Measurements
-        m = self.measurements
-        m_parts: list[str] = []
-        if m.heart_rate is not None:
-            m_parts.append(f"HR: {m.heart_rate} bpm")
-        if m.pr_interval is not None:
-            m_parts.append(f"PR: {m.pr_interval} ms")
-        if m.qrs_duration is not None:
-            m_parts.append(f"QRS: {m.qrs_duration} ms")
-        if m.qt_interval is not None:
-            m_parts.append(f"QT: {m.qt_interval} ms")
-        if m.qtc_bazett is not None:
-            m_parts.append(f"QTc: {m.qtc_bazett} ms")
-        if m.qrs_axis is not None:
-            m_parts.append(f"Axis: {m.qrs_axis}\u00b0")
-        if m_parts:
-            parts.append(f"  Measurements : {' | '.join(m_parts)}")
+        # Median beats
+        if self.median_beats:
+            lines.append(f"  median_beats:")
+            for beat in self.median_beats:
+                lines.append(
+                    f"    - {beat.label}: {len(beat.samples)} samples"
+                )
 
-        # Medications
-        if self.patient.medications:
-            parts.append(f"  Medications  : {', '.join(self.patient.medications)}")
+        # Annotations
+        if self.annotations:
+            lines.append(f"  annotations:")
+            for k, v in self.annotations.items():
+                lines.append(f"    {k}: {v}")
 
-        # Interpretation
-        if self.interpretation.statements:
-            parts.append(f"  Interpretation: {'; '.join(self.interpretation.statements[:3])}")
+        # Raw metadata indicator
+        if self.raw_metadata:
+            lines.append(f"  raw_metadata: {len(self.raw_metadata)} entries")
 
-        return "\n".join(parts)
+        return "\n".join(lines)
 
-    def plot(self, show: bool = True, **kwargs):
+    def to_physical(self) -> ECGRecord:
+        """Convert all leads and median beats from raw ADC to physical units.
+
+        Returns a new :class:`ECGRecord` where every :class:`Lead` has
+        ``is_raw=False``.  Leads already in physical units are unchanged.
+        """
+        return dataclasses.replace(
+            self,
+            leads=[lead.to_physical() for lead in self.leads],
+            median_beats=[beat.to_physical() for beat in self.median_beats],
+        )
+
+    def convert_units(self, target: str) -> ECGRecord:
+        """Convert all leads and median beats to the specified voltage unit.
+
+        Parameters
+        ----------
+        target : str
+            Target unit (``"uV"``, ``"mV"``, ``"V"``).
+
+        Raises
+        ------
+        RawSamplesError
+            If any lead is still raw ADC.
+        """
+        return dataclasses.replace(
+            self,
+            leads=[lead.convert_units(target) for lead in self.leads],
+            median_beats=[beat.convert_units(target) for beat in self.median_beats],
+        )
+
+    def plot(
+        self,
+        show: bool = True,
+        rows: int | None = None,
+        cols: int | None = None,
+        **kwargs,
+    ):
         """Plot the ECG record with patient/device header and all leads.
 
         Parameters
         ----------
         show : bool
             Display the plot immediately (default ``True``).
+        rows : int | None
+            Number of rows in the subplot grid.
+        cols : int | None
+            Number of columns in the subplot grid.
         **kwargs
             Extra arguments forwarded to the underlying plot function
-            (e.g. ``rows``, ``cols``, ``figsize``, ``x_axis``).
+            (e.g. ``figsize``, ``x_axis``).
         """
         from ecgdatakit.plotting.static import plot_12lead, plot_leads
 
         if len(self.leads) >= 12:
-            return plot_12lead(self, record=self, show=show, **kwargs)
-        return plot_leads(self, show=show, **kwargs)
+            return plot_12lead(self, record=self, show=show, rows=rows, cols=cols, **kwargs)
+        return plot_leads(self, show=show, rows=rows, cols=cols, **kwargs)
 
     def to_dict(self, include_samples: bool = True) -> dict:
         """Convert the record to the **unified JSON schema**.

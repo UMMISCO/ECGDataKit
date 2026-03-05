@@ -346,7 +346,7 @@ class EDFParser(Parser):
                     break
                 digital = np.frombuffer(raw[sig_start:sig_end], dtype="<i2")
                 all_samples[rec * spr: rec * spr + len(digital)] = (
-                    digital.astype(np.float64) * gain + offset_val
+                    digital.astype(np.float64)
                 )
                 if sig_idx == 0:
                     pass
@@ -363,7 +363,7 @@ class EDFParser(Parser):
                         digital = np.frombuffer(
                             raw[rec_offset:end], dtype="<i2"
                         )
-                        samples_converted = digital.astype(np.float64) * gain + offset_val
+                        samples_converted = digital.astype(np.float64)
                         dest_start = rec * spr
                         dest_end = dest_start + len(samples_converted)
                         all_samples[dest_start:dest_end] = samples_converted
@@ -374,6 +374,8 @@ class EDFParser(Parser):
                 label=label,
                 samples=all_samples[:total_samples],
                 sample_rate=sample_rates[sig_idx],
+                resolution=gain,
+                offset=offset_val,
                 units=_clean_str(physical_dims[sig_idx]),
                 transducer=_clean_str(transducer_types[sig_idx]),
                 prefiltering=_clean_str(prefilterings[sig_idx]),

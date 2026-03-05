@@ -269,11 +269,11 @@ class GEMuseXMLParser(Parser):
                 except Exception:
                     continue
 
+                scale = 1.0
                 amp_units = self._get_text(ld, "LeadAmplitudeUnitsPerBit")
                 if amp_units:
                     try:
                         scale = float(amp_units)
-                        samples = samples * scale
                     except ValueError:
                         pass
 
@@ -281,6 +281,8 @@ class GEMuseXMLParser(Parser):
                     label=label,
                     samples=samples,
                     sample_rate=sample_rate,
+                    resolution=scale,
+                    units="uV" if scale != 1.0 else "",
                 ))
 
             if wf_type and wf_type.lower() == "rhythm":

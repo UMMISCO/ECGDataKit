@@ -6,268 +6,86 @@ Static plots require: `pip install ecgdatakit[plotting]` (matplotlib >= 3.7)
 
 Interactive plots require: `pip install ecgdatakit[plotting-interactive]` (plotly >= 5.15)
 
-> **Numpy array support:** All plotting functions accept raw **numpy arrays** in addition to `Lead` / `ECGRecord` objects. When passing numpy arrays, provide the sample rate via `fs=`:
-> ```python
-> # Single-lead: 1-D array
-> plot_lead(my_array, fs=500)
-> plot_peaks(my_array, fs=500)
-> iplot_lead(my_array, fs=500)
->
-> # Multi-lead: 2-D array (n_leads × n_samples) or list of 1-D arrays
-> plot_leads(signals_2d, fs=500)
-> plot_12lead([lead_i, lead_ii, lead_iii, ...], fs=500)
-> iplot_leads(signals_2d, fs=500)
-> ```
-> A `TypeError` is raised if `fs` is omitted with a numpy array. When passing `Lead` / `ECGRecord` objects, `fs` is ignored.
+```{note}
+All plotting functions accept raw **numpy arrays** in addition to `Lead` / `ECGRecord` objects. When passing numpy arrays, provide the sample rate via `fs`:
 
-## Static Plots (matplotlib)
+    # Single-lead: 1-D array
+    plot_lead(my_array, fs=500)
 
-All static plot functions display the figure automatically by default (`show=True`). Pass `show=False` to suppress display and get back the `matplotlib.figure.Figure` for saving or further customization. Functions with an `ax` parameter can render into an existing axes for composability; when `ax=None`, a new figure is created.
+    # Multi-lead: 2-D array (n_leads × n_samples)
+    plot_leads(signals_2d, fs=500)
+
+A `TypeError` is raised if `fs` is omitted with a numpy array. When passing `Lead` / `ECGRecord` objects, `fs` is ignored.
+```
+
+## {doc}`Static Plots (matplotlib) <plotting/static>`
 
 ### Lead Waveforms
 
-<table>
-  <thead><tr><th>Function</th><th>Description</th></tr></thead>
-  <tbody>
-    <tr>
-      <td><code><a href="reference.html#ecgdatakit.plotting.plot_lead">plot_lead</a>(lead, peaks=None, title=None, show_grid=True, figsize=(12,3), ax=None, *, fs=None, show=True, x_axis="time")</code></td>
-      <td>Single lead waveform with optional R-peak markers. ECG-style grid with major lines every 0.2s / 0.5mV. Accepts <code>Lead</code> or numpy array. Set <code>x_axis="samples"</code> for sample indices instead of time.</td>
-    </tr>
-    <tr>
-      <td><code><a href="reference.html#ecgdatakit.plotting.plot_leads">plot_leads</a>(leads, peaks_dict=None, title=None, show_grid=True, figsize=(12,None), share_x=True, *, fs=None, show=True, x_axis="time", rows=None, cols=None)</code></td>
-      <td>Multiple leads in a grid layout (vertical stack by default). Use <code>rows</code>/<code>cols</code> to arrange in a grid (e.g. <code>cols=2</code> for 2 columns). Accepts <code>list[Lead]</code>, <code>ECGRecord</code>, 2-D numpy array, or list of 1-D arrays.</td>
-    </tr>
-    <tr>
-      <td><code><a href="reference.html#ecgdatakit.plotting.plot_12lead">plot_12lead</a>(leads, record=None, show_grid=True, figsize=(12,None), share_x=True, *, fs=None, show=True, x_axis="time", rows=None, cols=None)</code></td>
-      <td>Plot 12 leads with standard names (I, II, III, aVR, …, V6). Assigns names automatically when input is unnamed (e.g. numpy array). Full signal, no cropping. Use <code>rows</code>/<code>cols</code> for grid layout. Optional header when <code>record</code> is provided.</td>
-    </tr>
-  </tbody>
-</table>
-
-```python
-from ecgdatakit.plotting import plot_lead, plot_leads, plot_12lead
-import numpy as np
-
-# From a Lead object
-plot_lead(lead)
-
-# From a numpy array — fs is required
-signal = np.random.randn(5000)
-plot_lead(signal, fs=500)
-
-# Use sample indices on x-axis
-plot_lead(lead, x_axis="samples")
-
-# Multi-lead from a 2-D numpy array (n_leads × n_samples)
-signals = np.random.randn(3, 5000)
-plot_leads(signals, fs=500)
-
-# Multi-lead in a 3×2 grid layout
-plot_leads(np.random.randn(6, 5000), fs=500, cols=2)
-
-# 12-lead with standard names from a numpy array
-plot_12lead(np.random.randn(12, 5000), fs=500)
-
-# 12-lead in a 4×3 grid
-plot_12lead(np.random.randn(12, 5000), fs=500, cols=3)
-
-# Suppress display to save to file
-fig = plot_12lead(record, show=False)
-fig.savefig("ecg_grid.png", dpi=150)
-```
+| | |
+|---|---|
+| {func}`~ecgdatakit.plotting.plot_lead` | Plot a single ECG lead waveform |
+| {func}`~ecgdatakit.plotting.plot_leads` | Plot multiple leads in a grid layout |
+| {func}`~ecgdatakit.plotting.plot_12lead` | Plot 12 leads with standard lead names (I, II, III, aVR, …, V6) |
 
 ### Annotations & Beats
 
-<table>
-  <thead><tr><th>Function</th><th>Description</th></tr></thead>
-  <tbody>
-    <tr>
-      <td><code><a href="reference.html#ecgdatakit.plotting.plot_peaks">plot_peaks</a>(lead, peaks=None, title=None, figsize=(12,3), ax=None, *, fs=None, show=True, x_axis="time")</code></td>
-      <td>Lead with R-peak triangles, RR interval annotations between peaks, and heart rate in corner. Auto-detects peaks if <code>None</code>. Accepts <code>Lead</code> or numpy array.</td>
-    </tr>
-    <tr>
-      <td><code><a href="reference.html#ecgdatakit.plotting.plot_beats">plot_beats</a>(lead, beats=None, peaks=None, overlay=True, figsize=(8,5), ax=None, *, fs=None, show=True)</code></td>
-      <td>Segmented heartbeats. <code>overlay=True</code>: all beats on same axes (semi-transparent) with average bold. <code>overlay=False</code>: waterfall/stacked. Accepts <code>Lead</code> or numpy array.</td>
-    </tr>
-    <tr>
-      <td><code><a href="reference.html#ecgdatakit.plotting.plot_average_beat">plot_average_beat</a>(lead, peaks=None, before=0.2, after=0.4, figsize=(6,4), ax=None, *, fs=None, show=True)</code></td>
-      <td>Ensemble-averaged beat with shaded +/-1 SD region. X-axis in ms relative to R-peak. Accepts <code>Lead</code> or numpy array.</td>
-    </tr>
-  </tbody>
-</table>
+| | |
+|---|---|
+| {func}`~ecgdatakit.plotting.plot_peaks` | Plot lead with R-peak markers and RR interval annotations |
+| {func}`~ecgdatakit.plotting.plot_beats` | Plot segmented heartbeats |
+| {func}`~ecgdatakit.plotting.plot_average_beat` | Plot ensemble-averaged beat with ±1 SD shading |
 
 ### Frequency Domain
 
-<table>
-  <thead><tr><th>Function</th><th>Description</th></tr></thead>
-  <tbody>
-    <tr>
-      <td><code><a href="reference.html#ecgdatakit.plotting.plot_spectrum">plot_spectrum</a>(lead, method="welch", figsize=(10,4), ax=None, *, fs=None, show=True)</code></td>
-      <td><code>"welch"</code>: PSD in dB/Hz. <code>"fft"</code>: magnitude spectrum. Shaded ECG band (0.05-150 Hz). Accepts <code>Lead</code> or numpy array.</td>
-    </tr>
-    <tr>
-      <td><code><a href="reference.html#ecgdatakit.plotting.plot_spectrogram">plot_spectrogram</a>(lead, nperseg=256, figsize=(12,4), ax=None, *, fs=None, show=True)</code></td>
-      <td>Time-frequency spectrogram (STFT) as a colormap. X: time, Y: frequency, color: power. Accepts <code>Lead</code> or numpy array.</td>
-    </tr>
-  </tbody>
-</table>
+| | |
+|---|---|
+| {func}`~ecgdatakit.plotting.plot_spectrum` | Plot power spectral density or FFT magnitude spectrum |
+| {func}`~ecgdatakit.plotting.plot_spectrogram` | Plot time-frequency spectrogram (STFT) |
 
 ### HRV
 
-<table>
-  <thead><tr><th>Function</th><th>Description</th></tr></thead>
-  <tbody>
-    <tr>
-      <td><code><a href="reference.html#ecgdatakit.plotting.plot_rr_tachogram">plot_rr_tachogram</a>(rr_ms, figsize=(10,3), ax=None, *, show=True)</code></td>
-      <td>RR intervals vs. beat number with mean +/- SD reference lines. Takes a numpy array of RR intervals in ms.</td>
-    </tr>
-    <tr>
-      <td><code><a href="reference.html#ecgdatakit.plotting.plot_poincare">plot_poincare</a>(rr_ms, figsize=(6,6), ax=None, *, show=True)</code></td>
-      <td>Poincare plot: RR(n) vs RR(n+1) with SD1/SD2 ellipse and identity line. Takes a numpy array of RR intervals in ms.</td>
-    </tr>
-    <tr>
-      <td><code><a href="reference.html#ecgdatakit.plotting.plot_hrv_summary">plot_hrv_summary</a>(rr_ms, figsize=(14,8), *, show=True)</code></td>
-      <td>4-panel dashboard: RR tachogram, Poincare plot, frequency-domain PSD with VLF/LF/HF bands shaded, and time-domain metrics table.</td>
-    </tr>
-  </tbody>
-</table>
+| | |
+|---|---|
+| {func}`~ecgdatakit.plotting.plot_rr_tachogram` | Plot RR interval tachogram |
+| {func}`~ecgdatakit.plotting.plot_poincare` | Poincaré plot: RR(n) vs RR(n+1) with SD1/SD2 ellipse |
+| {func}`~ecgdatakit.plotting.plot_hrv_summary` | Combined HRV dashboard: tachogram, Poincaré, frequency bands, metrics |
 
-### Quality
+### Quality & Report
 
-<table>
-  <thead><tr><th>Function</th><th>Description</th></tr></thead>
-  <tbody>
-    <tr>
-      <td><code><a href="reference.html#ecgdatakit.plotting.plot_quality">plot_quality</a>(leads, figsize=(10,5), *, fs=None, show=True)</code></td>
-      <td>Bar chart of signal quality index per lead. Color-coded: green (excellent), yellow (acceptable), red (unacceptable). SNR annotated. Accepts <code>list[Lead]</code>, <code>ECGRecord</code>, 2-D numpy array, or list of 1-D arrays.</td>
-    </tr>
-  </tbody>
-</table>
+| | |
+|---|---|
+| {func}`~ecgdatakit.plotting.plot_quality` | Signal quality dashboard: SQI bar chart per lead |
+| {func}`~ecgdatakit.plotting.plot_report` | Comprehensive ECG report page |
 
-### Full Report
-
-<table>
-  <thead><tr><th>Function</th><th>Description</th></tr></thead>
-  <tbody>
-    <tr>
-      <td><code><a href="reference.html#ecgdatakit.plotting.plot_report">plot_report</a>(record, figsize=(16,20), *, show=True)</code></td>
-      <td>Comprehensive ECG report: patient header, measurements table, 12-lead grid, rhythm strip, quality summary, and interpretation statements.</td>
-    </tr>
-  </tbody>
-</table>
-
-```python
-from ecgdatakit.plotting import plot_report
-
-# Displays automatically
-plot_report(record)
-
-# Or suppress display to save
-fig = plot_report(record, show=False)
-fig.savefig("full_report.pdf")
-```
-
-## Interactive Plots (plotly)
-
-All interactive plot functions display the figure automatically by default (`show=True`). Pass `show=False` to get the `plotly.graph_objects.Figure` without displaying. Features: zoom, pan, hover with sample-level values, range sliders.
+## {doc}`Interactive Plots (plotly) <plotting/interactive>`
 
 ### Lead Waveforms
 
-<table>
-  <thead><tr><th>Function</th><th>Description</th></tr></thead>
-  <tbody>
-    <tr>
-      <td><code><a href="reference.html#ecgdatakit.plotting.iplot_lead">iplot_lead</a>(lead, peaks=None, title=None, height=300, *, fs=None, show=True, x_axis="time")</code></td>
-      <td>Interactive single lead with rangeslider, crosshair spikes, hover showing time and amplitude. Accepts <code>Lead</code> or numpy array.</td>
-    </tr>
-    <tr>
-      <td><code><a href="reference.html#ecgdatakit.plotting.iplot_leads">iplot_leads</a>(leads, peaks_dict=None, title=None, height=None, *, fs=None, show=True, x_axis="time", rows=None, cols=None)</code></td>
-      <td>Interactive leads in a grid layout (vertical stack by default). Use <code>rows</code>/<code>cols</code> for grid arrangement. Synchronized X-axis zoom. Accepts <code>list[Lead]</code>, <code>ECGRecord</code>, 2-D numpy array, or list of 1-D arrays.</td>
-    </tr>
-    <tr>
-      <td><code><a href="reference.html#ecgdatakit.plotting.iplot_12lead">iplot_12lead</a>(leads, record=None, height=None, *, fs=None, show=True, x_axis="time", rows=None, cols=None)</code></td>
-      <td>Interactive 12-lead plot with standard names (I, II, …, V6). Assigns names automatically for unnamed leads. Full signal, no cropping. Use <code>rows</code>/<code>cols</code> for grid layout. Header annotation when record provided.</td>
-    </tr>
-  </tbody>
-</table>
+| | |
+|---|---|
+| {func}`~ecgdatakit.plotting.iplot_lead` | Interactive single lead with hover showing time/amplitude |
+| {func}`~ecgdatakit.plotting.iplot_leads` | Interactive leads in a grid layout |
+| {func}`~ecgdatakit.plotting.iplot_12lead` | Interactive 12-lead plot with standard lead names |
 
-```python
-from ecgdatakit.plotting import iplot_lead, iplot_leads, iplot_12lead
-import numpy as np
+### Annotations & Frequency Domain
 
-# From a Lead object — displays automatically
-iplot_lead(filtered, peaks=peaks)
+| | |
+|---|---|
+| {func}`~ecgdatakit.plotting.iplot_peaks` | Interactive lead with R-peak markers |
+| {func}`~ecgdatakit.plotting.iplot_spectrum` | Interactive spectrum with frequency band highlighting |
 
-# From a numpy array
-signal = np.random.randn(5000)
-iplot_lead(signal, fs=500)
+### HRV & Report
 
-# Multi-lead from a 2-D numpy array
-signals = np.random.randn(12, 5000)
-iplot_leads(signals, fs=500)
+| | |
+|---|---|
+| {func}`~ecgdatakit.plotting.iplot_rr_tachogram` | Interactive RR interval tachogram |
+| {func}`~ecgdatakit.plotting.iplot_poincare` | Interactive Poincaré plot with SD1/SD2 ellipse |
+| {func}`~ecgdatakit.plotting.iplot_report` | Interactive full ECG report |
 
-# Multi-lead in a grid layout
-iplot_leads(np.random.randn(6, 5000), fs=500, cols=2)
+```{toctree}
+:hidden:
 
-# 12-lead with standard names
-iplot_12lead(np.random.randn(12, 5000), fs=500)
-
-# 12-lead in a 4×3 grid
-iplot_12lead(np.random.randn(12, 5000), fs=500, cols=3)
-
-# Suppress display
-fig = iplot_12lead(record, show=False)
-fig.write_html("ecg_12lead.html")
+plotting/static
+plotting/interactive
 ```
-
-### Annotations
-
-<table>
-  <thead><tr><th>Function</th><th>Description</th></tr></thead>
-  <tbody>
-    <tr>
-      <td><code><a href="reference.html#ecgdatakit.plotting.iplot_peaks">iplot_peaks</a>(lead, peaks=None, title=None, height=350, *, fs=None, show=True, x_axis="time")</code></td>
-      <td>Lead with R-peak markers. Hover shows peak index, RR interval, and instantaneous HR. Accepts <code>Lead</code> or numpy array.</td>
-    </tr>
-  </tbody>
-</table>
-
-### Frequency Domain
-
-<table>
-  <thead><tr><th>Function</th><th>Description</th></tr></thead>
-  <tbody>
-    <tr>
-      <td><code><a href="reference.html#ecgdatakit.plotting.iplot_spectrum">iplot_spectrum</a>(lead, method="welch", height=400, *, fs=None, show=True)</code></td>
-      <td>Interactive spectrum with hover showing frequency and power. Shaded ECG band. Accepts <code>Lead</code> or numpy array.</td>
-    </tr>
-  </tbody>
-</table>
-
-### HRV
-
-<table>
-  <thead><tr><th>Function</th><th>Description</th></tr></thead>
-  <tbody>
-    <tr>
-      <td><code><a href="reference.html#ecgdatakit.plotting.iplot_rr_tachogram">iplot_rr_tachogram</a>(rr_ms, height=300, *, show=True)</code></td>
-      <td>Interactive RR tachogram with mean +/- SD lines. Hover shows beat number and RR value.</td>
-    </tr>
-    <tr>
-      <td><code><a href="reference.html#ecgdatakit.plotting.iplot_poincare">iplot_poincare</a>(rr_ms, height=500, *, show=True)</code></td>
-      <td>Interactive Poincare with SD1/SD2 ellipse. Hover shows beat pair indices and RR values.</td>
-    </tr>
-  </tbody>
-</table>
-
-### Full Report
-
-<table>
-  <thead><tr><th>Function</th><th>Description</th></tr></thead>
-  <tbody>
-    <tr>
-      <td><code><a href="reference.html#ecgdatakit.plotting.iplot_report">iplot_report</a>(record, height=1200, *, show=True, x_axis="time")</code></td>
-      <td>Full interactive report with all leads, rhythm strip with rangeslider, and header annotation.</td>
-    </tr>
-  </tbody>
-</table>

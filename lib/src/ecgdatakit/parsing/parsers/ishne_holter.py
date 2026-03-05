@@ -148,15 +148,14 @@ class ISHNEHolterParser(Parser):
 
             label = _LEAD_SPECS.get(spec, f"Lead {i + 1}")
             samples = data[i].astype(np.float64)
-            if res_nv > 0:
-                samples = samples * (res_nv / 1e6)
 
             lq = lead_quality[i] if i < len(lead_quality) else None
             record.leads.append(Lead(
                 label=label,
                 samples=samples,
                 sample_rate=sr,
-                resolution=float(res_nv),
+                resolution=float(res_nv) / 1e6 if res_nv > 0 else 1.0,
+                units="mV" if res_nv > 0 else "",
                 quality=lq,
             ))
 
