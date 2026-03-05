@@ -43,11 +43,11 @@ class TestMortaraEL250Parser:
 
     def test_recording_sample_rate(self, mortara_file: Path):
         record = MortaraEL250Parser().parse(mortara_file)
-        assert record.recording.sample_rate == 500
+        assert record.recording.acquisition.signal.sample_rate == 500
 
     def test_device_model(self, mortara_file: Path):
         record = MortaraEL250Parser().parse(mortara_file)
-        assert record.device.model == "EL250"
+        assert record.recording.device.model == "EL250"
 
     def test_lead_count(self, mortara_file: Path):
         record = MortaraEL250Parser().parse(mortara_file)
@@ -78,9 +78,9 @@ class TestMortaraEL250Parser:
         record = MortaraEL250Parser().parse(mortara_file)
         d = record.to_dict()
         assert set(d.keys()) == {
-            "source_format", "patient", "recording", "device", "filters",
+            "source_format", "patient", "recording",
             "leads", "interpretation", "measurements", "median_beats",
-            "annotations", "signal",
+            "annotations",
         }
 
     def test_to_json_roundtrip(self, mortara_file: Path):

@@ -389,10 +389,10 @@ def _draw_header(ax, record: ECGRecord) -> None:
     r = record.recording
     if r.date:
         lines.append(f"Date: {r.date.strftime('%Y-%m-%d %H:%M')}")
-    if r.sample_rate:
-        lines.append(f"Sample rate: {r.sample_rate} Hz")
+    if r.acquisition.signal.sample_rate:
+        lines.append(f"Sample rate: {r.acquisition.signal.sample_rate} Hz")
 
-    d = record.device
+    d = r.device
     dev_parts = []
     if d.manufacturer:
         dev_parts.append(d.manufacturer)
@@ -420,7 +420,8 @@ def _draw_header(ax, record: ECGRecord) -> None:
 
     interp = record.interpretation
     if interp.statements:
-        lines.append("Interpretation: " + "; ".join(interp.statements[:3]))
+        stmts = [f"{l} {r}".strip() if r else l for l, r in interp.statements[:3]]
+        lines.append("Interpretation: " + "; ".join(stmts))
 
     text = "\n".join(lines) if lines else "ECG Report"
     ax.text(
@@ -1138,8 +1139,9 @@ def _draw_interpretation(ax, record: ECGRecord) -> None:
         lines.append(f"  Severity: {interp.severity}")
     if interp.source:
         lines.append(f"  Source: {interp.source}")
-    for stmt in interp.statements:
-        lines.append(f"  - {stmt}")
+    for left, right in interp.statements:
+        text = f"{left} {right}".strip() if right else left
+        lines.append(f"  - {text}")
     if not interp.statements and not interp.severity:
         lines.append("  No interpretation available")
 

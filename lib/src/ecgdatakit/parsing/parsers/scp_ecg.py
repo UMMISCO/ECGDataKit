@@ -190,8 +190,6 @@ class SCPECGParser(Parser):
             offset, length = sections[1]
             sec1_ctx = self._parse_section1(data, offset, length)
             record.patient = sec1_ctx["patient"]
-            record.device = sec1_ctx.get("device", DeviceInfo())
-            record.filters = sec1_ctx.get("filters", FilterSettings())
             record.interpretation = sec1_ctx.get("interpretation", Interpretation())
             for key, val in sec1_ctx.get("raw_metadata", {}).items():
                 record.raw_metadata[key] = val
@@ -246,10 +244,11 @@ class SCPECGParser(Parser):
                 record.interpretation.source = sec8_interp.source
 
         recording = RecordingInfo()
+        sr = 0
         if record.leads:
-            recording.sample_rate = record.leads[0].sample_rate
-            if recording.sample_rate > 0:
-                duration_s = len(record.leads[0].samples) / recording.sample_rate
+            sr = record.leads[0].sample_rate
+            if sr > 0:
+                duration_s = len(record.leads[0].samples) / sr
                 recording.duration = timedelta(seconds=duration_s)
 
         rec_date = sec1_ctx.get("recording_date")
@@ -264,9 +263,12 @@ class SCPECGParser(Parser):
             recording.room = sec1_extra["room"]
 
         record.recording = recording
+        record.recording.device = sec1_ctx.get("device", DeviceInfo())
+        record.recording.acquisition.filters = sec1_ctx.get("filters", FilterSettings())
 
         # Populate signal characteristics
         sig = SignalCharacteristics(
+            sample_rate=sr,
             signal_signed=True,
             number_channels_allocated=num_leads,
             number_channels_valid=len(record.leads),
@@ -284,7 +286,7 @@ class SCPECGParser(Parser):
                     sig.data_encoding = "second_difference"
                 elif enc_flag == 0:
                     sig.data_encoding = "first_difference"
-        record.signal = sig
+        record.recording.acquisition.signal = sig
 
         record.raw_metadata["filepath"] = str(file_path)
         record.raw_metadata["crc"] = crc
@@ -444,7 +446,7 @@ class SCPECGParser(Parser):
                 text = tag_data.decode("ascii", errors="replace").strip("\x00 ")
                 if text:
                     interpretation.statements = [
-                        s.strip() for s in text.split("\x00") if s.strip()
+                        (s.strip(), "") for s in text.split("\x00") if s.strip()
                     ]
 
             pos += tag_len
@@ -590,6 +592,7 @@ class SCPECGParser(Parser):
                 samples_list = _reconstruct_first_difference(diffs)
 
             avm_f = float(avm) if avm > 0 else 1.0
+            res = avm_f / 1_000_000.0
             samples = np.array(samples_list, dtype=np.float64)
 
             label = lead_defs[i]["label"] if i < len(lead_defs) else f"Lead{i}"
@@ -598,8 +601,9 @@ class SCPECGParser(Parser):
                 label=label,
                 samples=samples,
                 sample_rate=sample_rate,
-                resolution=avm_f / 1_000_000.0,
+                resolution=res,
                 units="mV",
+                is_raw=res != 1.0,
             ))
 
             pos += lead_byte_lengths[i]
@@ -685,7 +689,7 @@ class SCPECGParser(Parser):
 
         raw = data[pos:end]
         text = raw.decode("ascii", errors="replace")
-        statements = [s.strip() for s in text.split("\x00") if s.strip()]
+        statements = [(s.strip(), "") for s in text.split("\x00") if s.strip()]
         interp.statements = statements
 
         return interp
@@ -747,6 +751,7 @@ class SCPECGParser(Parser):
                 samples_list = _reconstruct_first_difference(diffs)
 
             avm_f = float(avm) if avm > 0 else 1.0
+            res = avm_f / 1_000_000.0
             samples = np.array(samples_list, dtype=np.float64)
 
             label = lead_defs[i]["label"] if i < len(lead_defs) else f"Lead{i}"
@@ -755,8 +760,9 @@ class SCPECGParser(Parser):
                 label=label,
                 samples=samples,
                 sample_rate=sample_rate,
-                resolution=avm_f / 1_000_000.0,
+                resolution=res,
                 units="mV",
+                is_raw=res != 1.0,
             ))
 
             pos += lead_byte_lengths[i]

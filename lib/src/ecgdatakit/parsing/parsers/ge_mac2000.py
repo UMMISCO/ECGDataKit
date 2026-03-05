@@ -104,20 +104,21 @@ class GEMAC2000Parser(Parser):
 
         record.patient = self._read_patient(root)
         record.recording = self._read_recording(root)
-        record.device = self._read_device(root)
-        record.filters = self._read_filters(root)
+        record.recording.device = self._read_device(root)
+        record.recording.acquisition.filters = self._read_filters(root)
         record.leads = self._read_leads(root)
-        if record.leads and record.recording.sample_rate == 0:
-            record.recording.sample_rate = record.leads[0].sample_rate
-        if record.leads and record.recording.sample_rate > 0:
-            duration_s = len(record.leads[0].samples) / record.recording.sample_rate
+        if record.leads and record.recording.acquisition.signal.sample_rate == 0:
+            record.recording.acquisition.signal.sample_rate = record.leads[0].sample_rate
+        if record.leads and record.recording.acquisition.signal.sample_rate > 0:
+            duration_s = len(record.leads[0].samples) / record.recording.acquisition.signal.sample_rate
             record.recording.duration = timedelta(seconds=duration_s)
 
         record.annotations = self._read_annotations(root)
         record.measurements = self._read_measurements(record.annotations)
         record.interpretation = self._read_interpretation(root)
 
-        record.signal = SignalCharacteristics(
+        record.recording.acquisition.signal = SignalCharacteristics(
+            sample_rate=record.recording.acquisition.signal.sample_rate,
             signal_signed=True,
             number_channels_valid=len(record.leads),
             data_encoding="base64_int16le",
@@ -216,7 +217,7 @@ class GEMAC2000Parser(Parser):
             sr_str = self._get_text(test, "SampleRate") or self._get_text(test, "SampleBase")
             if sr_str:
                 try:
-                    info.sample_rate = int(float(sr_str))
+                    info.acquisition.signal.sample_rate = int(float(sr_str))
                 except ValueError:
                     pass
 
@@ -263,6 +264,19 @@ class GEMAC2000Parser(Parser):
                 find_tag(waveform, "Channel")
             )
 
+            # Try waveform-level amplitude scale (GE convention)
+            wf_scale = 1.0
+            wf_amp = (
+                find_tag(waveform, "LeadAmplitudeUnitsPerBit") or
+                find_tag(waveform, "AcquiredAmplitudeResolution") or
+                find_tag(waveform, "AmplitudeResolution")
+            )
+            if wf_amp is not None:
+                try:
+                    wf_scale = float(str(wf_amp))
+                except (ValueError, TypeError):
+                    pass
+
             if lead_nodes is not None:
                 if isinstance(lead_nodes, dict):
                     lead_nodes = [lead_nodes]
@@ -281,12 +295,23 @@ class GEMAC2000Parser(Parser):
                                 node.get("@Data") or node.get("@DATA") or
                                 node.get("#text") or ""
                             )
+                            # Per-lead scale overrides waveform-level scale
+                            scale = wf_scale
+                            amp_str = self._get_text(node, "LeadAmplitudeUnitsPerBit")
+                            if amp_str:
+                                try:
+                                    scale = float(amp_str)
+                                except (ValueError, TypeError):
+                                    pass
                             samples = _decode_lead_data(data_str)
                             if len(samples) > 0:
                                 leads.append(Lead(
                                     label=label,
                                     samples=samples,
                                     sample_rate=sample_rate,
+                                    resolution=scale,
+                                    units="uV" if scale != 1.0 else "",
+                                    is_raw=scale != 1.0,
                                 ))
 
         return leads
@@ -444,12 +469,12 @@ class GEMAC2000Parser(Parser):
 
         return interp
 
-    def _extract_statements(self, node: dict | list | str | None) -> list[str]:
-        """Extract diagnosis statement strings from a node."""
+    def _extract_statements(self, node: dict | list | str | None) -> list[tuple[str, str]]:
+        """Extract diagnosis statement tuples from a node."""
         if node is None:
             return []
         if isinstance(node, str):
-            return [s.strip() for s in node.split("\n") if s.strip()]
+            return [(s.strip(), "") for s in node.split("\n") if s.strip()]
         if isinstance(node, list):
             node = node[0]
         if isinstance(node, dict):
@@ -458,36 +483,36 @@ class GEMAC2000Parser(Parser):
                 return self._flatten_statements(stmts_node)
             text = self._get_text(node, "Text") or self._get_text(node, "StmtText")
             if text:
-                return [s.strip() for s in text.split("\n") if s.strip()]
+                return [(s.strip(), "") for s in text.split("\n") if s.strip()]
         return []
 
     @staticmethod
-    def _flatten_statements(node: dict | list | str | None) -> list[str]:
-        """Flatten Statement nodes into a list of strings."""
+    def _flatten_statements(node: dict | list | str | None) -> list[tuple[str, str]]:
+        """Flatten Statement nodes into a list of (text, "") tuples."""
         if node is None:
             return []
         if isinstance(node, str):
-            return [s.strip() for s in node.split("\n") if s.strip()]
+            return [(s.strip(), "") for s in node.split("\n") if s.strip()]
         if isinstance(node, dict):
             text = node.get("StmtText") or node.get("Text") or node.get("#text") or ""
             if isinstance(text, dict):
                 text = text.get("#text", "")
             text = str(text).strip()
-            return [text] if text else []
+            return [(text, "")] if text else []
         if isinstance(node, list):
-            out: list[str] = []
+            out: list[tuple[str, str]] = []
             for item in node:
                 if isinstance(item, str):
                     s = item.strip()
                     if s:
-                        out.append(s)
+                        out.append((s, ""))
                 elif isinstance(item, dict):
                     text = item.get("StmtText") or item.get("Text") or item.get("#text") or ""
                     if isinstance(text, dict):
                         text = text.get("#text", "")
                     s = str(text).strip()
                     if s:
-                        out.append(s)
+                        out.append((s, ""))
             return out
         return []
 

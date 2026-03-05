@@ -41,7 +41,7 @@ class TestSCPECGParser:
 
     def test_recording_sample_rate(self, scp_ecg_file: Path):
         record = SCPECGParser().parse(scp_ecg_file)
-        assert record.recording.sample_rate == 500
+        assert record.recording.acquisition.signal.sample_rate == 500
 
     def test_lead_count(self, scp_ecg_file: Path):
         record = SCPECGParser().parse(scp_ecg_file)
@@ -72,9 +72,9 @@ class TestSCPECGParser:
         record = SCPECGParser().parse(scp_ecg_file)
         d = record.to_dict()
         assert set(d.keys()) == {
-            "source_format", "patient", "recording", "device", "filters",
+            "source_format", "patient", "recording",
             "leads", "interpretation", "measurements", "median_beats",
-            "annotations", "signal",
+            "annotations",
         }
 
     def test_to_json_roundtrip(self, scp_ecg_file: Path):

@@ -229,8 +229,11 @@ class FilterSettings:
 class Interpretation:
     """Machine or physician ECG interpretation."""
 
-    statements: list[str] = field(default_factory=list)
-    """Interpretation text statements."""
+    statements: list[tuple[str, str]] = field(default_factory=list)
+    """Interpretation text statements as ``(left, right)`` tuples.
+
+    Each tuple contains a primary statement and an optional qualifier.
+    For formats without a left/right distinction the qualifier is ``""``."""
     severity: str = ""
     """Severity (``"NORMAL"``, ``"ABNORMAL"``, ``"BORDERLINE"``)."""
     source: str = ""
@@ -246,7 +249,7 @@ class Interpretation:
     def to_dict(self) -> dict:
         """Convert to a JSON-serialisable dictionary."""
         return {
-            "statements": list(self.statements),
+            "statements": [list(s) for s in self.statements],
             "severity": self.severity,
             "source": self.source,
             "interpreter": self.interpreter,
@@ -308,6 +311,10 @@ class GlobalMeasurements:
 class SignalCharacteristics:
     """Technical signal encoding and acquisition metadata."""
 
+    sample_rate: int = 0
+    """Samples per second (Hz)."""
+    resolution: float = 0.0
+    """ADC resolution factor (e.g. µV per count)."""
     bits_per_sample: int | None = None
     """Bits per sample (e.g. 16, 12, 32)."""
     signal_offset: int | None = None
@@ -345,6 +352,8 @@ class SignalCharacteristics:
     def to_dict(self) -> dict:
         """Convert to a JSON-serialisable dictionary."""
         return {
+            "sample_rate": self.sample_rate,
+            "resolution": self.resolution,
             "bits_per_sample": self.bits_per_sample,
             "signal_offset": self.signal_offset,
             "signal_signed": self.signal_signed,
@@ -364,6 +373,26 @@ class SignalCharacteristics:
 
 
 @dataclass
+class AcquisitionSetup:
+    """Signal acquisition configuration: characteristics and filter settings."""
+
+    signal: SignalCharacteristics = field(default_factory=SignalCharacteristics)
+    """Technical signal encoding and acquisition metadata."""
+    filters: FilterSettings = field(default_factory=FilterSettings)
+    """Filter settings applied during acquisition."""
+
+    def __repr__(self) -> str:
+        return _yaml_repr(self)
+
+    def to_dict(self) -> dict:
+        """Convert to a JSON-serialisable dictionary."""
+        return {
+            "signal": self.signal.to_dict(),
+            "filters": self.filters.to_dict(),
+        }
+
+
+@dataclass
 class RecordingInfo:
     """Recording session metadata."""
 
@@ -373,10 +402,6 @@ class RecordingInfo:
     """Recording end time."""
     duration: timedelta | None = None
     """Recording duration."""
-    sample_rate: int = 0
-    """Samples per second (Hz)."""
-    adc_gain: float = 1.0
-    """ADC gain factor (default ``1.0``)."""
     technician: str = ""
     """Technician name."""
     referring_physician: str = ""
@@ -385,9 +410,44 @@ class RecordingInfo:
     """Room identifier."""
     location: str = ""
     """Facility/location."""
+    device: DeviceInfo = field(default_factory=DeviceInfo)
+    """Acquisition device info."""
+    acquisition: AcquisitionSetup = field(default_factory=AcquisitionSetup)
+    """Signal acquisition setup (signal characteristics + filters)."""
 
     def __repr__(self) -> str:
-        return _yaml_repr(self)
+        lines: list[str] = []
+        cls_name = "RecordingInfo"
+        # Scalar fields
+        for f in fields(self):
+            value = getattr(self, f.name)
+            if f.name in ("device", "acquisition"):
+                continue  # handled below
+            if _is_empty(value):
+                continue
+            lines.append(f"  {f.name}: {_format_value(value)}")
+        # Device sub-section
+        dev_lines = _section_lines(self.device)
+        if dev_lines:
+            lines.append("  device:")
+            for dl in dev_lines:
+                lines.append(f"  {dl}")
+        # Acquisition sub-section
+        sig_lines = _section_lines(self.acquisition.signal)
+        fil_lines = _section_lines(self.acquisition.filters)
+        if sig_lines or fil_lines:
+            lines.append("  acquisition:")
+            if sig_lines:
+                lines.append("      signal:")
+                for sl in sig_lines:
+                    lines.append(f"    {sl}")
+            if fil_lines:
+                lines.append("      filters:")
+                for fl in fil_lines:
+                    lines.append(f"    {fl}")
+        if not lines:
+            return f"{cls_name}: (empty)"
+        return "\n".join([f"{cls_name}:"] + lines)
 
     def to_dict(self) -> dict:
         """Convert to a JSON-serialisable dictionary."""
@@ -395,12 +455,12 @@ class RecordingInfo:
             "date": self.date.isoformat() if self.date else None,
             "end_date": self.end_date.isoformat() if self.end_date else None,
             "duration_seconds": self.duration.total_seconds() if self.duration else None,
-            "sample_rate": self.sample_rate,
-            "adc_gain": self.adc_gain,
             "technician": self.technician,
             "referring_physician": self.referring_physician,
             "room": self.room,
             "location": self.location,
+            "device": self.device.to_dict(),
+            "acquisition": self.acquisition.to_dict(),
         }
 
 
@@ -408,9 +468,10 @@ class RecordingInfo:
 class Lead:
     """Single ECG lead with signal data.
 
-    Samples are stored as raw ADC values by default (``is_raw=True``).
-    Call :meth:`to_physical` to convert to physical voltage units using
-    the ``resolution`` and ``offset`` metadata set by the parser.
+    Parsers auto-detect whether samples are raw ADC or already in
+    physical units based on the scaling metadata (``resolution`` and
+    ``offset``).  When ``is_raw=True``, call :meth:`to_physical` to
+    convert to physical voltage units.
     """
 
     label: str
@@ -424,15 +485,21 @@ class Lead:
     offset: float = 0.0
     """Additive offset for ADC-to-physical conversion (default ``0.0``)."""
     units: str = ""
-    """Signal units after conversion (e.g. ``"mV"``, ``"uV"``)."""
+    """Physical voltage unit (e.g. ``"mV"``, ``"uV"``).  When ``is_raw=True``
+    this is the target unit that ``resolution`` converts to; when
+    ``is_raw=False`` it is the actual unit of ``samples``."""
     is_raw: bool = True
-    """``True`` if samples are raw ADC values, ``False`` if physical."""
+    """``True`` if samples are raw ADC counts needing scaling, ``False``
+    if samples are already in physical ``units``.  Parsers set this
+    automatically based on ``resolution`` and ``offset``."""
     quality: int | None = None
     """Signal quality indicator (format-specific)."""
     transducer: str = ""
     """Transducer type."""
     prefiltering: str = ""
     """Pre-filtering description."""
+    annotations: dict[str, str] = field(default_factory=dict)
+    """Per-lead measurements/annotations (format-specific key-value pairs)."""
 
     def __repr__(self) -> str:
         lines = ["Lead:"]
@@ -454,6 +521,8 @@ class Lead:
             lines.append(f"  transducer: {self.transducer}")
         if self.prefiltering:
             lines.append(f"  prefiltering: {self.prefiltering}")
+        if self.annotations:
+            lines.append(f"  annotations: {len(self.annotations)} entries")
         return "\n".join(lines)
 
     def to_physical(self) -> Lead:
@@ -548,6 +617,7 @@ class Lead:
             "quality": self.quality,
             "transducer": self.transducer,
             "prefiltering": self.prefiltering,
+            "annotations": dict(self.annotations),
         }
         if include_samples:
             d["samples"] = self.samples.tolist()
@@ -579,13 +649,7 @@ class ECGRecord:
     patient: PatientInfo = field(default_factory=PatientInfo)
     """Patient demographics."""
     recording: RecordingInfo = field(default_factory=RecordingInfo)
-    """Recording session metadata."""
-    device: DeviceInfo = field(default_factory=DeviceInfo)
-    """Acquisition device info."""
-    filters: FilterSettings = field(default_factory=FilterSettings)
-    """Filter settings applied during acquisition."""
-    signal: SignalCharacteristics = field(default_factory=SignalCharacteristics)
-    """Technical signal encoding metadata."""
+    """Recording session metadata (includes device and acquisition setup)."""
     leads: list[Lead] = field(default_factory=list)
     """ECG lead waveforms."""
     interpretation: Interpretation = field(default_factory=Interpretation)
@@ -607,17 +671,45 @@ class ECGRecord:
         if self.source_format:
             lines.append(f"  source_format: {self.source_format}")
 
-        # Nested dataclass sections
-        sections = [
-            ("patient", self.patient),
-            ("recording", self.recording),
-            ("device", self.device),
-            ("filters", self.filters),
-            ("signal", self.signal),
-            ("measurements", self.measurements),
-            ("interpretation", self.interpretation),
-        ]
-        for name, obj in sections:
+        # Patient section
+        plines = _section_lines(self.patient)
+        if plines:
+            lines.append("  patient:")
+            lines.extend(plines)
+
+        # Recording section (includes device + acquisition sub-sections)
+        rec = self.recording
+        rec_scalar: list[str] = []
+        for f in fields(rec):
+            if f.name in ("device", "acquisition"):
+                continue
+            value = getattr(rec, f.name)
+            if _is_empty(value):
+                continue
+            rec_scalar.append(f"    {f.name}: {_format_value(value)}")
+        dev_lines = _section_lines(rec.device)
+        sig_lines = _section_lines(rec.acquisition.signal)
+        fil_lines = _section_lines(rec.acquisition.filters)
+        if rec_scalar or dev_lines or sig_lines or fil_lines:
+            lines.append("  recording:")
+            lines.extend(rec_scalar)
+            if dev_lines:
+                lines.append("    device:")
+                for dl in dev_lines:
+                    lines.append(f"  {dl}")
+            if sig_lines or fil_lines:
+                lines.append("    acquisition:")
+                if sig_lines:
+                    lines.append("      signal:")
+                    for sl in sig_lines:
+                        lines.append(f"    {sl}")
+                if fil_lines:
+                    lines.append("      filters:")
+                    for fl in fil_lines:
+                        lines.append(f"    {fl}")
+
+        # Measurements / interpretation
+        for name, obj in [("measurements", self.measurements), ("interpretation", self.interpretation)]:
             slines = _section_lines(obj)
             if slines:
                 lines.append(f"  {name}:")
@@ -726,9 +818,6 @@ class ECGRecord:
             "source_format": self.source_format,
             "patient": self.patient.to_dict(),
             "recording": self.recording.to_dict(),
-            "device": self.device.to_dict(),
-            "filters": self.filters.to_dict(),
-            "signal": self.signal.to_dict(),
             "leads": [lead.to_dict(include_samples=include_samples) for lead in self.leads],
             "interpretation": self.interpretation.to_dict(),
             "measurements": self.measurements.to_dict(),

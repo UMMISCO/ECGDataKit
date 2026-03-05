@@ -103,8 +103,8 @@ class BeneHeartR12Parser(Parser):
         record.patient = self._read_patient(root)
         record.recording = self._read_recording(root)
         record.leads = self._read_leads(root)
-        record.device = self._read_device(root)
-        record.filters = self._read_filters(root)
+        record.recording.device = self._read_device(root)
+        record.recording.acquisition.filters = self._read_filters(root)
         record.interpretation, record.measurements = self._read_annotations(root)
         clinical_info: dict[str, str] = {}
         for tag in ("ClinicalInfo", "OrderInfo", "Indication"):
@@ -123,13 +123,14 @@ class BeneHeartR12Parser(Parser):
         if clinical_info:
             record.raw_metadata["clinical_info"] = clinical_info
 
-        if record.leads and record.recording.sample_rate == 0:
-            record.recording.sample_rate = record.leads[0].sample_rate
-        if record.leads and record.recording.sample_rate > 0:
-            duration_s = len(record.leads[0].samples) / record.recording.sample_rate
+        if record.leads and record.recording.acquisition.signal.sample_rate == 0:
+            record.recording.acquisition.signal.sample_rate = record.leads[0].sample_rate
+        if record.leads and record.recording.acquisition.signal.sample_rate > 0:
+            duration_s = len(record.leads[0].samples) / record.recording.acquisition.signal.sample_rate
             record.recording.duration = timedelta(seconds=duration_s)
 
-        record.signal = SignalCharacteristics(
+        record.recording.acquisition.signal = SignalCharacteristics(
+            sample_rate=record.recording.acquisition.signal.sample_rate,
             signal_signed=True,
             number_channels_valid=len(record.leads),
             data_encoding="base64_int16le",
@@ -216,7 +217,7 @@ class BeneHeartR12Parser(Parser):
             sr_str = self._get_text(acq, "SampleRate") or self._get_text(acq, "SamplingRate")
             if sr_str:
                 try:
-                    info.sample_rate = int(float(sr_str))
+                    info.acquisition.signal.sample_rate = int(float(sr_str))
                 except ValueError:
                     pass
 
@@ -255,6 +256,9 @@ class BeneHeartR12Parser(Parser):
                                 label=label,
                                 samples=samples,
                                 sample_rate=sample_rate,
+                                resolution=1.0,  # BeneHeart R12: 1 uV/LSB per Mindray spec
+                                units="uV",
+                                is_raw=False,  # resolution=1.0 → samples already in uV
                             ))
             else:
                 if isinstance(lead_nodes, dict):
@@ -276,12 +280,26 @@ class BeneHeartR12Parser(Parser):
                                 self._get_text(node, "Data") or
                                 self._get_text(node, "Samples") or ""
                             )
+                            # Try XML-provided resolution; fallback to 1 uV/LSB
+                            res = 1.0
+                            res_str = (
+                                self._get_text(node, "Resolution") or
+                                self._get_text(node, "AmplitudeResolution")
+                            )
+                            if res_str:
+                                try:
+                                    res = float(res_str)
+                                except (ValueError, TypeError):
+                                    pass
                             samples = _decode_lead_data(data_str)
                             if len(samples) > 0:
                                 leads.append(Lead(
                                     label=label,
                                     samples=samples,
                                     sample_rate=sample_rate,
+                                    resolution=res,
+                                    units="uV",
+                                    is_raw=res != 1.0,
                                 ))
 
         return leads
@@ -291,7 +309,7 @@ class BeneHeartR12Parser(Parser):
         interp.source = "machine"
         measurements = GlobalMeasurements()
 
-        statements: list[str] = []
+        statements: list[tuple[str, str]] = []
         for tag in ("Diagnosis", "Interpretation", "AnalysisResult",
                      "MachineInterpretation"):
             node = find_tag(root, tag)
@@ -310,22 +328,22 @@ class BeneHeartR12Parser(Parser):
                                     for s in stmt_node:
                                         text = s.get("#text", "") if isinstance(s, dict) else str(s).strip()
                                         if text:
-                                            statements.append(text)
+                                            statements.append((text, ""))
                                 elif isinstance(stmt_node, dict):
                                     text = stmt_node.get("#text", "")
                                     if text:
-                                        statements.append(text)
+                                        statements.append((text, ""))
                                 elif isinstance(stmt_node, str) and stmt_node.strip():
-                                    statements.append(stmt_node.strip())
+                                    statements.append((stmt_node.strip(), ""))
                         if not statements:
                             text = (
                                 item.get("@TEXT") or item.get("@Text") or
                                 item.get("@DESCRIPTION") or item.get("#text", "")
                             )
                             if text and isinstance(text, str) and text.strip():
-                                statements.append(text.strip())
+                                statements.append((text.strip(), ""))
                     elif isinstance(item, str) and item.strip():
-                        statements.append(item.strip())
+                        statements.append((item.strip(), ""))
 
         for sev_tag in ("Severity", "DiagnosisSeverity"):
             sev = self._get_text(root, sev_tag)

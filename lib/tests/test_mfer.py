@@ -46,7 +46,7 @@ class TestMFERParser:
 
     def test_recording_sample_rate(self, mfer_file: Path):
         record = MFERParser().parse(mfer_file)
-        assert record.recording.sample_rate == 500
+        assert record.recording.acquisition.signal.sample_rate == 500
 
     def test_recording_duration(self, mfer_file: Path):
         record = MFERParser().parse(mfer_file)
@@ -84,9 +84,9 @@ class TestMFERParser:
         record = MFERParser().parse(mfer_file)
         d = record.to_dict()
         assert set(d.keys()) == {
-            "source_format", "patient", "recording", "device", "filters",
+            "source_format", "patient", "recording",
             "leads", "interpretation", "measurements", "median_beats",
-            "annotations", "signal",
+            "annotations",
         }
 
     def test_to_json_roundtrip(self, mfer_file: Path):

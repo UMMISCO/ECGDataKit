@@ -53,11 +53,11 @@ class TestGEMuseXMLParser:
 
     def test_device_model(self, ge_muse_xml_file: Path):
         record = GEMuseXMLParser().parse(ge_muse_xml_file)
-        assert record.device.model == "MAC5500"
+        assert record.recording.device.model == "MAC5500"
 
     def test_recording_sample_rate(self, ge_muse_xml_file: Path):
         record = GEMuseXMLParser().parse(ge_muse_xml_file)
-        assert record.recording.sample_rate == 500
+        assert record.recording.acquisition.signal.sample_rate == 500
 
     def test_lead_count(self, ge_muse_xml_file: Path):
         record = GEMuseXMLParser().parse(ge_muse_xml_file)
@@ -91,9 +91,9 @@ class TestGEMuseXMLParser:
         record = GEMuseXMLParser().parse(ge_muse_xml_file)
         d = record.to_dict()
         assert set(d.keys()) == {
-            "source_format", "patient", "recording", "device", "filters",
+            "source_format", "patient", "recording",
             "leads", "interpretation", "measurements", "median_beats",
-            "annotations", "signal",
+            "annotations",
         }
 
     def test_to_json_roundtrip(self, ge_muse_xml_file: Path):

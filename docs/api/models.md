@@ -60,6 +60,15 @@ Import: `from ecgdatakit import ECGRecord, Lead, PatientInfo, RecordingInfo, ...
    :member-order: bysource
 ```
 
+## AcquisitionSetup
+
+```{eval-rst}
+.. autoclass:: AcquisitionSetup
+   :members:
+   :undoc-members:
+   :member-order: bysource
+```
+
 ## SignalCharacteristics
 
 ```{eval-rst}
@@ -172,9 +181,12 @@ leads = [
                  "V1", "V2", "V3", "V4", "V5", "V6"]
 ]
 
+rec = RecordingInfo()
+rec.acquisition.signal.sample_rate = 500
+
 record = ECGRecord(
     patient=PatientInfo(patient_id="001", first_name="Jane", last_name="Doe"),
-    recording=RecordingInfo(sample_rate=500),
+    recording=rec,
     leads=leads,
 )
 ```

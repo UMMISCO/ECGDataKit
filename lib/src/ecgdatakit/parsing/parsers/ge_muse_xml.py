@@ -74,14 +74,14 @@ class GEMuseXMLParser(Parser):
 
         record.patient = self._read_patient(root)
         record.recording = self._read_recording(root)
-        record.device = self._read_device(root)
-        record.filters = self._read_filters(root)
+        record.recording.device = self._read_device(root)
+        record.recording.acquisition.filters = self._read_filters(root)
         rhythm_leads, median_leads = self._read_leads(root)
         record.leads = rhythm_leads
         record.median_beats = median_leads
 
-        if record.leads and record.recording.sample_rate == 0:
-            record.recording.sample_rate = record.leads[0].sample_rate
+        if record.leads and record.recording.acquisition.signal.sample_rate == 0:
+            record.recording.acquisition.signal.sample_rate = record.leads[0].sample_rate
 
         annotations, measurements, interpretation = self._read_annotations(root)
         record.annotations = annotations
@@ -120,7 +120,8 @@ class GEMuseXMLParser(Parser):
                     elif isinstance(ld_nodes, list):
                         all_lead_count += len(ld_nodes)
 
-        record.signal = SignalCharacteristics(
+        record.recording.acquisition.signal = SignalCharacteristics(
+            sample_rate=record.recording.acquisition.signal.sample_rate,
             bits_per_sample=16,
             signal_signed=True,
             number_channels_valid=len(record.leads),
@@ -283,6 +284,7 @@ class GEMuseXMLParser(Parser):
                     sample_rate=sample_rate,
                     resolution=scale,
                     units="uV" if scale != 1.0 else "",
+                    is_raw=scale != 1.0,
                 ))
 
             if wf_type and wf_type.lower() == "rhythm":
@@ -317,7 +319,7 @@ class GEMuseXMLParser(Parser):
                             for s in stmt:
                                 text = self._get_text(s, "StmtText")
                                 if text:
-                                    stmts.append(text)
+                                    stmts.append((text, ""))
             return stmts
 
         overread = find_tag(root, "OverreadDiagnosis")
@@ -329,7 +331,7 @@ class GEMuseXMLParser(Parser):
             if overread_stmts:
                 interp.statements = overread_stmts
                 interp.source = "overread"
-                annotations["diagnosis"] = "; ".join(overread_stmts)
+                annotations["diagnosis"] = "; ".join(s[0] for s in overread_stmts)
                 physician = (
                     self._get_text(
                         overread if isinstance(overread, dict) else {},
@@ -358,12 +360,12 @@ class GEMuseXMLParser(Parser):
             if not interp.statements:
                 interp.statements = original_stmts
                 interp.source = "machine"
-                annotations["diagnosis"] = "; ".join(original_stmts)
+                annotations["diagnosis"] = "; ".join(s[0] for s in original_stmts)
             else:
-                annotations["original_diagnosis"] = "; ".join(original_stmts)
+                annotations["original_diagnosis"] = "; ".join(s[0] for s in original_stmts)
 
-        for s in interp.statements:
-            s_up = s.upper()
+        for left, _right in interp.statements:
+            s_up = left.upper()
             if "NORMAL" in s_up and "ABNORMAL" not in s_up:
                 interp.severity = "NORMAL"
             elif "ABNORMAL" in s_up:

@@ -10,6 +10,7 @@ import pytest
 
 from ecgdatakit.exceptions import RawSamplesError
 from ecgdatakit.models import (
+    AcquisitionSetup,
     DeviceInfo,
     ECGRecord,
     FilterSettings,
@@ -18,6 +19,7 @@ from ecgdatakit.models import (
     Lead,
     PatientInfo,
     RecordingInfo,
+    SignalCharacteristics,
 )
 
 
@@ -104,6 +106,56 @@ class TestFilterSettings:
         assert set(d.keys()) == expected
 
 
+class TestSignalCharacteristics:
+    def test_defaults(self):
+        s = SignalCharacteristics()
+        assert s.sample_rate == 0
+        assert s.resolution == 0.0
+        assert s.bits_per_sample is None
+
+    def test_to_dict(self):
+        s = SignalCharacteristics(
+            sample_rate=500, resolution=5.0, bits_per_sample=16,
+            signal_signed=True, data_encoding="base64_int16le",
+        ).to_dict()
+        assert s["sample_rate"] == 500
+        assert s["resolution"] == 5.0
+        assert s["bits_per_sample"] == 16
+
+    def test_dict_keys_stable(self):
+        d = SignalCharacteristics().to_dict()
+        expected = {
+            "sample_rate", "resolution", "bits_per_sample", "signal_offset",
+            "signal_signed", "number_channels_allocated", "number_channels_valid",
+            "electrode_placement", "compression", "data_encoding", "acsetting",
+            "filtered", "downsampled", "upsampled", "waveform_modified",
+            "downsampling_method", "upsampling_method",
+        }
+        assert set(d.keys()) == expected
+
+
+class TestAcquisitionSetup:
+    def test_defaults(self):
+        a = AcquisitionSetup()
+        assert a.signal.sample_rate == 0
+        assert a.filters.highpass is None
+
+    def test_to_dict(self):
+        a = AcquisitionSetup(
+            signal=SignalCharacteristics(sample_rate=500, resolution=5.0),
+            filters=FilterSettings(highpass=0.05, lowpass=150.0),
+        )
+        d = a.to_dict()
+        assert d["signal"]["sample_rate"] == 500
+        assert d["signal"]["resolution"] == 5.0
+        assert d["filters"]["highpass"] == 0.05
+
+    def test_dict_keys_stable(self):
+        d = AcquisitionSetup().to_dict()
+        expected = {"signal", "filters"}
+        assert set(d.keys()) == expected
+
+
 class TestInterpretation:
     def test_defaults(self):
         i = Interpretation()
@@ -113,13 +165,13 @@ class TestInterpretation:
 
     def test_to_dict(self):
         d = Interpretation(
-            statements=["Normal sinus rhythm"],
+            statements=[("Normal sinus rhythm", "")],
             severity="NORMAL",
             source="machine",
             interpreter="Dr. Smith",
             interpretation_date=datetime(2023, 6, 15, 10, 30),
         ).to_dict()
-        assert d["statements"] == ["Normal sinus rhythm"]
+        assert d["statements"] == [["Normal sinus rhythm", ""]]
         assert d["severity"] == "NORMAL"
         assert d["interpretation_date"] == "2023-06-15T10:30:00"
 
@@ -157,25 +209,36 @@ class TestGlobalMeasurements:
 class TestRecordingInfo:
     def test_defaults(self):
         r = RecordingInfo()
-        assert r.sample_rate == 0
         assert r.duration is None
+        assert isinstance(r.device, DeviceInfo)
+        assert isinstance(r.acquisition, AcquisitionSetup)
+        assert r.acquisition.signal.sample_rate == 0
 
     def test_to_dict(self):
         r = RecordingInfo(
             date=datetime(2023, 6, 15, 10, 30),
             end_date=datetime(2023, 6, 15, 10, 30, 10),
             duration=timedelta(seconds=10),
-            sample_rate=500,
         )
+        r.acquisition.signal.sample_rate = 500
         d = r.to_dict()
         assert d["date"] == "2023-06-15T10:30:00"
         assert d["duration_seconds"] == 10.0
-        assert d["sample_rate"] == 500
+        assert d["acquisition"]["signal"]["sample_rate"] == 500
 
     def test_to_dict_null_dates(self):
         d = RecordingInfo().to_dict()
         assert d["date"] is None
         assert d["duration_seconds"] is None
+
+    def test_recording_dict_keys_stable(self):
+        d = RecordingInfo().to_dict()
+        expected = {
+            "date", "end_date", "duration_seconds",
+            "technician", "referring_physician",
+            "room", "location", "device", "acquisition",
+        }
+        assert set(d.keys()) == expected
 
 
 class TestLead:
@@ -194,13 +257,23 @@ class TestLead:
         assert "samples" not in d
         assert d["sample_count"] == 3
 
+    def test_annotations(self):
+        lead = Lead(
+            label="I", samples=np.array([1.0]), sample_rate=500,
+            annotations={"pamp": "100", "pdur": "80"},
+        )
+        d = lead.to_dict()
+        assert d["annotations"] == {"pamp": "100", "pdur": "80"}
+
 
 class TestECGRecord:
     def _make_record(self) -> ECGRecord:
+        rec = RecordingInfo(date=datetime(2023, 1, 1))
+        rec.acquisition.signal.sample_rate = 500
         return ECGRecord(
             source_format="test",
             patient=PatientInfo(patient_id="P001", sex="M"),
-            recording=RecordingInfo(sample_rate=500, date=datetime(2023, 1, 1)),
+            recording=rec,
             leads=[
                 Lead(label="I", samples=np.array([1.0, 2.0]), sample_rate=500),
                 Lead(label="II", samples=np.array([3.0, 4.0]), sample_rate=500),
@@ -212,9 +285,9 @@ class TestECGRecord:
         record = self._make_record()
         d = record.to_dict()
         assert set(d.keys()) == {
-            "source_format", "patient", "recording", "device", "filters",
+            "source_format", "patient", "recording",
             "leads", "interpretation", "measurements", "median_beats",
-            "annotations", "signal",
+            "annotations",
         }
         assert d["source_format"] == "test"
         assert len(d["leads"]) == 2
@@ -243,8 +316,8 @@ class TestECGRecord:
         record = ECGRecord()
         d = record.to_dict()
         assert list(d.keys()) == [
-            "source_format", "patient", "recording", "device", "filters",
-            "signal", "leads", "interpretation", "measurements", "median_beats",
+            "source_format", "patient", "recording",
+            "leads", "interpretation", "measurements", "median_beats",
             "annotations",
         ]
 
@@ -260,9 +333,9 @@ class TestECGRecord:
     def test_recording_dict_keys_stable(self):
         d = RecordingInfo().to_dict()
         expected = {
-            "date", "end_date", "duration_seconds", "sample_rate",
-            "adc_gain", "technician", "referring_physician",
-            "room", "location",
+            "date", "end_date", "duration_seconds",
+            "technician", "referring_physician",
+            "room", "location", "device", "acquisition",
         }
         assert set(d.keys()) == expected
 
@@ -272,6 +345,7 @@ class TestECGRecord:
         expected = {
             "label", "sample_count", "sample_rate", "resolution", "offset",
             "samples", "units", "is_raw", "quality", "transducer", "prefiltering",
+            "annotations",
         }
         assert set(d.keys()) == expected
 

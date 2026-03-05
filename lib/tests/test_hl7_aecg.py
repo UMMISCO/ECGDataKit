@@ -61,9 +61,9 @@ class TestHL7aECGParser:
         record = HL7aECGParser().parse(hl7_aecg_file)
         d = record.to_dict()
         assert set(d.keys()) == {
-            "source_format", "patient", "recording", "device", "filters",
+            "source_format", "patient", "recording",
             "leads", "interpretation", "measurements", "median_beats",
-            "annotations", "signal",
+            "annotations",
         }
 
     def test_to_json_roundtrip(self, hl7_aecg_file: Path):

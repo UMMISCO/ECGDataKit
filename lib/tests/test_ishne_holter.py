@@ -39,7 +39,7 @@ class TestISHNEHolterParser:
 
     def test_recording_sample_rate(self, ishne_file: Path):
         record = ISHNEHolterParser().parse(ishne_file)
-        assert record.recording.sample_rate == 200
+        assert record.recording.acquisition.signal.sample_rate == 200
 
     def test_recording_date(self, ishne_file: Path):
         record = ISHNEHolterParser().parse(ishne_file)
@@ -81,9 +81,9 @@ class TestISHNEHolterParser:
         record = ISHNEHolterParser().parse(ishne_file)
         d = record.to_dict()
         assert set(d.keys()) == {
-            "source_format", "patient", "recording", "device", "filters",
+            "source_format", "patient", "recording",
             "leads", "interpretation", "measurements", "median_beats",
-            "annotations", "signal",
+            "annotations",
         }
 
     def test_to_json_roundtrip(self, ishne_file: Path):

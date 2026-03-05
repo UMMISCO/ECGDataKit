@@ -49,7 +49,7 @@ class TestDICOMWaveformParser:
 
     def test_recording_sample_rate(self, dicom_file: Path):
         record = DICOMWaveformParser().parse(dicom_file)
-        assert record.recording.sample_rate == 500
+        assert record.recording.acquisition.signal.sample_rate == 500
 
     def test_lead_count(self, dicom_file: Path):
         record = DICOMWaveformParser().parse(dicom_file)
@@ -86,9 +86,9 @@ class TestDICOMWaveformParser:
         record = DICOMWaveformParser().parse(dicom_file)
         d = record.to_dict()
         assert set(d.keys()) == {
-            "source_format", "patient", "recording", "device", "filters",
+            "source_format", "patient", "recording",
             "leads", "interpretation", "measurements", "median_beats",
-            "annotations", "signal",
+            "annotations",
         }
 
     def test_to_json_roundtrip(self, dicom_file: Path):

@@ -124,7 +124,6 @@ class WFDBParser(Parser):
             )
 
         recording = RecordingInfo()
-        recording.sample_rate = sample_rate
 
         if base_date and base_time:
             recording.date = base_date.replace(
@@ -149,15 +148,16 @@ class WFDBParser(Parser):
         if context.get("technician"):
             record.recording.technician = context["technician"]
         if context.get("institution"):
-            record.device.institution = context["institution"]
+            record.recording.device.institution = context["institution"]
         if context.get("device_model"):
-            record.device.model = context["device_model"]
+            record.recording.device.model = context["device_model"]
 
         # Signal characteristics
         fmt_code = signal_specs[0]["format"] if signal_specs else 16
         bits = signal_specs[0].get("adc_resolution", 12) if signal_specs else 12
         adc_zero = signal_specs[0].get("adc_zero", 0) if signal_specs else 0
-        record.signal = SignalCharacteristics(
+        record.recording.acquisition.signal = SignalCharacteristics(
+            sample_rate=sample_rate,
             bits_per_sample=bits,
             signal_offset=adc_zero if adc_zero != 0 else None,
             signal_signed=True,
@@ -249,7 +249,7 @@ class WFDBParser(Parser):
             Accumulator for values that need post-processing.  Expected
             keys (initialised by the caller):
 
-            * ``"interpretation_statements"`` -- list[str]
+            * ``"interpretation_statements"`` -- list[tuple[str, str]]
             * ``"medications"`` -- list[str]
         """
         if ":" in comment:
@@ -278,7 +278,7 @@ class WFDBParser(Parser):
                     pass
             elif key in ("dx", "diagnosis", "diagnoses"):
                 if value:
-                    context["interpretation_statements"].append(value)
+                    context["interpretation_statements"].append((value, ""))
             elif key in ("drugs", "medications", "medication"):
                 if value:
                     context["medications"].append(value)
@@ -345,13 +345,16 @@ class WFDBParser(Parser):
                         samples = channels[:, ch_offset].astype(np.float64)
                         label = spec["description"] or f"Ch{sig_idx}"
 
+                        res = 1.0 / gain
+                        ofs = -baseline / gain
                         leads.append(Lead(
                             label=label,
                             samples=samples,
                             sample_rate=sample_rate,
-                            resolution=1.0 / gain,
-                            offset=-baseline / gain,
+                            resolution=res,
+                            offset=ofs,
                             units=spec["units"],
+                            is_raw=not (res == 1.0 and ofs == 0.0),
                         ))
 
             elif fmt == 212:
@@ -368,13 +371,16 @@ class WFDBParser(Parser):
                         samples = np.array([], dtype=np.float64)
 
                     label = spec["description"] or f"Ch{sig_idx}"
+                    res = 1.0 / gain
+                    ofs = -baseline / gain
                     leads.append(Lead(
                         label=label,
                         samples=samples,
                         sample_rate=sample_rate,
-                        resolution=1.0 / gain,
-                        offset=-baseline / gain,
+                        resolution=res,
+                        offset=ofs,
                         units=spec["units"],
+                        is_raw=not (res == 1.0 and ofs == 0.0),
                     ))
 
             else:

@@ -98,7 +98,10 @@ class FileParser:
         ]
 
     def parse(
-        self, file_path: str | Path, auto_scale: bool = True,
+        self,
+        file_path: str | Path,
+        auto_scale: bool = True,
+        units: str = "mV",
     ) -> ECGRecord:
         """Parse an ECG file, auto-detecting the format.
 
@@ -108,16 +111,30 @@ class FileParser:
             Path to the ECG file.
         auto_scale : bool
             When ``True`` (default), leads with scaling metadata are
-            automatically converted to millivolts (``mV``).  Leads
-            without sufficient metadata are left as raw ADC values and
-            a warning is emitted.  Set to ``False`` to always receive
-            raw ADC samples.
+            automatically converted to physical units (see *units*).
+            Leads without sufficient metadata are left as raw ADC
+            values and a warning is emitted.  Set to ``False`` to
+            always receive raw ADC samples.
+        units : str
+            Target voltage unit when *auto_scale* is ``True``.
+            Accepted values: ``"uV"`` (microvolts), ``"mV"``
+            (millivolts, default), ``"V"`` (volts).  Ignored when
+            *auto_scale* is ``False``.
 
         Raises
         ------
         ValueError
-            If no parser can handle the file.
+            If no parser can handle the file or *units* is not
+            recognised.
         """
+        # Validate units early
+        target = _UNIT_ALIASES.get(units)
+        if target is None:
+            raise ValueError(
+                f"Unknown unit {units!r}. "
+                "Accepted values: 'uV', 'mV', 'V'."
+            )
+
         path = Path(file_path)
         if not path.exists():
             raise FileNotFoundError(f"File not found: {path}")
@@ -126,13 +143,26 @@ class FileParser:
             if parser_cls.can_parse(path, header):
                 record = parser_cls().parse(path)
                 if auto_scale:
-                    return self._auto_scale(record)
+                    return self._auto_scale(record, target)
+                warnings.warn(
+                    "auto_scale=False: leads contain raw ADC samples. "
+                    "Amplitudes are unitless and not in physical units (mV).",
+                    stacklevel=2,
+                )
                 return record
         raise ValueError(f"No parser found for: {path.name}")
 
     @staticmethod
-    def _auto_scale(record: ECGRecord) -> ECGRecord:
-        """Convert leads to mV where scaling metadata is available."""
+    def _auto_scale(record: ECGRecord, target: str = "mV") -> ECGRecord:
+        """Convert leads to physical units where scaling metadata is available.
+
+        Parameters
+        ----------
+        record : ECGRecord
+            Parsed record with raw or partially-scaled leads.
+        target : str
+            Canonical target unit (``"uV"``, ``"mV"``, or ``"V"``).
+        """
         import dataclasses
 
         new_leads = []
@@ -144,8 +174,8 @@ class FileParser:
                 continue
             physical = lead.to_physical()
             norm = _UNIT_ALIASES.get(physical.units)
-            if norm and norm != "mV":
-                physical = physical.convert_units("mV")
+            if norm and norm != target:
+                physical = physical.convert_units(target)
             new_leads.append(physical)
 
         new_beats = []
@@ -155,8 +185,8 @@ class FileParser:
                 continue
             physical = beat.to_physical()
             norm = _UNIT_ALIASES.get(physical.units)
-            if norm and norm != "mV":
-                physical = physical.convert_units("mV")
+            if norm and norm != target:
+                physical = physical.convert_units(target)
             new_beats.append(physical)
 
         if raw_labels:

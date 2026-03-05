@@ -63,13 +63,16 @@ class DICOMWaveformParser(Parser):
 
         record.patient = self._read_patient(ds)
         record.recording = self._read_recording(ds)
-        record.device = self._read_device(ds)
-        record.leads, record.filters, record.signal = self._read_leads(ds)
+        record.recording.device = self._read_device(ds)
+        leads, filters, signal = self._read_leads(ds)
+        record.leads = leads
+        record.recording.acquisition.filters = filters
+        record.recording.acquisition.signal = signal
         if record.leads:
-            if record.recording.sample_rate == 0:
-                record.recording.sample_rate = record.leads[0].sample_rate
-            if record.recording.sample_rate > 0 and len(record.leads[0].samples) > 0:
-                duration_s = len(record.leads[0].samples) / record.recording.sample_rate
+            if record.recording.acquisition.signal.sample_rate == 0:
+                record.recording.acquisition.signal.sample_rate = record.leads[0].sample_rate
+            if record.recording.acquisition.signal.sample_rate > 0 and len(record.leads[0].samples) > 0:
+                duration_s = len(record.leads[0].samples) / record.recording.acquisition.signal.sample_rate
                 record.recording.duration = timedelta(seconds=duration_s)
 
         record.interpretation, record.measurements = self._read_annotations(ds)
@@ -80,7 +83,7 @@ class DICOMWaveformParser(Parser):
             record.recording.technician = technician
         department = str(getattr(ds, "InstitutionalDepartmentName", ""))
         if department:
-            record.device.department = department
+            record.recording.device.department = department
 
         record.raw_metadata["filepath"] = str(file_path)
         record.raw_metadata["sop_class_uid"] = str(getattr(ds, "SOPClassUID", ""))
@@ -287,13 +290,15 @@ class DICOMWaveformParser(Parser):
                             pass
 
                 samples = channels[:, ch_idx].astype(np.float64)
+                offset_val = -baseline * sensitivity
                 leads.append(Lead(
                     label=label,
                     samples=samples,
                     sample_rate=int(sample_rate),
                     resolution=sensitivity,
-                    offset=-baseline * sensitivity,
+                    offset=offset_val,
                     units=units,
+                    is_raw=not (sensitivity == 1.0 and offset_val == 0.0),
                 ))
 
             if leads:
@@ -354,7 +359,7 @@ class DICOMWaveformParser(Parser):
         if not annotation_items:
             return interp, meas
 
-        statements: list[str] = []
+        statements: list[tuple[str, str]] = []
         measurement_map: dict[str, float] = {}
 
         for ann in annotation_items:
@@ -381,9 +386,9 @@ class DICOMWaveformParser(Parser):
 
             text = str(getattr(ann, "UnformattedTextValue", "")).strip()
             if text:
-                statements.append(text)
+                statements.append((text, ""))
             elif code_meaning and numeric_value is None:
-                statements.append(code_meaning)
+                statements.append((code_meaning, ""))
 
         if statements:
             interp.statements = statements

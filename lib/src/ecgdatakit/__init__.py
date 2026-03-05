@@ -3,6 +3,7 @@
 __version__ = "0.0.8"
 
 from ecgdatakit.models import (
+    AcquisitionSetup,
     DeviceInfo,
     ECGRecord,
     FilterSettings,
@@ -12,6 +13,7 @@ from ecgdatakit.models import (
     LeadLike,
     PatientInfo,
     RecordingInfo,
+    SignalCharacteristics,
 )
 from ecgdatakit.parsing.parser import FileParser, Parser
 from ecgdatakit.exceptions import (
@@ -25,6 +27,7 @@ from ecgdatakit.exceptions import (
 from ecgdatakit.parsing.batch import parse_batch
 
 __all__ = [
+    "AcquisitionSetup",
     "DeviceInfo",
     "ECGRecord",
     "FilterSettings",
@@ -34,6 +37,7 @@ __all__ = [
     "LeadLike",
     "PatientInfo",
     "RecordingInfo",
+    "SignalCharacteristics",
     "FileParser",
     "Parser",
     "ECGDataKitError",

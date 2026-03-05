@@ -91,12 +91,12 @@ class HL7aECGParser(Parser):
         record.patient = self._read_patient(doc)
         record.recording = self._read_recording(doc)
         record.leads = self._read_leads(doc)
-        record.device = self._read_device(doc)
+        record.recording.device = self._read_device(doc)
         measurements, interpretation = self._read_annotations(doc)
         record.measurements = measurements
         record.interpretation = interpretation
         # Signal characteristics
-        record.signal = SignalCharacteristics(
+        record.recording.acquisition.signal = SignalCharacteristics(
             data_encoding="decimal",
             compression="none",
             number_channels_valid=len(record.leads),
@@ -118,8 +118,8 @@ class HL7aECGParser(Parser):
                         id_node = id_node[0]
                     if isinstance(id_node, dict):
                         ext = read_path(id_node, "@extension")
-                        if ext and not record.device.serial_number:
-                            record.device.serial_number = str(ext)
+                        if ext and not record.recording.device.serial_number:
+                            record.recording.device.serial_number = str(ext)
 
         # Extract custodian organization as institution
         custodian = find_tag(doc, "custodian")
@@ -127,11 +127,11 @@ class HL7aECGParser(Parser):
             if isinstance(custodian, list):
                 custodian = custodian[0]
             org_name = find_tag(custodian, "name")
-            if org_name is not None and not record.device.institution:
+            if org_name is not None and not record.recording.device.institution:
                 if isinstance(org_name, str):
-                    record.device.institution = org_name
+                    record.recording.device.institution = org_name
                 elif isinstance(org_name, list) and org_name:
-                    record.device.institution = str(org_name[0])
+                    record.recording.device.institution = str(org_name[0])
 
         # Extract patient race
         subject_node = find_tag(doc, "subject")
@@ -231,7 +231,7 @@ class HL7aECGParser(Parser):
                 try:
                     inc_f = float(inc_val)
                     if inc_f > 0:
-                        info.sample_rate = _increment_to_hz(inc_f, inc_unit)
+                        info.acquisition.signal.sample_rate = _increment_to_hz(inc_f, inc_unit)
                 except (ValueError, ZeroDivisionError):
                     pass
 
@@ -373,6 +373,7 @@ class HL7aECGParser(Parser):
                 resolution=scale,
                 offset=origin,
                 units=units,
+                is_raw=not (scale == 1.0 and origin == 0.0),
             ))
 
         return leads
@@ -488,7 +489,7 @@ class HL7aECGParser(Parser):
         if code == "MDC_ECG_INTERPRETATION" or "INTERPRETATION" in code.upper():
             text = ann_value or display_name
             if text:
-                interpretation.statements.append(text)
+                interpretation.statements.append((text, ""))
                 interpretation.source = "machine"
             self._collect_nested_interpretation(ann, interpretation)
         elif code in self._MEASUREMENT_MAP:
@@ -544,5 +545,5 @@ class HL7aECGParser(Parser):
                         text = read_path(val_node, "@value") or read_path(val_node, "#text")
                     elif isinstance(val_node, str):
                         text = val_node
-                if text and text not in interpretation.statements:
-                    interpretation.statements.append(text)
+                if text and (text, "") not in interpretation.statements:
+                    interpretation.statements.append((text, ""))

@@ -32,7 +32,7 @@ class TestWFDBParser:
 
     def test_recording_sample_rate(self, wfdb_file: Path):
         record = WFDBParser().parse(wfdb_file)
-        assert record.recording.sample_rate == 500
+        assert record.recording.acquisition.signal.sample_rate == 500
 
     def test_recording_date(self, wfdb_file: Path):
         record = WFDBParser().parse(wfdb_file)
@@ -80,9 +80,9 @@ class TestWFDBParser:
         record = WFDBParser().parse(wfdb_file)
         d = record.to_dict()
         assert set(d.keys()) == {
-            "source_format", "patient", "recording", "device", "filters",
+            "source_format", "patient", "recording",
             "leads", "interpretation", "measurements", "median_beats",
-            "annotations", "signal",
+            "annotations",
         }
 
     def test_to_json_roundtrip(self, wfdb_file: Path):

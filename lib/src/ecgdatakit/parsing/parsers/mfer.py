@@ -308,12 +308,10 @@ class MFERParser(Parser):
             offset += length
 
         sample_rate = int(1_000_000 / sample_interval_us) if sample_interval_us > 0 else 1000
-        recording.sample_rate = sample_rate
-
         record.patient = patient
         record.recording = recording
-        record.device = device_info
-        record.filters = filters
+        record.recording.device = device_info
+        record.recording.acquisition.filters = filters
 
         if comments:
             raw_metadata["comments"] = comments
@@ -355,6 +353,7 @@ class MFERParser(Parser):
                         sample_rate=sample_rate,
                         resolution=resolution,
                         units=units,
+                        is_raw=resolution != 1.0,
                     ))
 
         record.leads = leads
@@ -373,7 +372,8 @@ class MFERParser(Parser):
         else:
             sig_bits, sig_signed, sig_encoding = 16, True, "int16"
 
-        record.signal = SignalCharacteristics(
+        record.recording.acquisition.signal = SignalCharacteristics(
+            sample_rate=sample_rate,
             bits_per_sample=sig_bits,
             signal_signed=sig_signed,
             number_channels_allocated=num_channels,

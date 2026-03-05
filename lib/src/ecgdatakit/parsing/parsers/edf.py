@@ -289,7 +289,6 @@ class EDFParser(Parser):
 
         recording = RecordingInfo(
             date=recording_date,
-            sample_rate=global_sr,
             duration=timedelta(seconds=total_duration) if total_duration > 0 else None,
         )
         if recording_date and total_duration > 0:
@@ -300,7 +299,7 @@ class EDFParser(Parser):
         if is_edfplus:
             rec_id_fields = _parse_edfplus_recording(recording_id_str)
             if rec_id_fields["equipment"]:
-                record.device = DeviceInfo(model=rec_id_fields["equipment"])
+                record.recording.device = DeviceInfo(model=rec_id_fields["equipment"])
             if rec_id_fields["technician"]:
                 record.recording.technician = rec_id_fields["technician"]
             if rec_id_fields["investigator"]:
@@ -379,6 +378,7 @@ class EDFParser(Parser):
                 units=_clean_str(physical_dims[sig_idx]),
                 transducer=_clean_str(transducer_types[sig_idx]),
                 prefiltering=_clean_str(prefilterings[sig_idx]),
+                is_raw=not (gain == 1.0 and offset_val == 0.0),
             ))
 
         record.leads = leads
@@ -423,9 +423,10 @@ class EDFParser(Parser):
             if consistent and (ref.highpass is not None
                                or ref.lowpass is not None
                                or ref.notch is not None):
-                record.filters = ref
+                record.recording.acquisition.filters = ref
 
-        record.signal = SignalCharacteristics(
+        record.recording.acquisition.signal = SignalCharacteristics(
+            sample_rate=global_sr,
             bits_per_sample=16,
             signal_signed=True,
             number_channels_allocated=num_signals,

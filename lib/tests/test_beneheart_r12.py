@@ -51,11 +51,11 @@ class TestBeneHeartR12Parser:
 
     def test_recording_sample_rate(self, beneheart_r12_file: Path):
         record = BeneHeartR12Parser().parse(beneheart_r12_file)
-        assert record.recording.sample_rate == 500
+        assert record.recording.acquisition.signal.sample_rate == 500
 
     def test_recording_device(self, beneheart_r12_file: Path):
         record = BeneHeartR12Parser().parse(beneheart_r12_file)
-        assert "BeneHeart" in record.device.model
+        assert "BeneHeart" in record.recording.device.model
 
     def test_lead_count(self, beneheart_r12_file: Path):
         record = BeneHeartR12Parser().parse(beneheart_r12_file)
@@ -77,9 +77,9 @@ class TestBeneHeartR12Parser:
         record = BeneHeartR12Parser().parse(beneheart_r12_file)
         d = record.to_dict()
         assert set(d.keys()) == {
-            "source_format", "patient", "recording", "device", "filters",
+            "source_format", "patient", "recording",
             "leads", "interpretation", "measurements", "median_beats",
-            "annotations", "signal",
+            "annotations",
         }
 
     def test_to_json_roundtrip(self, beneheart_r12_file: Path):

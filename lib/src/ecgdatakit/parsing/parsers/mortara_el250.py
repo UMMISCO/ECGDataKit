@@ -101,6 +101,22 @@ class MortaraEL250Parser(Parser):
         sampling_duration = 0
         leads: list[Lead] = []
 
+        # Extract ADC scaling: UNITS_PER_MV = ADC counts per millivolt
+        units_per_mv = 0
+        tc_node = ecg_root.get("TYPICAL_CYCLE", {})
+        upm_str = ""
+        if isinstance(tc_node, dict):
+            upm_str = tc_node.get("@UNITS_PER_MV", "")
+        if not upm_str:
+            upm_str = ecg_root.get("@UNITS_PER_MV", "")
+        if upm_str:
+            try:
+                units_per_mv = int(upm_str)
+            except (ValueError, TypeError):
+                pass
+        adc_resolution = 1.0 / units_per_mv if units_per_mv > 0 else 1.0
+        adc_units = "mV" if units_per_mv > 0 else ""
+
         for xml_lead in xml_leads:
             sampling_duration = int(xml_lead["@DURATION"])
             sampling_freq = int(xml_lead["@SAMPLE_FREQ"])
@@ -109,6 +125,9 @@ class MortaraEL250Parser(Parser):
                 label=xml_lead["@NAME"],
                 samples=samples,
                 sample_rate=sampling_freq,
+                resolution=adc_resolution,
+                units=adc_units,
+                is_raw=adc_resolution != 1.0,
             ))
 
         record.leads = leads
@@ -133,7 +152,7 @@ class MortaraEL250Parser(Parser):
             "acquisition_type": source.get("@TYPE", ""),
         }
 
-        record.device = DeviceInfo(
+        device = DeviceInfo(
             manufacturer=source.get("@MANUFACTURER", ""),
             model=source.get("@MODEL", ""),
             serial_number=source.get("@ACQUIRING_DEVICE_SERIAL_NUMBER", ""),
@@ -162,7 +181,6 @@ class MortaraEL250Parser(Parser):
                     filters.notch_active = True
             except (ValueError, TypeError):
                 pass
-        record.filters = filters
 
         patient = PatientInfo()
         demo_fields_node = ecg_root.get("DEMOGRAPHIC_FIELDS")
@@ -210,7 +228,6 @@ class MortaraEL250Parser(Parser):
         record.patient = patient
 
         recording = RecordingInfo()
-        recording.sample_rate = sampling_freq
 
         acq_time = ecg_root.get("@ACQUISITION_TIME")
         if acq_time:
@@ -226,6 +243,8 @@ class MortaraEL250Parser(Parser):
                 recording.end_date = recording.date + recording.duration
 
         record.recording = recording
+        record.recording.device = device
+        record.recording.acquisition.filters = filters
 
         if patient.birth_date and recording.date:
             record.raw_metadata["age_at_ecg"] = relativedelta(
@@ -299,11 +318,14 @@ class MortaraEL250Parser(Parser):
                 label=lead_name,
                 samples=np.array(samples_list, dtype=np.float64),
                 sample_rate=rep_beat_rate,
+                resolution=adc_resolution,
+                units=adc_units,
+                is_raw=adc_resolution != 1.0,
             ))
 
         interp = Interpretation()
         interp.source = "machine"
-        statements: list[str] = []
+        statements: list[tuple[str, str]] = []
 
         diag_node = find_tag(doc, "DIAGNOSIS")
         if diag_node is not None:
@@ -314,9 +336,9 @@ class MortaraEL250Parser(Parser):
                     if isinstance(d, dict):
                         stmt = d.get("@TEXT") or d.get("@DESCRIPTION") or d.get("#text", "")
                         if stmt:
-                            statements.append(str(stmt).strip())
+                            statements.append((str(stmt).strip(), ""))
                     elif isinstance(d, str) and d.strip():
-                        statements.append(d.strip())
+                        statements.append((d.strip(), ""))
 
         interp_node = find_tag(doc, "INTERPRETATION")
         if interp_node is not None:
@@ -327,9 +349,9 @@ class MortaraEL250Parser(Parser):
                     if isinstance(item, dict):
                         stmt = item.get("@TEXT") or item.get("@DESCRIPTION") or item.get("#text", "")
                         if stmt:
-                            statements.append(str(stmt).strip())
+                            statements.append((str(stmt).strip(), ""))
                     elif isinstance(item, str) and item.strip():
-                        statements.append(item.strip())
+                        statements.append((item.strip(), ""))
 
         diag_stmt_node = find_tag(doc, "DIAGNOSIS_STATEMENT")
         if diag_stmt_node is not None:
@@ -340,9 +362,9 @@ class MortaraEL250Parser(Parser):
                     if isinstance(item, dict):
                         stmt = item.get("@TEXT") or item.get("@DESCRIPTION") or item.get("#text", "")
                         if stmt:
-                            statements.append(str(stmt).strip())
+                            statements.append((str(stmt).strip(), ""))
                     elif isinstance(item, str) and item.strip():
-                        statements.append(item.strip())
+                        statements.append((item.strip(), ""))
 
         severity_val = ecg_root.get("@SEVERITY") or ecg_root.get("@DIAGNOSIS_SEVERITY", "")
         if severity_val:
@@ -352,7 +374,8 @@ class MortaraEL250Parser(Parser):
         if statements:
             record.interpretation = interp
 
-        record.signal = SignalCharacteristics(
+        record.recording.acquisition.signal = SignalCharacteristics(
+            sample_rate=sampling_freq,
             bits_per_sample=16,
             signal_signed=True,
             number_channels_valid=len(record.leads),

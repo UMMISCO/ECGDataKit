@@ -113,7 +113,6 @@ class ISHNEHolterParser(Parser):
         record.patient = patient
 
         recording = RecordingInfo()
-        recording.sample_rate = sr
 
         record_date = _get_datetime(filename, 138)
         start_time = _get_datetime(filename, 150, time=True)
@@ -126,9 +125,8 @@ class ISHNEHolterParser(Parser):
         else:
             device_name = ""
 
-        record.device = DeviceInfo(model=device_name)
-
         record.recording = recording
+        record.recording.device = DeviceInfo(model=device_name)
 
         if nleads <= 0 or nleads > 12:
             raise CorruptedFileError(f"Invalid lead count: {nleads}")
@@ -150,13 +148,15 @@ class ISHNEHolterParser(Parser):
             samples = data[i].astype(np.float64)
 
             lq = lead_quality[i] if i < len(lead_quality) else None
+            res = float(res_nv) / 1e6 if res_nv > 0 else 1.0
             record.leads.append(Lead(
                 label=label,
                 samples=samples,
                 sample_rate=sr,
-                resolution=float(res_nv) / 1e6 if res_nv > 0 else 1.0,
+                resolution=res,
                 units="mV" if res_nv > 0 else "",
                 quality=lq,
+                is_raw=res != 1.0,
             ))
 
         if record.leads:
@@ -172,7 +172,8 @@ class ISHNEHolterParser(Parser):
                 f.seek(var_block_offset, os.SEEK_SET)
                 variable_block_hex = f.read(var_block_size).hex()
 
-        record.signal = SignalCharacteristics(
+        record.recording.acquisition.signal = SignalCharacteristics(
+            sample_rate=sr,
             bits_per_sample=16,
             signal_signed=True,
             number_channels_allocated=nleads,
