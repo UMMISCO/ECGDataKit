@@ -61,12 +61,14 @@ def _make_12leads(fs: int = 500, duration: float = 5.0) -> list[Lead]:
 
 
 def _make_record(fs: int = 500, duration: float = 5.0) -> ECGRecord:
+    rec = RecordingInfo()
+    rec.acquisition.signal.sample_rate = fs
+    rec.device = DeviceInfo(manufacturer="TestCo", model="ECG-2000")
     return ECGRecord(
         patient=PatientInfo(patient_id="P001", first_name="Jane", last_name="Doe", age=45, sex="F"),
-        recording=RecordingInfo(sample_rate=fs),
-        device=DeviceInfo(manufacturer="TestCo", model="ECG-2000"),
+        recording=rec,
         leads=_make_12leads(fs, duration),
-        interpretation=Interpretation(statements=["Normal sinus rhythm"], severity="NORMAL"),
+        interpretation=Interpretation(statements=[("Normal sinus rhythm", "")], severity="NORMAL"),
         measurements=GlobalMeasurements(heart_rate=75, pr_interval=160, qrs_duration=90, qtc_bazett=410),
         source_format="test",
     )

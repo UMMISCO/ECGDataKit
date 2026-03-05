@@ -111,7 +111,7 @@ class TestGEMuseXMLParser:
     def test_interpretation_source_machine(self, ge_muse_xml_file: Path):
         record = GEMuseXMLParser().parse(ge_muse_xml_file)
         assert record.interpretation.source == "machine"
-        assert "Normal sinus rhythm" in record.interpretation.statements
+        assert any(s[0] == "Normal sinus rhythm" for s in record.interpretation.statements)
 
     def test_auto_detection_via_file_parser(self, ge_muse_xml_file: Path):
         fp = FileParser()
