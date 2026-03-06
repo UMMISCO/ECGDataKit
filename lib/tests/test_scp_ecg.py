@@ -59,6 +59,15 @@ class TestSCPECGParser:
             assert lead.samples.dtype == np.float64
             assert len(lead.samples) > 0
 
+    def test_lead_units_and_is_raw(self, scp_ecg_file: Path):
+        """Fixture has avm=1000 nV → resolution=1.0 uV/count → already physical."""
+        record = SCPECGParser().parse(scp_ecg_file)
+        for lead in record.leads:
+            assert lead.units == "uV"
+            assert lead.resolution == 1.0
+            assert lead.adc_resolution == 1000.0
+            assert lead.is_raw is False
+
     def test_recording_duration(self, scp_ecg_file: Path):
         record = SCPECGParser().parse(scp_ecg_file)
         assert record.recording.duration is not None

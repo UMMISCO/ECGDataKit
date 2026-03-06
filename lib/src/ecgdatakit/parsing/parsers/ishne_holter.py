@@ -148,13 +148,15 @@ class ISHNEHolterParser(Parser):
             samples = data[i].astype(np.float64)
 
             lq = lead_quality[i] if i < len(lead_quality) else None
-            res = float(res_nv) / 1e6 if res_nv > 0 else 1.0
+            raw_res = float(res_nv)
+            res = raw_res / 1_000.0 if res_nv > 0 else 1.0
             record.leads.append(Lead(
                 label=label,
                 samples=samples,
                 sample_rate=sr,
                 resolution=res,
-                units="mV" if res_nv > 0 else "",
+                units="uV" if res_nv > 0 else "",
+                adc_resolution=raw_res,
                 quality=lq,
                 is_raw=res != 1.0,
             ))

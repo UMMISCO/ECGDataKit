@@ -171,7 +171,7 @@ def create_ishne_binary(
         struct.pack_into("<h", header, 172 + i * 2, 1)
     for i in range(12 - nleads):
         struct.pack_into("<h", header, 172 + nleads * 2 + i * 2, -9)
-    # ampl_res in nV (offset 196 = 206): e.g. 1000 nV = 1 µV
+    # ampl_res in nV/count (offset 196 = 206): e.g. 1000 nV = 1 µV
     for i in range(nleads):
         struct.pack_into("<h", header, 196 + i * 2, 1000)
     for i in range(12 - nleads):

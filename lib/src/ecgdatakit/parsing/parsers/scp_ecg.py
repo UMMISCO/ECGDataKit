@@ -592,7 +592,7 @@ class SCPECGParser(Parser):
                 samples_list = _reconstruct_first_difference(diffs)
 
             avm_f = float(avm) if avm > 0 else 1.0
-            res = avm_f / 1_000_000.0
+            res = avm_f / 1_000.0
             samples = np.array(samples_list, dtype=np.float64)
 
             label = lead_defs[i]["label"] if i < len(lead_defs) else f"Lead{i}"
@@ -602,7 +602,8 @@ class SCPECGParser(Parser):
                 samples=samples,
                 sample_rate=sample_rate,
                 resolution=res,
-                units="mV",
+                units="uV",
+                adc_resolution=avm_f,
                 is_raw=res != 1.0,
             ))
 
@@ -751,7 +752,7 @@ class SCPECGParser(Parser):
                 samples_list = _reconstruct_first_difference(diffs)
 
             avm_f = float(avm) if avm > 0 else 1.0
-            res = avm_f / 1_000_000.0
+            res = avm_f / 1_000.0
             samples = np.array(samples_list, dtype=np.float64)
 
             label = lead_defs[i]["label"] if i < len(lead_defs) else f"Lead{i}"
@@ -761,7 +762,8 @@ class SCPECGParser(Parser):
                 samples=samples,
                 sample_rate=sample_rate,
                 resolution=res,
-                units="mV",
+                units="uV",
+                adc_resolution=avm_f,
                 is_raw=res != 1.0,
             ))
 

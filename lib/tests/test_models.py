@@ -344,8 +344,8 @@ class TestECGRecord:
         d = lead.to_dict()
         expected = {
             "label", "sample_count", "sample_rate", "resolution", "offset",
-            "samples", "units", "is_raw", "quality", "transducer", "prefiltering",
-            "annotations",
+            "samples", "units", "is_raw", "adc_resolution", "quality",
+            "transducer", "prefiltering", "annotations",
         }
         assert set(d.keys()) == expected
 

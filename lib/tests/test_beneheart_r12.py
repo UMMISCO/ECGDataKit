@@ -73,6 +73,14 @@ class TestBeneHeartR12Parser:
             assert lead.samples.dtype == np.float64
             assert len(lead.samples) > 0
 
+    def test_lead_units_and_is_raw(self, beneheart_r12_file: Path):
+        """Fixture has resolution=1.0 (1 uV/LSB) → already physical in uV."""
+        record = BeneHeartR12Parser().parse(beneheart_r12_file)
+        for lead in record.leads:
+            assert lead.units == "uV"
+            assert lead.resolution == 1.0
+            assert lead.is_raw is False
+
     def test_to_dict_unified_schema(self, beneheart_r12_file: Path):
         record = BeneHeartR12Parser().parse(beneheart_r12_file)
         d = record.to_dict()

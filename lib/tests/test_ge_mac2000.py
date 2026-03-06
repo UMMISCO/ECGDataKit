@@ -69,6 +69,13 @@ class TestGEMAC2000Parser:
             assert lead.samples.dtype == np.float64
             assert len(lead.samples) > 0
 
+    def test_lead_units_and_is_raw(self, ge_mac2000_file: Path):
+        """Fixture has no LeadAmplitudeUnitsPerBit → scale=1.0 → already physical."""
+        record = GEMAC2000Parser().parse(ge_mac2000_file)
+        for lead in record.leads:
+            assert lead.resolution == 1.0
+            assert lead.is_raw is False
+
     def test_annotations(self, ge_mac2000_file: Path):
         record = GEMAC2000Parser().parse(ge_mac2000_file)
         assert "ventricularrate" in record.annotations

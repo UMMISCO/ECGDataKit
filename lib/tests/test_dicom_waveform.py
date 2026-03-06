@@ -67,6 +67,13 @@ class TestDICOMWaveformParser:
             assert lead.samples.dtype == np.float64
             assert len(lead.samples) == 100
 
+    def test_lead_units_and_is_raw(self, dicom_file: Path):
+        """Fixture has sensitivity=1.0, baseline=0 → already physical."""
+        record = DICOMWaveformParser().parse(dicom_file)
+        for lead in record.leads:
+            assert lead.resolution == 1.0
+            assert lead.is_raw is False
+
     def test_recording_duration(self, dicom_file: Path):
         record = DICOMWaveformParser().parse(dicom_file)
         assert record.recording.duration is not None

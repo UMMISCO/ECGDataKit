@@ -71,6 +71,14 @@ class TestEDFParser:
         for lead in record.leads:
             assert lead.sample_rate == 500
 
+    def test_lead_units_and_is_raw(self, edf_file: Path):
+        """Fixture has gain≈9.77e-5 (phys 6.4 / dig 65535) → raw ADC."""
+        record = EDFParser().parse(edf_file)
+        for lead in record.leads:
+            assert lead.units == "mV"
+            assert lead.resolution != 1.0
+            assert lead.is_raw is True
+
     def test_corrupted_file_too_small(self, tmp_path: Path):
         f = tmp_path / "tiny.edf"
         f.write_bytes(b"0       " + b"\x00" * 10)

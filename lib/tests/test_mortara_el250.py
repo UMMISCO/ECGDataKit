@@ -64,6 +64,22 @@ class TestMortaraEL250Parser:
         assert record.annotations.get("num_qrs") == "75"
         assert record.annotations.get("vent_rate") == "75"
 
+    def test_lead_units_and_is_raw(self, mortara_file: Path):
+        """Fixture has UNITS_PER_MV=200 → resolution=0.005 mV/count → raw ADC."""
+        record = MortaraEL250Parser().parse(mortara_file)
+        for lead in record.leads:
+            assert lead.units == "mV"
+            assert lead.resolution == pytest.approx(0.005)
+            assert lead.is_raw is True
+
+    def test_median_beat_units_and_is_raw(self, mortara_file: Path):
+        """Fixture TYPICAL_CYCLE has UNITS_PER_MV=200 → same scaling as rhythm leads."""
+        record = MortaraEL250Parser().parse(mortara_file)
+        for beat in record.median_beats:
+            assert beat.units == "mV"
+            assert beat.resolution == pytest.approx(0.005)
+            assert beat.is_raw is True
+
     def test_representative_beats(self, mortara_file: Path):
         record = MortaraEL250Parser().parse(mortara_file)
         rep_beats = record.raw_metadata.get("representative_beats", {})

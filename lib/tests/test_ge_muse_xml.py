@@ -75,6 +75,13 @@ class TestGEMuseXMLParser:
             assert lead.samples.dtype == np.float64
             assert len(lead.samples) > 0
 
+    def test_lead_units_and_is_raw(self, ge_muse_xml_file: Path):
+        """Fixture has no LeadAmplitudeUnitsPerBit → scale=1.0 → already physical."""
+        record = GEMuseXMLParser().parse(ge_muse_xml_file)
+        for lead in record.leads:
+            assert lead.resolution == 1.0
+            assert lead.is_raw is False
+
     def test_annotations(self, ge_muse_xml_file: Path):
         record = GEMuseXMLParser().parse(ge_muse_xml_file)
         assert "diagnosis" in record.annotations

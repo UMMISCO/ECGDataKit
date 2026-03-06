@@ -66,6 +66,14 @@ class TestWFDBParser:
         for lead in record.leads:
             assert lead.sample_rate == 500
 
+    def test_lead_units_and_is_raw(self, wfdb_file: Path):
+        """Fixture has gain=200 → resolution=0.005 → raw ADC."""
+        record = WFDBParser().parse(wfdb_file)
+        for lead in record.leads:
+            assert lead.units == "mV"
+            assert lead.resolution == pytest.approx(0.005)
+            assert lead.is_raw is True
+
     def test_can_parse_requires_hea_extension(self, tmp_path: Path):
         f = tmp_path / "test.dat"
         f.write_bytes(b"\x00" * 100)

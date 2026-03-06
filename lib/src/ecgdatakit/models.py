@@ -468,10 +468,32 @@ class RecordingInfo:
 class Lead:
     """Single ECG lead with signal data.
 
-    Parsers auto-detect whether samples are raw ADC or already in
-    physical units based on the scaling metadata (``resolution`` and
-    ``offset``).  When ``is_raw=True``, call :meth:`to_physical` to
-    convert to physical voltage units.
+    **Resolution and scaling**
+
+    ECG file formats store a raw ADC resolution value in format-specific
+    units (e.g. nV/count for ISHNE and SCP-ECG, µV/count for Sierra XML).
+    The parser converts this to a normalised scale factor stored in
+    ``resolution``, expressed in the unit given by ``units``:
+
+    .. code-block:: text
+
+        physical_value = samples * resolution + offset   (in ``units``)
+
+    The original, unconverted value from the file is preserved in
+    ``adc_resolution`` for reference.
+
+    **Example** — ISHNE file with ``ampl_res = 153`` (nV/count):
+
+    * ``adc_resolution = 153.0`` — raw file value (nV/count)
+    * ``resolution = 0.153`` — converted: 153 / 1000 (µV/count)
+    * ``units = "uV"``
+
+    **Auto-detection of** ``is_raw``
+
+    Parsers set ``is_raw`` automatically.  When ``resolution == 1.0``
+    and ``offset == 0.0`` the samples are already in physical units
+    (``is_raw=False``); otherwise they are raw ADC counts
+    (``is_raw=True``) that need scaling via :meth:`to_physical`.
     """
 
     label: str
@@ -481,9 +503,13 @@ class Lead:
     sample_rate: int
     """Samples per second (Hz)."""
     resolution: float = 1.0
-    """Scale factor for ADC-to-physical conversion (default ``1.0``)."""
+    """Normalised scale factor for ADC-to-physical conversion, in the unit
+    given by ``units``.  Computed from ``adc_resolution`` by the parser
+    (e.g. ``adc_resolution / 1000`` for nV → µV).  Used by
+    :meth:`to_physical`: ``physical = samples * resolution + offset``."""
     offset: float = 0.0
-    """Additive offset for ADC-to-physical conversion (default ``0.0``)."""
+    """Additive offset for ADC-to-physical conversion (default ``0.0``).
+    Used by :meth:`to_physical`: ``physical = samples * resolution + offset``."""
     units: str = ""
     """Physical voltage unit (e.g. ``"mV"``, ``"uV"``).  When ``is_raw=True``
     this is the target unit that ``resolution`` converts to; when
@@ -491,7 +517,13 @@ class Lead:
     is_raw: bool = True
     """``True`` if samples are raw ADC counts needing scaling, ``False``
     if samples are already in physical ``units``.  Parsers set this
-    automatically based on ``resolution`` and ``offset``."""
+    automatically: ``is_raw = not (resolution == 1.0 and offset == 0.0)``."""
+    adc_resolution: float = 0.0
+    """Original ADC resolution exactly as stored in the source file,
+    before any unit conversion.  For example, ISHNE stores nV/count and
+    SCP-ECG stores nV/unit — this field preserves that raw value
+    (e.g. ``153.0`` for 153 nV/count).  The converted value used for
+    scaling is in ``resolution``."""
     quality: int | None = None
     """Signal quality indicator (format-specific)."""
     transducer: str = ""
@@ -515,6 +547,8 @@ class Lead:
             lines.append(f"  offset: {self.offset}")
         if self.units:
             lines.append(f"  units: {self.units}")
+        if self.adc_resolution != 0.0:
+            lines.append(f"  adc_resolution: {self.adc_resolution}")
         if self.quality is not None:
             lines.append(f"  quality: {self.quality}")
         if self.transducer:
@@ -614,6 +648,7 @@ class Lead:
             "offset": self.offset,
             "units": self.units,
             "is_raw": self.is_raw,
+            "adc_resolution": self.adc_resolution,
             "quality": self.quality,
             "transducer": self.transducer,
             "prefiltering": self.prefiltering,
