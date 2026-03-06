@@ -356,7 +356,7 @@ class HL7aECGParser(Parser):
             samples = np.array(signal, dtype=np.float64)
 
             # Determine units from scale node
-            units = ""
+            res_unit = ""
             scale_node = find_tag(node, "scale")
             if scale_node is not None:
                 if isinstance(scale_node, list):
@@ -364,16 +364,18 @@ class HL7aECGParser(Parser):
                 if isinstance(scale_node, dict):
                     u = read_path(scale_node, "@unit")
                     if u:
-                        units = str(u)
+                        res_unit = str(u)
 
+            raw = not (scale == 1.0 and origin == 0.0)
             leads.append(Lead(
                 label=label,
                 samples=samples,
                 sample_rate=sample_rate,
                 resolution=scale,
+                resolution_unit=res_unit,
                 offset=origin,
-                units=units,
-                is_raw=not (scale == 1.0 and origin == 0.0),
+                units="" if raw else res_unit,
+                is_raw=raw,
             ))
 
         return leads

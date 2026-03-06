@@ -257,8 +257,9 @@ class BeneHeartR12Parser(Parser):
                                 samples=samples,
                                 sample_rate=sample_rate,
                                 resolution=1.0,  # BeneHeart R12: 1 uV/LSB per Mindray spec
-                                units="uV",
-                                is_raw=False,  # resolution=1.0 → samples already in uV
+                                resolution_unit="uV",
+                                units="uV",  # resolution=1.0 → samples already in uV
+                                is_raw=False,
                             ))
             else:
                 if isinstance(lead_nodes, dict):
@@ -293,13 +294,15 @@ class BeneHeartR12Parser(Parser):
                                     pass
                             samples = _decode_lead_data(data_str)
                             if len(samples) > 0:
+                                raw = res != 1.0
                                 leads.append(Lead(
                                     label=label,
                                     samples=samples,
                                     sample_rate=sample_rate,
                                     resolution=res,
-                                    units="uV",
-                                    is_raw=res != 1.0,
+                                    resolution_unit="uV",
+                                    units="" if raw else "uV",
+                                    is_raw=raw,
                                 ))
 
         return leads

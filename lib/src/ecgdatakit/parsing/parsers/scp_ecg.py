@@ -597,14 +597,17 @@ class SCPECGParser(Parser):
 
             label = lead_defs[i]["label"] if i < len(lead_defs) else f"Lead{i}"
 
+            raw = res != 1.0
             leads.append(Lead(
                 label=label,
                 samples=samples,
                 sample_rate=sample_rate,
                 resolution=res,
-                units="uV",
+                resolution_unit="uV",
                 adc_resolution=avm_f,
-                is_raw=res != 1.0,
+                adc_resolution_unit="nV",
+                units="" if raw else "uV",
+                is_raw=raw,
             ))
 
             pos += lead_byte_lengths[i]
@@ -757,14 +760,17 @@ class SCPECGParser(Parser):
 
             label = lead_defs[i]["label"] if i < len(lead_defs) else f"Lead{i}"
 
+            raw = res != 1.0
             leads.append(Lead(
                 label=label,
                 samples=samples,
                 sample_rate=sample_rate,
                 resolution=res,
-                units="uV",
+                resolution_unit="uV",
                 adc_resolution=avm_f,
-                is_raw=res != 1.0,
+                adc_resolution_unit="nV",
+                units="" if raw else "uV",
+                is_raw=raw,
             ))
 
             pos += lead_byte_lengths[i]

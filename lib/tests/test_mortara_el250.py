@@ -68,7 +68,8 @@ class TestMortaraEL250Parser:
         """Fixture has UNITS_PER_MV=200 → resolution=0.005 mV/count → raw ADC."""
         record = MortaraEL250Parser().parse(mortara_file)
         for lead in record.leads:
-            assert lead.units == "mV"
+            assert lead.resolution_unit == "mV"
+            assert lead.units == ""
             assert lead.resolution == pytest.approx(0.005)
             assert lead.is_raw is True
 
@@ -76,7 +77,8 @@ class TestMortaraEL250Parser:
         """Fixture TYPICAL_CYCLE has UNITS_PER_MV=200 → same scaling as rhythm leads."""
         record = MortaraEL250Parser().parse(mortara_file)
         for beat in record.median_beats:
-            assert beat.units == "mV"
+            assert beat.resolution_unit == "mV"
+            assert beat.units == ""
             assert beat.resolution == pytest.approx(0.005)
             assert beat.is_raw is True
 

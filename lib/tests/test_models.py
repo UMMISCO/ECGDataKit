@@ -343,9 +343,10 @@ class TestECGRecord:
         lead = Lead(label="I", samples=np.array([1.0]), sample_rate=500)
         d = lead.to_dict()
         expected = {
-            "label", "sample_count", "sample_rate", "resolution", "offset",
-            "samples", "units", "is_raw", "adc_resolution", "quality",
-            "transducer", "prefiltering", "annotations",
+            "label", "sample_count", "sample_rate", "resolution", "resolution_unit",
+            "offset", "samples", "units", "is_raw", "adc_resolution",
+            "adc_resolution_unit", "quality", "transducer", "prefiltering",
+            "annotations",
         }
         assert set(d.keys()) == expected
 
@@ -354,7 +355,7 @@ class TestLeadConversion:
     def test_to_physical_basic(self):
         lead = Lead(
             label="I", samples=np.array([100.0, 200.0, 300.0]),
-            sample_rate=500, resolution=0.005, units="mV",
+            sample_rate=500, resolution=0.005, resolution_unit="mV",
         )
         physical = lead.to_physical()
         assert not physical.is_raw
@@ -364,7 +365,7 @@ class TestLeadConversion:
     def test_to_physical_with_offset(self):
         lead = Lead(
             label="I", samples=np.array([100.0, 200.0]),
-            sample_rate=500, resolution=2.0, offset=-50.0, units="uV",
+            sample_rate=500, resolution=2.0, resolution_unit="uV", offset=-50.0,
         )
         physical = lead.to_physical()
         np.testing.assert_allclose(physical.samples, [150.0, 350.0])
@@ -438,7 +439,7 @@ class TestLeadConversion:
     def test_chaining_to_physical_then_convert(self):
         lead = Lead(
             label="I", samples=np.array([1000.0, 2000.0]),
-            sample_rate=500, resolution=1.0, units="uV",
+            sample_rate=500, resolution=1.0, resolution_unit="uV",
         )
         result = lead.to_physical().convert_units("mV")
         np.testing.assert_allclose(result.samples, [1.0, 2.0])
@@ -461,9 +462,9 @@ class TestECGRecordConversion:
         record = ECGRecord(
             leads=[
                 Lead(label="I", samples=np.array([100.0, 200.0]),
-                     sample_rate=500, resolution=0.01, units="mV"),
+                     sample_rate=500, resolution=0.01, resolution_unit="mV"),
                 Lead(label="II", samples=np.array([300.0, 400.0]),
-                     sample_rate=500, resolution=0.01, units="mV"),
+                     sample_rate=500, resolution=0.01, resolution_unit="mV"),
             ],
         )
         physical = record.to_physical()

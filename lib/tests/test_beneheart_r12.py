@@ -77,6 +77,7 @@ class TestBeneHeartR12Parser:
         """Fixture has resolution=1.0 (1 uV/LSB) → already physical in uV."""
         record = BeneHeartR12Parser().parse(beneheart_r12_file)
         for lead in record.leads:
+            assert lead.resolution_unit == "uV"
             assert lead.units == "uV"
             assert lead.resolution == 1.0
             assert lead.is_raw is False

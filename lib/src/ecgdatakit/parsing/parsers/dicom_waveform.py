@@ -291,14 +291,16 @@ class DICOMWaveformParser(Parser):
 
                 samples = channels[:, ch_idx].astype(np.float64)
                 offset_val = -baseline * sensitivity
+                raw = not (sensitivity == 1.0 and offset_val == 0.0)
                 leads.append(Lead(
                     label=label,
                     samples=samples,
                     sample_rate=int(sample_rate),
                     resolution=sensitivity,
+                    resolution_unit=units,
                     offset=offset_val,
-                    units=units,
-                    is_raw=not (sensitivity == 1.0 and offset_val == 0.0),
+                    units="" if raw else units,
+                    is_raw=raw,
                 ))
 
             if leads:

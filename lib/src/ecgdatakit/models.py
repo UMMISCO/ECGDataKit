@@ -504,16 +504,21 @@ class Lead:
     """Samples per second (Hz)."""
     resolution: float = 1.0
     """Normalised scale factor for ADC-to-physical conversion, in the unit
-    given by ``units``.  Computed from ``adc_resolution`` by the parser
-    (e.g. ``adc_resolution / 1000`` for nV → µV).  Used by
+    given by ``resolution_unit``.  Computed from ``adc_resolution`` by the
+    parser (e.g. ``adc_resolution / 1000`` for nV → µV).  Used by
     :meth:`to_physical`: ``physical = samples * resolution + offset``."""
+    resolution_unit: str = ""
+    """Unit of the ``resolution`` scale factor (e.g. ``"uV"``, ``"mV"``).
+    After :meth:`to_physical`, the resulting samples are in this unit.
+    Set by the parser based on the format specification."""
     offset: float = 0.0
     """Additive offset for ADC-to-physical conversion (default ``0.0``).
     Used by :meth:`to_physical`: ``physical = samples * resolution + offset``."""
     units: str = ""
-    """Physical voltage unit (e.g. ``"mV"``, ``"uV"``).  When ``is_raw=True``
-    this is the target unit that ``resolution`` converts to; when
-    ``is_raw=False`` it is the actual unit of ``samples``."""
+    """Current unit of ``samples``.  Empty when ``is_raw=True`` (samples
+    are dimensionless ADC counts).  Set to the physical unit after
+    :meth:`to_physical` or :meth:`convert_units` is called (e.g. ``"uV"``,
+    ``"mV"``)."""
     is_raw: bool = True
     """``True`` if samples are raw ADC counts needing scaling, ``False``
     if samples are already in physical ``units``.  Parsers set this
@@ -524,6 +529,9 @@ class Lead:
     SCP-ECG stores nV/unit — this field preserves that raw value
     (e.g. ``153.0`` for 153 nV/count).  The converted value used for
     scaling is in ``resolution``."""
+    adc_resolution_unit: str = ""
+    """Unit of ``adc_resolution`` as defined by the source format
+    (e.g. ``"nV"`` for ISHNE and SCP-ECG)."""
     quality: int | None = None
     """Signal quality indicator (format-specific)."""
     transducer: str = ""
@@ -543,12 +551,16 @@ class Lead:
         lines.append(f"  sample_rate: {sr}")
         lines.append(f"  is_raw: {self.is_raw}")
         lines.append(f"  resolution: {self.resolution}")
+        if self.resolution_unit:
+            lines.append(f"  resolution_unit: {self.resolution_unit}")
         if self.offset != 0.0:
             lines.append(f"  offset: {self.offset}")
         if self.units:
             lines.append(f"  units: {self.units}")
         if self.adc_resolution != 0.0:
             lines.append(f"  adc_resolution: {self.adc_resolution}")
+        if self.adc_resolution_unit:
+            lines.append(f"  adc_resolution_unit: {self.adc_resolution_unit}")
         if self.quality is not None:
             lines.append(f"  quality: {self.quality}")
         if self.transducer:
@@ -582,6 +594,7 @@ class Lead:
             self,
             samples=self.samples * self.resolution + self.offset,
             is_raw=False,
+            units=self.resolution_unit,
         )
 
     def convert_units(self, target: str) -> Lead:
@@ -645,10 +658,12 @@ class Lead:
             "sample_count": len(self.samples),
             "sample_rate": self.sample_rate,
             "resolution": self.resolution,
+            "resolution_unit": self.resolution_unit,
             "offset": self.offset,
             "units": self.units,
             "is_raw": self.is_raw,
             "adc_resolution": self.adc_resolution,
+            "adc_resolution_unit": self.adc_resolution_unit,
             "quality": self.quality,
             "transducer": self.transducer,
             "prefiltering": self.prefiltering,

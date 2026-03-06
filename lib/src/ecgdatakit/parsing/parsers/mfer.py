@@ -347,13 +347,15 @@ class MFERParser(Parser):
                     units = channel_units[ch] if ch < len(channel_units) else ""
                     samples = channels[:, ch].astype(np.float64)
 
+                    raw = resolution != 1.0
                     leads.append(Lead(
                         label=label,
                         samples=samples,
                         sample_rate=sample_rate,
                         resolution=resolution,
-                        units=units,
-                        is_raw=resolution != 1.0,
+                        resolution_unit=units,
+                        units="" if raw else units,
+                        is_raw=raw,
                     ))
 
         record.leads = leads

@@ -96,6 +96,69 @@ Import: `from ecgdatakit import ECGRecord, Lead, PatientInfo, RecordingInfo, ...
    :member-order: bysource
 ```
 
+## Resolution Pipeline (ADC → Physical Units)
+
+ECG hardware digitises analogue signals into integer ADC counts.  The
+{class}`~ecgdatakit.models.Lead` dataclass carries the metadata needed to
+convert those counts back to physical voltage values.
+
+### Fields involved
+
+| Field | Example | Meaning |
+|---|---|---|
+| `adc_resolution` | `153.0` | Raw value from the file (e.g. 153 nV/count for ISHNE) |
+| `adc_resolution_unit` | `"nV"` | Unit of `adc_resolution` as defined by the source format |
+| `resolution` | `0.153` | Scale factor normalised to `resolution_unit` (153 nV → 0.153 µV) |
+| `resolution_unit` | `"uV"` | Unit of the `resolution` scale factor — the unit samples will be in after `to_physical()` |
+| `offset` | `0.0` | Additive offset: `physical = samples × resolution + offset` |
+| `units` | `""` or `"uV"` | **Current** unit of `samples`. Empty when `is_raw=True`; set after conversion |
+| `is_raw` | `True` / `False` | `True` → samples are dimensionless ADC counts. `False` → already in `units` |
+
+### Conversion formula
+
+```
+physical_value = samples × resolution + offset
+```
+
+### Auto-detection by parsers
+
+Parsers compute `is_raw` automatically:
+
+```python
+is_raw = not (resolution == 1.0 and offset == 0.0)
+```
+
+If resolution is 1.0 and offset is 0.0, the data is already in physical
+units — no scaling is needed, and `units` is set directly. Otherwise,
+`units` stays empty until `to_physical()` is called.
+
+### Example: ISHNE Holter (153 nV/count)
+
+```python
+record = FileParser().parse("holter.ecg", auto_scale=False)
+lead = record.leads[0]
+# lead.adc_resolution      → 153.0        (raw file value)
+# lead.adc_resolution_unit → "nV"         (file stores nV/count)
+# lead.resolution           → 0.153       (153 nV ÷ 1000 = 0.153 µV)
+# lead.resolution_unit      → "uV"        (resolution is in µV/count)
+# lead.units                → ""          (raw ADC, no unit yet)
+# lead.is_raw               → True
+
+physical = lead.to_physical()
+# physical.samples → original × 0.153
+# physical.units   → "uV"
+# physical.is_raw  → False
+
+in_mv = physical.convert_units("mV")
+# in_mv.units → "mV"
+```
+
+### Using `auto_scale`
+
+`FileParser().parse(path, auto_scale=True)` (default) calls `to_physical()`
+then `convert_units("mV")` automatically on every lead that has scaling
+metadata.
+
 ## Working with Data Models
 
 ECGDataKit functions accept both {class}`~ecgdatakit.models.Lead` objects and raw **numpy arrays**. When passing a numpy array, provide the sample rate via `fs`.

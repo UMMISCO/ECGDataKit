@@ -369,16 +369,19 @@ class EDFParser(Parser):
                     rec_offset += block_size
                 pos = rec_offset
 
+            is_raw = not (gain == 1.0 and offset_val == 0.0)
+            phys_unit = _clean_str(physical_dims[sig_idx])
             leads.append(Lead(
                 label=label,
                 samples=all_samples[:total_samples],
                 sample_rate=sample_rates[sig_idx],
                 resolution=gain,
+                resolution_unit=phys_unit,
                 offset=offset_val,
-                units=_clean_str(physical_dims[sig_idx]),
+                units="" if is_raw else phys_unit,
                 transducer=_clean_str(transducer_types[sig_idx]),
                 prefiltering=_clean_str(prefilterings[sig_idx]),
-                is_raw=not (gain == 1.0 and offset_val == 0.0),
+                is_raw=is_raw,
             ))
 
         record.leads = leads

@@ -347,14 +347,16 @@ class WFDBParser(Parser):
 
                         res = 1.0 / gain
                         ofs = -baseline / gain
+                        raw = not (res == 1.0 and ofs == 0.0)
                         leads.append(Lead(
                             label=label,
                             samples=samples,
                             sample_rate=sample_rate,
                             resolution=res,
+                            resolution_unit=spec["units"],
                             offset=ofs,
-                            units=spec["units"],
-                            is_raw=not (res == 1.0 and ofs == 0.0),
+                            units="" if raw else spec["units"],
+                            is_raw=raw,
                         ))
 
             elif fmt == 212:
@@ -373,14 +375,16 @@ class WFDBParser(Parser):
                     label = spec["description"] or f"Ch{sig_idx}"
                     res = 1.0 / gain
                     ofs = -baseline / gain
+                    raw = not (res == 1.0 and ofs == 0.0)
                     leads.append(Lead(
                         label=label,
                         samples=samples,
                         sample_rate=sample_rate,
                         resolution=res,
+                        resolution_unit=spec["units"],
                         offset=ofs,
-                        units=spec["units"],
-                        is_raw=not (res == 1.0 and ofs == 0.0),
+                        units="" if raw else spec["units"],
+                        is_raw=raw,
                     ))
 
             else:

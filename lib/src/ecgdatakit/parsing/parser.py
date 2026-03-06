@@ -168,7 +168,7 @@ class FileParser:
         new_leads = []
         raw_labels: list[str] = []
         for lead in record.leads:
-            if lead.resolution == 1.0 and lead.offset == 0.0 and not lead.units:
+            if lead.resolution == 1.0 and lead.offset == 0.0 and not lead.resolution_unit:
                 raw_labels.append(lead.label)
                 new_leads.append(lead)
                 continue
@@ -180,7 +180,7 @@ class FileParser:
 
         new_beats = []
         for beat in record.median_beats:
-            if beat.resolution == 1.0 and beat.offset == 0.0 and not beat.units:
+            if beat.resolution == 1.0 and beat.offset == 0.0 and not beat.resolution_unit:
                 new_beats.append(beat)
                 continue
             physical = beat.to_physical()

@@ -278,13 +278,16 @@ class GEMuseXMLParser(Parser):
                     except ValueError:
                         pass
 
+                raw = scale != 1.0
+                res_unit = "uV" if raw else ""
                 wf_leads.append(Lead(
                     label=label,
                     samples=samples,
                     sample_rate=sample_rate,
                     resolution=scale,
-                    units="uV" if scale != 1.0 else "",
-                    is_raw=scale != 1.0,
+                    resolution_unit=res_unit,
+                    units="" if raw else res_unit,
+                    is_raw=raw,
                 ))
 
             if wf_type and wf_type.lower() == "rhythm":

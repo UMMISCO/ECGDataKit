@@ -305,13 +305,16 @@ class GEMAC2000Parser(Parser):
                                     pass
                             samples = _decode_lead_data(data_str)
                             if len(samples) > 0:
+                                raw = scale != 1.0
+                                res_unit = "uV" if raw else ""
                                 leads.append(Lead(
                                     label=label,
                                     samples=samples,
                                     sample_rate=sample_rate,
                                     resolution=scale,
-                                    units="uV" if scale != 1.0 else "",
-                                    is_raw=scale != 1.0,
+                                    resolution_unit=res_unit,
+                                    units="" if raw else res_unit,
+                                    is_raw=raw,
                                 ))
 
         return leads

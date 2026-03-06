@@ -70,7 +70,8 @@ class TestWFDBParser:
         """Fixture has gain=200 → resolution=0.005 → raw ADC."""
         record = WFDBParser().parse(wfdb_file)
         for lead in record.leads:
-            assert lead.units == "mV"
+            assert lead.resolution_unit == "mV"
+            assert lead.units == ""
             assert lead.resolution == pytest.approx(0.005)
             assert lead.is_raw is True
 

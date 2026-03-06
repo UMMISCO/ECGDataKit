@@ -545,13 +545,15 @@ class SierraXMLParser(Parser):
             if i < len(waveform_data):
                 samples = waveform_data[i].astype(np.float64)
                 res = float(resolution_uv)
+                raw = res != 1.0
                 leads.append(Lead(
                     label=label,
                     samples=samples,
                     sample_rate=sampling_freq,
                     resolution=res,
-                    units="uV",
-                    is_raw=res != 1.0,
+                    resolution_unit="uV",
+                    units="" if raw else "uV",
+                    is_raw=raw,
                 ))
         return leads
 
@@ -603,13 +605,15 @@ class SierraXMLParser(Parser):
             if i < len(waveform_data):
                 samples = waveform_data[i].astype(np.float64)
                 res = float(resolution_uv)
+                raw = res != 1.0
                 beats.append(Lead(
                     label=label,
                     samples=samples,
                     sample_rate=rep_sr,
                     resolution=res,
-                    units="uV",
-                    is_raw=res != 1.0,
+                    resolution_unit="uV",
+                    units="" if raw else "uV",
+                    is_raw=raw,
                 ))
         return beats
 

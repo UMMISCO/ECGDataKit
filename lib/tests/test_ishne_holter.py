@@ -70,9 +70,11 @@ class TestISHNEHolterParser:
         """Fixture has ampl_res=1000 nV → resolution=1.0 uV/count → already physical."""
         record = ISHNEHolterParser().parse(ishne_file)
         for lead in record.leads:
+            assert lead.resolution_unit == "uV"
             assert lead.units == "uV"
             assert lead.resolution == 1.0
             assert lead.adc_resolution == 1000.0
+            assert lead.adc_resolution_unit == "nV"
             assert lead.is_raw is False
 
     def test_recording_duration(self, ishne_file: Path):
