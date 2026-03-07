@@ -4,6 +4,39 @@ All notable changes to ECGDataKit are documented here.
 
 ---
 
+## v0.0.9 - ADC resolution pipeline
+
+### Breaking changes
+
+- **`sample_rate` renamed to `sampling_rate`** in `Lead` and `SignalCharacteristics`
+- **`Lead.units` semantics changed** — now empty (`""`) when `is_raw=True` (raw ADC counts); set to the physical unit (voltages) only after `to_physical()` or when data is already in physical units
+- **`Lead.is_raw` is now auto-detected** — parsers no longer hardcode `is_raw=True`; instead `is_raw = not (resolution == 1.0 and offset == 0.0)`
+
+### New features
+
+- **Automatic ADC-to-physical scaling** — `FileParser.parse(auto_scale=True)` (default) converts raw ADC samples to mV via `to_physical()` + `convert_units("mV")`. Disable with `auto_scale=False`
+- **`Lead.to_physical()`** — converts raw ADC samples using `physical = samples × resolution + offset`
+- **`Lead.convert_units(target)`** — converts between voltage units (uV, mV, V)
+- **`ECGRecord.to_physical()` / `ECGRecord.convert_units(target)`** — batch conversion for all leads and median beats
+- **`FileParser.supported_formats()`** — returns format metadata for all 12 parsers
+- **`ECGRecord.__repr__()` and `ECGRecord.plot()`** — YAML-style console display and quick plotting
+- **Multi-lead numpy array support** — `plot_leads`, `plot_12lead`, `iplot_leads`, `iplot_12lead` accept raw numpy arrays with `fs=` parameter
+- **`LeadsLike` type alias** — for multi-lead inputs (list of Lead, ECGRecord, 2D array, list of arrays)
+
+### New Lead fields
+
+- **`resolution_unit`** — unit of the resolution scale factor (e.g. `"uV"`, `"mV"`); what samples will be in after `to_physical()`
+- **`adc_resolution`** — original ADC resolution as stored in the source file (e.g. `153.0` for 153 nV/count in ISHNE)
+- **`adc_resolution_unit`** — unit of `adc_resolution` as defined by the format (e.g. `"nV"` for ISHNE and SCP-ECG)
+
+### Improvements
+
+- Simplified multi-lead plots: full signal by default with configurable `rows`/`cols` grid layout
+- `plot_12lead` and `iplot_12lead` assign standard 12-lead names to unnamed inputs
+- Static plots no longer force matplotlib Agg backend
+
+---
+
 ## v0.0.8
 
 ### Visualization

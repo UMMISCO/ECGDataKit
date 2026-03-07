@@ -18,8 +18,8 @@ sys.path.insert(0, str(LIB_SRC))
 project = "ECGDataKit"
 copyright = "2026, Ahmad Fall — UMMISCO / IRD"
 author = "Ahmad Fall"
-release = "0.0.8"
-version = "0.0.8"
+release = "0.0.9"
+version = "0.0.9"
 
 # ---------------------------------------------------------------------------
 # Extensions
