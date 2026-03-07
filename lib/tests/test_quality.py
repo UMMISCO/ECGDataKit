@@ -14,13 +14,13 @@ def make_clean_ecg(fs=500, duration=10.0, bpm=72):
         sigma = 0.01 * fs
         signal += np.exp(-0.5 * ((np.arange(len(t)) - idx) / sigma) ** 2)
         pos += rr_s
-    return Lead(label="II", samples=signal.astype(np.float64), sample_rate=fs)
+    return Lead(label="II", samples=signal.astype(np.float64), sampling_rate=fs)
 
 def make_noisy_signal(fs=500, duration=10.0):
     """Pure random noise signal."""
     np.random.seed(123)
     signal = np.random.randn(int(fs * duration))
-    return Lead(label="II", samples=signal.astype(np.float64), sample_rate=fs)
+    return Lead(label="II", samples=signal.astype(np.float64), sampling_rate=fs)
 
 class TestSignalQualityIndex:
     def test_clean_ecg_high_score(self):

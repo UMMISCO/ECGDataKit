@@ -41,9 +41,9 @@ class TestEDFParser:
         assert record.recording.date.year == 2023
         assert record.recording.date.month == 12
 
-    def test_recording_sample_rate(self, edf_file: Path):
+    def test_recording_sampling_rate(self, edf_file: Path):
         record = EDFParser().parse(edf_file)
-        assert record.recording.acquisition.signal.sample_rate == 500
+        assert record.recording.acquisition.signal.sampling_rate == 500
 
     def test_recording_duration(self, edf_file: Path):
         record = EDFParser().parse(edf_file)
@@ -66,10 +66,10 @@ class TestEDFParser:
             assert lead.samples.dtype == np.float64
             assert len(lead.samples) > 0
 
-    def test_lead_sample_rate(self, edf_file: Path):
+    def test_lead_sampling_rate(self, edf_file: Path):
         record = EDFParser().parse(edf_file)
         for lead in record.leads:
-            assert lead.sample_rate == 500
+            assert lead.sampling_rate == 500
 
     def test_lead_units_and_is_raw(self, edf_file: Path):
         """Fixture has gain≈9.77e-5 (phys 6.4 / dig 65535) → raw ADC."""

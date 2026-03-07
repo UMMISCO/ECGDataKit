@@ -389,8 +389,8 @@ def _draw_header(ax, record: ECGRecord) -> None:
     r = record.recording
     if r.date:
         lines.append(f"Date: {r.date.strftime('%Y-%m-%d %H:%M')}")
-    if r.acquisition.signal.sample_rate:
-        lines.append(f"Sample rate: {r.acquisition.signal.sample_rate} Hz")
+    if r.acquisition.signal.sampling_rate:
+        lines.append(f"Sample rate: {r.acquisition.signal.sampling_rate} Hz")
 
     d = r.device
     dev_parts = []
@@ -472,7 +472,7 @@ def plot_peaks(
         ax.plot(x[peaks], lead.samples[peaks], "rv", markersize=7, label="R-peaks")
 
         for i in range(1, min(len(peaks), 20)):
-            rr_ms = (peaks[i] - peaks[i - 1]) / lead.sample_rate * 1000
+            rr_ms = (peaks[i] - peaks[i - 1]) / lead.sampling_rate * 1000
             mid_x = (x[peaks[i]] + x[peaks[i - 1]]) / 2
             y_pos = max(lead.samples[peaks[i]], lead.samples[peaks[i - 1]])
             ax.annotate(
@@ -484,7 +484,7 @@ def plot_peaks(
                 color="#666666",
             )
 
-        rr_all = np.diff(peaks).astype(np.float64) / lead.sample_rate * 1000
+        rr_all = np.diff(peaks).astype(np.float64) / lead.sampling_rate * 1000
         if len(rr_all) > 0:
             hr = 60_000.0 / rr_all.mean()
             ax.text(
@@ -550,7 +550,7 @@ def plot_beats(
         return fig
 
     n_samples = len(beats[0].samples)
-    t_ms = np.arange(n_samples, dtype=np.float64) / lead.sample_rate * 1000
+    t_ms = np.arange(n_samples, dtype=np.float64) / lead.sampling_rate * 1000
 
     if overlay:
         for i, beat in enumerate(beats):
@@ -688,7 +688,7 @@ def plot_spectrum(
 
     ax.set_xlabel("Frequency (Hz)")
     ax.set_title(f"{lead.label} \u2014 {'PSD (Welch)' if method == 'welch' else 'FFT Magnitude'}")
-    ax.set_xlim(0, min(lead.sample_rate / 2, 250))
+    ax.set_xlim(0, min(lead.sampling_rate / 2, 250))
     ax.legend(fontsize=7, loc="upper right")
     _style_ax(ax)
     fig.tight_layout()
@@ -731,7 +731,7 @@ def plot_spectrogram(
 
     nperseg = min(nperseg, len(lead.samples))
     f, t_spec, Sxx = sig.spectrogram(
-        lead.samples, fs=lead.sample_rate, nperseg=nperseg
+        lead.samples, fs=lead.sampling_rate, nperseg=nperseg
     )
     Sxx_db = 10 * np.log10(np.maximum(Sxx, 1e-20))
 
@@ -739,7 +739,7 @@ def plot_spectrogram(
     ax.set_ylabel("Frequency (Hz)")
     ax.set_xlabel("Time (s)")
     ax.set_title(f"{lead.label} \u2014 Spectrogram")
-    ax.set_ylim(0, min(lead.sample_rate / 2, 150))
+    ax.set_ylim(0, min(lead.sampling_rate / 2, 150))
     _style_ax(ax)
     fig.tight_layout()
 
@@ -1073,7 +1073,7 @@ def plot_report(
             ld = _find_lead(leads, lbl)
             if ld is not None:
                 t = time_axis(ld)
-                max_s = int(10.0 * ld.sample_rate)
+                max_s = int(10.0 * ld.sampling_rate)
                 sl = slice(0, min(max_s, len(ld.samples)))
                 ax.plot(t[sl], ld.samples[sl], color=lead_color(lbl), linewidth=0.7)
                 ax.set_xlim(0, 10.0)

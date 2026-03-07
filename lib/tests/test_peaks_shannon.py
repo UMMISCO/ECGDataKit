@@ -23,7 +23,7 @@ def make_ecg_lead(fs=500, duration=10.0, bpm=72):
         pos += rr_s
     # Add small baseline wander
     signal += 0.05 * np.sin(2 * np.pi * 0.3 * t)
-    return Lead(label="II", samples=signal.astype(np.float64), sample_rate=fs), \
+    return Lead(label="II", samples=signal.astype(np.float64), sampling_rate=fs), \
         np.array(peak_positions, dtype=np.intp)
 
 
@@ -62,7 +62,7 @@ class TestShannonEnergyDetection:
         detected = detect_r_peaks(lead, method="shannon_energy")
         assert detected.dtype == np.intp
 
-    def test_different_sample_rates(self):
+    def test_different_sampling_rates(self):
         """Should work with different sample rates."""
         for fs in [250, 360, 500, 1000]:
             lead, _ = make_ecg_lead(fs=fs, bpm=72, duration=10.0)
@@ -83,14 +83,14 @@ class TestShannonEnergyDetection:
         # Add noise
         rng = np.random.default_rng(42)
         noisy = lead.samples + 0.1 * rng.standard_normal(len(lead.samples))
-        noisy_lead = Lead(label="II", samples=noisy, sample_rate=lead.sample_rate)
+        noisy_lead = Lead(label="II", samples=noisy, sampling_rate=lead.sampling_rate)
         detected = detect_r_peaks(noisy_lead, method="shannon_energy")
         assert len(detected) > 0
 
     def test_flat_signal_returns_empty(self):
         """A flat signal should return no peaks."""
         flat = np.zeros(5000, dtype=np.float64)
-        lead = Lead(label="II", samples=flat, sample_rate=500)
+        lead = Lead(label="II", samples=flat, sampling_rate=500)
         detected = detect_r_peaks(lead, method="shannon_energy")
         assert len(detected) == 0
 
@@ -105,7 +105,7 @@ class TestShannonEnergyDetection:
 
 
 class TestShannonEnergyEdgeCases:
-    def test_very_low_sample_rate(self):
+    def test_very_low_sampling_rate(self):
         """Should not crash with very low sample rate."""
         # 100 Hz — lowfreq/highfreq will be clamped
         t = np.arange(0, 10.0, 1.0 / 100)
@@ -117,7 +117,7 @@ class TestShannonEnergyEdgeCases:
             sigma = 0.01 * 100
             signal += np.exp(-0.5 * ((np.arange(len(t)) - idx) / sigma) ** 2)
             pos += rr_s
-        lead = Lead(label="II", samples=signal.astype(np.float64), sample_rate=100)
+        lead = Lead(label="II", samples=signal.astype(np.float64), sampling_rate=100)
         detected = detect_r_peaks(lead, method="shannon_energy")
         assert isinstance(detected, np.ndarray)
 
@@ -128,6 +128,6 @@ class TestShannonEnergyEdgeCases:
         idx = 500  # peak at 1s
         sigma = 5
         signal += np.exp(-0.5 * ((np.arange(len(t)) - idx) / sigma) ** 2)
-        lead = Lead(label="II", samples=signal.astype(np.float64), sample_rate=500)
+        lead = Lead(label="II", samples=signal.astype(np.float64), sampling_rate=500)
         detected = detect_r_peaks(lead, method="shannon_energy")
         assert isinstance(detected, np.ndarray)

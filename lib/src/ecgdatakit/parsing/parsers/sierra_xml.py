@@ -469,7 +469,7 @@ class SierraXMLParser(Parser):
                 record.recording.location = val_str
 
         if record.leads:
-            record.recording.acquisition.signal.sample_rate = record.leads[0].sample_rate
+            record.recording.acquisition.signal.sampling_rate = record.leads[0].sampling_rate
 
         return record
 
@@ -549,7 +549,7 @@ class SierraXMLParser(Parser):
                 leads.append(Lead(
                     label=label,
                     samples=samples,
-                    sample_rate=sampling_freq,
+                    sampling_rate=sampling_freq,
                     resolution=res,
                     resolution_unit="uV",
                     units="" if raw else "uV",
@@ -609,7 +609,7 @@ class SierraXMLParser(Parser):
                 beats.append(Lead(
                     label=label,
                     samples=samples,
-                    sample_rate=rep_sr,
+                    sampling_rate=rep_sr,
                     resolution=res,
                     resolution_unit="uV",
                     units="" if raw else "uV",
@@ -1141,8 +1141,8 @@ class SierraXMLParser(Parser):
                 value = field_def.get_value(doc)
                 if value is None:
                     continue
-                if field_name == "sampling_rate" and sig.sample_rate == 0:
-                    sig.sample_rate = int(value)
+                if field_name == "sampling_rate" and sig.sampling_rate == 0:
+                    sig.sampling_rate = int(value)
                 elif field_name == "resolution" and sig.resolution == 0.0:
                     sig.resolution = float(value)
                 elif field_name == "bits_per_sample" and sig.bits_per_sample is None:

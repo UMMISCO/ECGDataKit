@@ -231,7 +231,7 @@ class HL7aECGParser(Parser):
                 try:
                     inc_f = float(inc_val)
                     if inc_f > 0:
-                        info.acquisition.signal.sample_rate = _increment_to_hz(inc_f, inc_unit)
+                        info.acquisition.signal.sampling_rate = _increment_to_hz(inc_f, inc_unit)
                 except (ValueError, ZeroDivisionError):
                     pass
 
@@ -265,7 +265,7 @@ class HL7aECGParser(Parser):
             nodes = [nodes]
 
         # Extract shared sample rate from the TIME_RELATIVE sequence
-        shared_sample_rate = 0
+        shared_sampling_rate = 0
         for node in nodes:
             code = read_path(node, "sequence/code/@code")
             if code == "TIME_RELATIVE":
@@ -284,7 +284,7 @@ class HL7aECGParser(Parser):
                         try:
                             inc_f = float(inc_val)
                             if inc_f > 0:
-                                shared_sample_rate = _increment_to_hz(inc_f, inc_unit)
+                                shared_sampling_rate = _increment_to_hz(inc_f, inc_unit)
                         except (ValueError, ZeroDivisionError):
                             pass
                 break
@@ -332,7 +332,7 @@ class HL7aECGParser(Parser):
                             pass
 
             # Per-lead increment (rare), fall back to shared rate
-            sample_rate = shared_sample_rate
+            sampling_rate = shared_sampling_rate
             inc_node = find_tag(node, "increment")
             if inc_node is not None:
                 if isinstance(inc_node, list):
@@ -348,7 +348,7 @@ class HL7aECGParser(Parser):
                     try:
                         inc_f = float(inc_val)
                         if inc_f > 0:
-                            sample_rate = _increment_to_hz(inc_f, inc_unit)
+                            sampling_rate = _increment_to_hz(inc_f, inc_unit)
                     except (ValueError, ZeroDivisionError):
                         pass
 
@@ -370,7 +370,7 @@ class HL7aECGParser(Parser):
             leads.append(Lead(
                 label=label,
                 samples=samples,
-                sample_rate=sample_rate,
+                sampling_rate=sampling_rate,
                 resolution=scale,
                 resolution_unit=res_unit,
                 offset=origin,

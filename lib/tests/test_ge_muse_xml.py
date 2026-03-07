@@ -55,9 +55,9 @@ class TestGEMuseXMLParser:
         record = GEMuseXMLParser().parse(ge_muse_xml_file)
         assert record.recording.device.model == "MAC5500"
 
-    def test_recording_sample_rate(self, ge_muse_xml_file: Path):
+    def test_recording_sampling_rate(self, ge_muse_xml_file: Path):
         record = GEMuseXMLParser().parse(ge_muse_xml_file)
-        assert record.recording.acquisition.signal.sample_rate == 500
+        assert record.recording.acquisition.signal.sampling_rate == 500
 
     def test_lead_count(self, ge_muse_xml_file: Path):
         record = GEMuseXMLParser().parse(ge_muse_xml_file)

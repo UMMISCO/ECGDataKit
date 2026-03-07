@@ -4,7 +4,7 @@ from ecgdatakit.models import Lead
 from ecgdatakit.processing.normalize import normalize_minmax, normalize_zscore, normalize_amplitude
 
 def make_lead(samples, label="II", fs=500):
-    return Lead(label=label, samples=np.array(samples, dtype=np.float64), sample_rate=fs)
+    return Lead(label=label, samples=np.array(samples, dtype=np.float64), sampling_rate=fs)
 
 class TestNormalizeMinmax:
     def test_output_range(self):
@@ -19,10 +19,10 @@ class TestNormalizeMinmax:
         np.testing.assert_array_equal(result.samples, np.zeros(4))
 
     def test_preserves_metadata(self):
-        lead = Lead(label="V1", samples=np.array([1.0, 2.0, 3.0]), sample_rate=250, units="mV")
+        lead = Lead(label="V1", samples=np.array([1.0, 2.0, 3.0]), sampling_rate=250, units="mV")
         result = normalize_minmax(lead)
         assert result.label == "V1"
-        assert result.sample_rate == 250
+        assert result.sampling_rate == 250
 
 class TestNormalizeZscore:
     def test_zero_mean_unit_variance(self):

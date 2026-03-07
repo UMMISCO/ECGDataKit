@@ -30,9 +30,9 @@ class TestWFDBParser:
         record = WFDBParser().parse(wfdb_file)
         assert record.patient.sex == "M"
 
-    def test_recording_sample_rate(self, wfdb_file: Path):
+    def test_recording_sampling_rate(self, wfdb_file: Path):
         record = WFDBParser().parse(wfdb_file)
-        assert record.recording.acquisition.signal.sample_rate == 500
+        assert record.recording.acquisition.signal.sampling_rate == 500
 
     def test_recording_date(self, wfdb_file: Path):
         record = WFDBParser().parse(wfdb_file)
@@ -61,10 +61,10 @@ class TestWFDBParser:
             assert lead.samples.dtype == np.float64
             assert len(lead.samples) > 0
 
-    def test_lead_sample_rate(self, wfdb_file: Path):
+    def test_lead_sampling_rate(self, wfdb_file: Path):
         record = WFDBParser().parse(wfdb_file)
         for lead in record.leads:
-            assert lead.sample_rate == 500
+            assert lead.sampling_rate == 500
 
     def test_lead_units_and_is_raw(self, wfdb_file: Path):
         """Fixture has gain=200 → resolution=0.005 → raw ADC."""

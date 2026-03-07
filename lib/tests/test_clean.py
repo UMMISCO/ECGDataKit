@@ -21,7 +21,7 @@ def make_noisy_ecg(fs=500, duration=10.0, bpm=72, noise_level=0.3):
     signal += 0.1 * np.sin(2 * np.pi * 0.3 * t)
     rng = np.random.default_rng(42)
     signal += 0.05 * rng.standard_normal(len(signal))
-    return Lead(label="II", samples=signal.astype(np.float64), sample_rate=fs)
+    return Lead(label="II", samples=signal.astype(np.float64), sampling_rate=fs)
 
 
 class TestCleanECGDefault:
@@ -30,10 +30,10 @@ class TestCleanECGDefault:
         result = clean_ecg(lead, method="default")
         assert isinstance(result, Lead)
 
-    def test_preserves_sample_rate(self):
+    def test_preserves_sampling_rate(self):
         lead = make_noisy_ecg(fs=250)
         result = clean_ecg(lead, method="default")
-        assert result.sample_rate == 250
+        assert result.sampling_rate == 250
 
     def test_preserves_label(self):
         lead = make_noisy_ecg()
@@ -56,9 +56,9 @@ class TestCleanECGDefault:
         lead = make_noisy_ecg(noise_level=0.5)
         result = clean_ecg(lead, method="default")
         from scipy.signal import welch
-        _, pxx_before = welch(lead.samples, fs=lead.sample_rate, nperseg=1024)
-        _, pxx_after = welch(result.samples, fs=result.sample_rate, nperseg=1024)
-        freq_bins = np.arange(len(pxx_before)) * (lead.sample_rate / 2) / len(pxx_before)
+        _, pxx_before = welch(lead.samples, fs=lead.sampling_rate, nperseg=1024)
+        _, pxx_after = welch(result.samples, fs=result.sampling_rate, nperseg=1024)
+        freq_bins = np.arange(len(pxx_before)) * (lead.sampling_rate / 2) / len(pxx_before)
         idx_50 = np.argmin(np.abs(freq_bins - 50))
         assert pxx_after[idx_50] < pxx_before[idx_50]
 

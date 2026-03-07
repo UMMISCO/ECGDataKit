@@ -105,7 +105,7 @@ record = FileParser().parse("path/to/ecg_file.xml")
 print(record.source_format)            # "sierra_xml"
 print(record.patient.first_name)       # "John"
 print(record.patient.age)              # 55
-print(record.recording.sample_rate)    # 500
+print(record.recording.acquisition.signal.sampling_rate)  # 500
 print(record.measurements.heart_rate)  # 75
 print(record.device.manufacturer)      # "Philips"
 print(record.signal.data_encoding)     # "base64"

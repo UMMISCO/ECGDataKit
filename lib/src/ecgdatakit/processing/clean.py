@@ -91,7 +91,7 @@ def _clean_biosppy(lead: Lead, **_kwargs) -> Lead:
     try:
         result = bio.signals.ecg.ecg(
             lead.samples,
-            sampling_rate=lead.sample_rate,
+            sampling_rate=lead.sampling_rate,
             show=False,
         )
         filtered = result["filtered"].astype(np.float64)
@@ -117,7 +117,7 @@ def _clean_neurokit2(lead: Lead, **_kwargs) -> Lead:
     try:
         filtered = nk.ecg_clean(
             lead.samples,
-            sampling_rate=lead.sample_rate,
+            sampling_rate=lead.sampling_rate,
         ).astype(np.float64)
     except (ValueError, Exception):
         filtered = lead.samples.copy()

@@ -31,8 +31,8 @@ def detect_r_peaks(lead: LeadLike, method: str = "pan_tompkins", *, fs: int | No
     if method not in methods:
         raise ValueError(f"Unknown method {method!r}; choose from {methods}")
     if method == "pan_tompkins":
-        return _pan_tompkins(lead.samples, lead.sample_rate)
-    return _shannon_energy(lead.samples, lead.sample_rate)
+        return _pan_tompkins(lead.samples, lead.sampling_rate)
+    return _shannon_energy(lead.samples, lead.sampling_rate)
 
 
 def heart_rate(lead: LeadLike, peaks: NDArray[np.intp] | None = None, *, fs: int | None = None) -> float:
@@ -77,7 +77,7 @@ def rr_intervals(
     if len(peaks) < 2:
         return np.array([], dtype=np.float64)
     diffs = np.diff(peaks).astype(np.float64)
-    return diffs * (1000.0 / lead.sample_rate)
+    return diffs * (1000.0 / lead.sampling_rate)
 
 
 def instantaneous_heart_rate(

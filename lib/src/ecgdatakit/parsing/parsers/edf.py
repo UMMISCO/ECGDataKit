@@ -280,12 +280,12 @@ class EDFParser(Parser):
         recording_date = _parse_edf_date(start_date, start_time)
         total_duration = num_records * record_duration if num_records > 0 else 0.0
 
-        sample_rates = []
+        sampling_rates = []
         for spr in samps_per_rec:
             sr = int(spr / record_duration) if record_duration > 0 else 0
-            sample_rates.append(sr)
+            sampling_rates.append(sr)
 
-        global_sr = sample_rates[0] if sample_rates else 0
+        global_sr = sampling_rates[0] if sampling_rates else 0
 
         recording = RecordingInfo(
             date=recording_date,
@@ -374,7 +374,7 @@ class EDFParser(Parser):
             leads.append(Lead(
                 label=label,
                 samples=all_samples[:total_samples],
-                sample_rate=sample_rates[sig_idx],
+                sampling_rate=sampling_rates[sig_idx],
                 resolution=gain,
                 resolution_unit=phys_unit,
                 offset=offset_val,
@@ -429,7 +429,7 @@ class EDFParser(Parser):
                 record.recording.acquisition.filters = ref
 
         record.recording.acquisition.signal = SignalCharacteristics(
-            sample_rate=global_sr,
+            sampling_rate=global_sr,
             bits_per_sample=16,
             signal_signed=True,
             number_channels_allocated=num_signals,

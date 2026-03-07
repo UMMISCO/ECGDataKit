@@ -109,23 +109,23 @@ class TestFilterSettings:
 class TestSignalCharacteristics:
     def test_defaults(self):
         s = SignalCharacteristics()
-        assert s.sample_rate == 0
+        assert s.sampling_rate == 0
         assert s.resolution == 0.0
         assert s.bits_per_sample is None
 
     def test_to_dict(self):
         s = SignalCharacteristics(
-            sample_rate=500, resolution=5.0, bits_per_sample=16,
+            sampling_rate=500, resolution=5.0, bits_per_sample=16,
             signal_signed=True, data_encoding="base64_int16le",
         ).to_dict()
-        assert s["sample_rate"] == 500
+        assert s["sampling_rate"] == 500
         assert s["resolution"] == 5.0
         assert s["bits_per_sample"] == 16
 
     def test_dict_keys_stable(self):
         d = SignalCharacteristics().to_dict()
         expected = {
-            "sample_rate", "resolution", "bits_per_sample", "signal_offset",
+            "sampling_rate", "resolution", "bits_per_sample", "signal_offset",
             "signal_signed", "number_channels_allocated", "number_channels_valid",
             "electrode_placement", "compression", "data_encoding", "acsetting",
             "filtered", "downsampled", "upsampled", "waveform_modified",
@@ -137,16 +137,16 @@ class TestSignalCharacteristics:
 class TestAcquisitionSetup:
     def test_defaults(self):
         a = AcquisitionSetup()
-        assert a.signal.sample_rate == 0
+        assert a.signal.sampling_rate == 0
         assert a.filters.highpass is None
 
     def test_to_dict(self):
         a = AcquisitionSetup(
-            signal=SignalCharacteristics(sample_rate=500, resolution=5.0),
+            signal=SignalCharacteristics(sampling_rate=500, resolution=5.0),
             filters=FilterSettings(highpass=0.05, lowpass=150.0),
         )
         d = a.to_dict()
-        assert d["signal"]["sample_rate"] == 500
+        assert d["signal"]["sampling_rate"] == 500
         assert d["signal"]["resolution"] == 5.0
         assert d["filters"]["highpass"] == 0.05
 
@@ -212,7 +212,7 @@ class TestRecordingInfo:
         assert r.duration is None
         assert isinstance(r.device, DeviceInfo)
         assert isinstance(r.acquisition, AcquisitionSetup)
-        assert r.acquisition.signal.sample_rate == 0
+        assert r.acquisition.signal.sampling_rate == 0
 
     def test_to_dict(self):
         r = RecordingInfo(
@@ -220,11 +220,11 @@ class TestRecordingInfo:
             end_date=datetime(2023, 6, 15, 10, 30, 10),
             duration=timedelta(seconds=10),
         )
-        r.acquisition.signal.sample_rate = 500
+        r.acquisition.signal.sampling_rate = 500
         d = r.to_dict()
         assert d["date"] == "2023-06-15T10:30:00"
         assert d["duration_seconds"] == 10.0
-        assert d["acquisition"]["signal"]["sample_rate"] == 500
+        assert d["acquisition"]["signal"]["sampling_rate"] == 500
 
     def test_to_dict_null_dates(self):
         d = RecordingInfo().to_dict()
@@ -244,7 +244,7 @@ class TestRecordingInfo:
 class TestLead:
     def test_to_dict_with_samples(self):
         samples = np.array([1.0, 2.0, 3.0], dtype=np.float64)
-        lead = Lead(label="I", samples=samples, sample_rate=500)
+        lead = Lead(label="I", samples=samples, sampling_rate=500)
         d = lead.to_dict()
         assert d["label"] == "I"
         assert d["sample_count"] == 3
@@ -252,14 +252,14 @@ class TestLead:
 
     def test_to_dict_without_samples(self):
         samples = np.array([1.0, 2.0, 3.0], dtype=np.float64)
-        lead = Lead(label="V1", samples=samples, sample_rate=500)
+        lead = Lead(label="V1", samples=samples, sampling_rate=500)
         d = lead.to_dict(include_samples=False)
         assert "samples" not in d
         assert d["sample_count"] == 3
 
     def test_annotations(self):
         lead = Lead(
-            label="I", samples=np.array([1.0]), sample_rate=500,
+            label="I", samples=np.array([1.0]), sampling_rate=500,
             annotations={"pamp": "100", "pdur": "80"},
         )
         d = lead.to_dict()
@@ -269,14 +269,14 @@ class TestLead:
 class TestECGRecord:
     def _make_record(self) -> ECGRecord:
         rec = RecordingInfo(date=datetime(2023, 1, 1))
-        rec.acquisition.signal.sample_rate = 500
+        rec.acquisition.signal.sampling_rate = 500
         return ECGRecord(
             source_format="test",
             patient=PatientInfo(patient_id="P001", sex="M"),
             recording=rec,
             leads=[
-                Lead(label="I", samples=np.array([1.0, 2.0]), sample_rate=500),
-                Lead(label="II", samples=np.array([3.0, 4.0]), sample_rate=500),
+                Lead(label="I", samples=np.array([1.0, 2.0]), sampling_rate=500),
+                Lead(label="II", samples=np.array([3.0, 4.0]), sampling_rate=500),
             ],
             annotations={"heartrate": "75"},
         )
@@ -340,10 +340,10 @@ class TestECGRecord:
         assert set(d.keys()) == expected
 
     def test_lead_dict_keys_stable(self):
-        lead = Lead(label="I", samples=np.array([1.0]), sample_rate=500)
+        lead = Lead(label="I", samples=np.array([1.0]), sampling_rate=500)
         d = lead.to_dict()
         expected = {
-            "label", "sample_count", "sample_rate", "resolution", "resolution_unit",
+            "label", "sample_count", "sampling_rate", "resolution", "resolution_unit",
             "offset", "samples", "units", "is_raw", "adc_resolution",
             "adc_resolution_unit", "quality", "transducer", "prefiltering",
             "annotations",
@@ -355,7 +355,7 @@ class TestLeadConversion:
     def test_to_physical_basic(self):
         lead = Lead(
             label="I", samples=np.array([100.0, 200.0, 300.0]),
-            sample_rate=500, resolution=0.005, resolution_unit="mV",
+            sampling_rate=500, resolution=0.005, resolution_unit="mV",
         )
         physical = lead.to_physical()
         assert not physical.is_raw
@@ -365,7 +365,7 @@ class TestLeadConversion:
     def test_to_physical_with_offset(self):
         lead = Lead(
             label="I", samples=np.array([100.0, 200.0]),
-            sample_rate=500, resolution=2.0, resolution_unit="uV", offset=-50.0,
+            sampling_rate=500, resolution=2.0, resolution_unit="uV", offset=-50.0,
         )
         physical = lead.to_physical()
         np.testing.assert_allclose(physical.samples, [150.0, 350.0])
@@ -373,7 +373,7 @@ class TestLeadConversion:
     def test_to_physical_idempotent(self):
         lead = Lead(
             label="I", samples=np.array([1.0, 2.0]),
-            sample_rate=500, resolution=0.005, is_raw=False, units="mV",
+            sampling_rate=500, resolution=0.005, is_raw=False, units="mV",
         )
         result = lead.to_physical()
         assert result is lead
@@ -381,7 +381,7 @@ class TestLeadConversion:
     def test_to_physical_zero_resolution_raises(self):
         lead = Lead(
             label="I", samples=np.array([1.0]),
-            sample_rate=500, resolution=0.0,
+            sampling_rate=500, resolution=0.0,
         )
         with pytest.raises(ValueError, match="resolution is 0"):
             lead.to_physical()
@@ -389,7 +389,7 @@ class TestLeadConversion:
     def test_convert_units_raw_raises(self):
         lead = Lead(
             label="I", samples=np.array([100.0]),
-            sample_rate=500, is_raw=True,
+            sampling_rate=500, is_raw=True,
         )
         with pytest.raises(RawSamplesError):
             lead.convert_units("mV")
@@ -397,7 +397,7 @@ class TestLeadConversion:
     def test_convert_units_uv_to_mv(self):
         lead = Lead(
             label="I", samples=np.array([1000.0, 2000.0]),
-            sample_rate=500, is_raw=False, units="uV",
+            sampling_rate=500, is_raw=False, units="uV",
         )
         result = lead.convert_units("mV")
         np.testing.assert_allclose(result.samples, [1.0, 2.0])
@@ -406,7 +406,7 @@ class TestLeadConversion:
     def test_convert_units_mv_to_v(self):
         lead = Lead(
             label="I", samples=np.array([1.0]),
-            sample_rate=500, is_raw=False, units="mV",
+            sampling_rate=500, is_raw=False, units="mV",
         )
         result = lead.convert_units("V")
         np.testing.assert_allclose(result.samples, [0.001])
@@ -415,7 +415,7 @@ class TestLeadConversion:
     def test_convert_units_same_returns_self(self):
         lead = Lead(
             label="I", samples=np.array([1.0]),
-            sample_rate=500, is_raw=False, units="mV",
+            sampling_rate=500, is_raw=False, units="mV",
         )
         result = lead.convert_units("mV")
         assert result is lead
@@ -423,7 +423,7 @@ class TestLeadConversion:
     def test_convert_units_unknown_target_raises(self):
         lead = Lead(
             label="I", samples=np.array([1.0]),
-            sample_rate=500, is_raw=False, units="mV",
+            sampling_rate=500, is_raw=False, units="mV",
         )
         with pytest.raises(ValueError, match="Unknown target unit"):
             lead.convert_units("dB")
@@ -431,7 +431,7 @@ class TestLeadConversion:
     def test_convert_units_unknown_current_raises(self):
         lead = Lead(
             label="I", samples=np.array([1.0]),
-            sample_rate=500, is_raw=False, units="nV",
+            sampling_rate=500, is_raw=False, units="nV",
         )
         with pytest.raises(ValueError, match="not a recognized voltage unit"):
             lead.convert_units("mV")
@@ -439,7 +439,7 @@ class TestLeadConversion:
     def test_chaining_to_physical_then_convert(self):
         lead = Lead(
             label="I", samples=np.array([1000.0, 2000.0]),
-            sample_rate=500, resolution=1.0, resolution_unit="uV",
+            sampling_rate=500, resolution=1.0, resolution_unit="uV",
         )
         result = lead.to_physical().convert_units("mV")
         np.testing.assert_allclose(result.samples, [1.0, 2.0])
@@ -449,7 +449,7 @@ class TestLeadConversion:
     def test_to_dict_includes_new_fields(self):
         lead = Lead(
             label="I", samples=np.array([1.0]),
-            sample_rate=500, resolution=0.005, offset=-10.0,
+            sampling_rate=500, resolution=0.005, offset=-10.0,
             units="mV", is_raw=True,
         )
         d = lead.to_dict()
@@ -462,9 +462,9 @@ class TestECGRecordConversion:
         record = ECGRecord(
             leads=[
                 Lead(label="I", samples=np.array([100.0, 200.0]),
-                     sample_rate=500, resolution=0.01, resolution_unit="mV"),
+                     sampling_rate=500, resolution=0.01, resolution_unit="mV"),
                 Lead(label="II", samples=np.array([300.0, 400.0]),
-                     sample_rate=500, resolution=0.01, resolution_unit="mV"),
+                     sampling_rate=500, resolution=0.01, resolution_unit="mV"),
             ],
         )
         physical = record.to_physical()
@@ -475,7 +475,7 @@ class TestECGRecordConversion:
         record = ECGRecord(
             leads=[
                 Lead(label="I", samples=np.array([1.0]),
-                     sample_rate=500, is_raw=False, units="mV"),
+                     sampling_rate=500, is_raw=False, units="mV"),
             ],
         )
         result = record.convert_units("uV")
@@ -486,7 +486,7 @@ class TestECGRecordConversion:
         record = ECGRecord(
             leads=[
                 Lead(label="I", samples=np.array([1.0]),
-                     sample_rate=500, is_raw=True),
+                     sampling_rate=500, is_raw=True),
             ],
         )
         with pytest.raises(RawSamplesError):

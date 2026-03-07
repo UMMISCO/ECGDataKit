@@ -6,7 +6,7 @@ from ecgdatakit.processing.transforms import power_spectrum, fft, segment_beats,
 def make_lead(freq=10, fs=500, duration=2.0, label="II"):
     t = np.arange(0, duration, 1.0 / fs)
     signal = np.sin(2 * np.pi * freq * t).astype(np.float64)
-    return Lead(label=label, samples=signal, sample_rate=fs)
+    return Lead(label=label, samples=signal, sampling_rate=fs)
 
 class TestPowerSpectrum:
     def test_peak_at_signal_frequency(self):
@@ -36,7 +36,7 @@ class TestSegmentBeats:
         peaks = np.array([500, 1500, 2500, 3500, 4500], dtype=np.intp)
         for p in peaks:
             signal[p] = 10.0  # Sharp peak
-        lead = Lead(label="II", samples=signal, sample_rate=500)
+        lead = Lead(label="II", samples=signal, sampling_rate=500)
         beats = segment_beats(lead, peaks=peaks, before=0.1, after=0.2)
         # First and last peaks may be skipped if too close to edges
         assert len(beats) >= 3
@@ -44,7 +44,7 @@ class TestSegmentBeats:
     def test_beat_labels(self):
         signal = np.zeros(3000, dtype=np.float64)
         peaks = np.array([500, 1500, 2500], dtype=np.intp)
-        lead = Lead(label="V1", samples=signal, sample_rate=500)
+        lead = Lead(label="V1", samples=signal, sampling_rate=500)
         beats = segment_beats(lead, peaks=peaks, before=0.1, after=0.2)
         for beat in beats:
             assert beat.label.startswith("V1_beat_")
@@ -55,7 +55,7 @@ class TestAverageBeat:
         peaks = np.array([500, 1500, 2500], dtype=np.intp)
         for p in peaks:
             signal[p] = 10.0
-        lead = Lead(label="II", samples=signal, sample_rate=500)
+        lead = Lead(label="II", samples=signal, sampling_rate=500)
         avg = average_beat(lead, peaks=peaks, before=0.1, after=0.2)
         assert avg.label == "II_avg"
         assert len(avg.samples) > 0

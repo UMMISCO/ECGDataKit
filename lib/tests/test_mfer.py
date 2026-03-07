@@ -44,9 +44,9 @@ class TestMFERParser:
         assert record.recording.date is not None
         assert record.recording.date.year == 2023
 
-    def test_recording_sample_rate(self, mfer_file: Path):
+    def test_recording_sampling_rate(self, mfer_file: Path):
         record = MFERParser().parse(mfer_file)
-        assert record.recording.acquisition.signal.sample_rate == 500
+        assert record.recording.acquisition.signal.sampling_rate == 500
 
     def test_recording_duration(self, mfer_file: Path):
         record = MFERParser().parse(mfer_file)
@@ -69,10 +69,10 @@ class TestMFERParser:
             assert lead.samples.dtype == np.float64
             assert len(lead.samples) == 500
 
-    def test_lead_sample_rate(self, mfer_file: Path):
+    def test_lead_sampling_rate(self, mfer_file: Path):
         record = MFERParser().parse(mfer_file)
         for lead in record.leads:
-            assert lead.sample_rate == 500
+            assert lead.sampling_rate == 500
 
     def test_lead_units_and_is_raw(self, mfer_file: Path):
         """Fixture has resolution=1 → already physical."""

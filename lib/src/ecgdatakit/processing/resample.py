@@ -29,16 +29,16 @@ def resample(lead: LeadLike, target_rate: int, *, fs: int | None = None) -> Lead
     lead = ensure_lead(lead, fs=fs)
     if target_rate <= 0:
         raise ValueError(f"target_rate must be positive, got {target_rate}")
-    if target_rate == lead.sample_rate:
+    if target_rate == lead.sampling_rate:
         return new_lead(lead, samples=lead.samples.copy())
 
     sig = require_scipy("signal")
 
     up = target_rate
-    down = lead.sample_rate
+    down = lead.sampling_rate
     divisor = gcd(up, down)
     up //= divisor
     down //= divisor
 
     resampled = sig.resample_poly(lead.samples, up, down).astype(np.float64)
-    return new_lead(lead, samples=resampled, sample_rate=target_rate)
+    return new_lead(lead, samples=resampled, sampling_rate=target_rate)

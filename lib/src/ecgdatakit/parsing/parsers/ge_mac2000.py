@@ -107,10 +107,10 @@ class GEMAC2000Parser(Parser):
         record.recording.device = self._read_device(root)
         record.recording.acquisition.filters = self._read_filters(root)
         record.leads = self._read_leads(root)
-        if record.leads and record.recording.acquisition.signal.sample_rate == 0:
-            record.recording.acquisition.signal.sample_rate = record.leads[0].sample_rate
-        if record.leads and record.recording.acquisition.signal.sample_rate > 0:
-            duration_s = len(record.leads[0].samples) / record.recording.acquisition.signal.sample_rate
+        if record.leads and record.recording.acquisition.signal.sampling_rate == 0:
+            record.recording.acquisition.signal.sampling_rate = record.leads[0].sampling_rate
+        if record.leads and record.recording.acquisition.signal.sampling_rate > 0:
+            duration_s = len(record.leads[0].samples) / record.recording.acquisition.signal.sampling_rate
             record.recording.duration = timedelta(seconds=duration_s)
 
         record.annotations = self._read_annotations(root)
@@ -118,7 +118,7 @@ class GEMAC2000Parser(Parser):
         record.interpretation = self._read_interpretation(root)
 
         record.recording.acquisition.signal = SignalCharacteristics(
-            sample_rate=record.recording.acquisition.signal.sample_rate,
+            sampling_rate=record.recording.acquisition.signal.sampling_rate,
             signal_signed=True,
             number_channels_valid=len(record.leads),
             data_encoding="base64_int16le",
@@ -217,7 +217,7 @@ class GEMAC2000Parser(Parser):
             sr_str = self._get_text(test, "SampleRate") or self._get_text(test, "SampleBase")
             if sr_str:
                 try:
-                    info.acquisition.signal.sample_rate = int(float(sr_str))
+                    info.acquisition.signal.sampling_rate = int(float(sr_str))
                 except ValueError:
                     pass
 
@@ -245,11 +245,11 @@ class GEMAC2000Parser(Parser):
     def _read_leads(self, root: dict) -> list[Lead]:
         leads: list[Lead] = []
 
-        sample_rate = 500
+        sampling_rate = 500
         sr_node = find_tag(root, "SampleRate") or find_tag(root, "SampleBase")
         if sr_node is not None:
             try:
-                sample_rate = int(str(sr_node))
+                sampling_rate = int(str(sr_node))
             except ValueError:
                 pass
 
@@ -310,7 +310,7 @@ class GEMAC2000Parser(Parser):
                                 leads.append(Lead(
                                     label=label,
                                     samples=samples,
-                                    sample_rate=sample_rate,
+                                    sampling_rate=sampling_rate,
                                     resolution=scale,
                                     resolution_unit=res_unit,
                                     units="" if raw else res_unit,

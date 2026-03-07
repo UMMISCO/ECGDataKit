@@ -47,9 +47,9 @@ class TestDICOMWaveformParser:
         assert record.recording.date is not None
         assert record.recording.date.year == 2023
 
-    def test_recording_sample_rate(self, dicom_file: Path):
+    def test_recording_sampling_rate(self, dicom_file: Path):
         record = DICOMWaveformParser().parse(dicom_file)
-        assert record.recording.acquisition.signal.sample_rate == 500
+        assert record.recording.acquisition.signal.sampling_rate == 500
 
     def test_lead_count(self, dicom_file: Path):
         record = DICOMWaveformParser().parse(dicom_file)

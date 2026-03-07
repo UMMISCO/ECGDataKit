@@ -31,9 +31,9 @@ def signal_quality_index(lead: LeadLike, *, fs: int | None = None) -> float:
     lead = ensure_lead(lead, fs=fs)
     scores = [
         _kurtosis_sqi(lead.samples),
-        _power_ratio_sqi(lead.samples, lead.sample_rate),
+        _power_ratio_sqi(lead.samples, lead.sampling_rate),
         _peak_regularity_sqi(lead),
-        _baseline_sqi(lead.samples, lead.sample_rate),
+        _baseline_sqi(lead.samples, lead.sampling_rate),
     ]
     return float(np.clip(np.mean(scores), 0.0, 1.0))
 
@@ -85,7 +85,7 @@ def snr_estimate(lead: LeadLike, *, fs: int | None = None) -> float:
     sig = require_scipy("signal")
 
     nperseg = min(256, len(lead.samples))
-    freqs, psd = sig.welch(lead.samples, fs=lead.sample_rate, nperseg=nperseg)
+    freqs, psd = sig.welch(lead.samples, fs=lead.sampling_rate, nperseg=nperseg)
     df = freqs[1] - freqs[0] if len(freqs) > 1 else 1.0
 
     signal_mask = (freqs >= 1.0) & (freqs <= 40.0)

@@ -311,7 +311,7 @@ class GlobalMeasurements:
 class SignalCharacteristics:
     """Technical signal encoding and acquisition metadata."""
 
-    sample_rate: int = 0
+    sampling_rate: int = 0
     """Samples per second (Hz)."""
     resolution: float = 0.0
     """ADC resolution factor (e.g. µV per count)."""
@@ -352,7 +352,7 @@ class SignalCharacteristics:
     def to_dict(self) -> dict:
         """Convert to a JSON-serialisable dictionary."""
         return {
-            "sample_rate": self.sample_rate,
+            "sampling_rate": self.sampling_rate,
             "resolution": self.resolution,
             "bits_per_sample": self.bits_per_sample,
             "signal_offset": self.signal_offset,
@@ -500,7 +500,7 @@ class Lead:
     """Lead name (e.g. ``"I"``, ``"V1"``)."""
     samples: NDArray[np.float64]
     """Signal sample values (raw ADC or physical, depending on ``is_raw``)."""
-    sample_rate: int
+    sampling_rate: int
     """Samples per second (Hz)."""
     resolution: float = 1.0
     """Normalised scale factor for ADC-to-physical conversion, in the unit
@@ -545,10 +545,10 @@ class Lead:
         lines = ["Lead:"]
         lines.append(f"  label: {self.label}")
         n = len(self.samples)
-        sr = self.sample_rate
+        sr = self.sampling_rate
         dur = f" ({n / sr:.1f}s)" if sr else ""
         lines.append(f"  samples: {n} samples{dur}")
-        lines.append(f"  sample_rate: {sr}")
+        lines.append(f"  sampling_rate: {sr}")
         lines.append(f"  is_raw: {self.is_raw}")
         lines.append(f"  resolution: {self.resolution}")
         if self.resolution_unit:
@@ -656,7 +656,7 @@ class Lead:
         d: dict = {
             "label": self.label,
             "sample_count": len(self.samples),
-            "sample_rate": self.sample_rate,
+            "sampling_rate": self.sampling_rate,
             "resolution": self.resolution,
             "resolution_unit": self.resolution_unit,
             "offset": self.offset,
@@ -770,7 +770,7 @@ class ECGRecord:
             lines.append(f"  leads:")
             for lead in self.leads:
                 n = len(lead.samples)
-                sr = lead.sample_rate
+                sr = lead.sampling_rate
                 dur = f", {n / sr:.1f}s" if sr else ""
                 status = "raw" if lead.is_raw else (lead.units or "physical")
                 lines.append(

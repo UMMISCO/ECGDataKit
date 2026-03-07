@@ -239,10 +239,10 @@ def create_edf_binary(
     num_signals: int = 2,
     num_records: int = 2,
     samples_per_record: int = 500,
-    sample_rate: int = 500,
+    sampling_rate: int = 500,
 ) -> bytes:
     """Build a minimal valid EDF file in memory."""
-    record_duration = samples_per_record / sample_rate  # 1 second
+    record_duration = samples_per_record / sampling_rate  # 1 second
 
     # Main header (256 bytes)
     hdr = bytearray(256)
@@ -303,7 +303,7 @@ def edf_file(tmp_path: Path) -> Path:
 def create_scp_ecg_binary(
     num_leads: int = 2,
     samples_per_lead: int = 500,
-    sample_rate: int = 500,
+    sampling_rate: int = 500,
 ) -> bytes:
     """Build a minimal valid SCP-ECG binary file in memory."""
     # We'll build sections 0, 1, 3, 6
@@ -345,7 +345,7 @@ def create_scp_ecg_binary(
     # Section 6: Rhythm data (raw int16, no Huffman)
     sec6_data = bytearray()
     avm = 1000   # nV per unit
-    sample_time = int(1_000_000 / sample_rate)  # µs
+    sample_time = int(1_000_000 / sampling_rate)  # µs
     sec6_data.extend(struct.pack("<H", avm))
     sec6_data.extend(struct.pack("<H", sample_time))
     sec6_data.append(0)   # encoding: first difference
@@ -535,12 +535,12 @@ def dicom_file(tmp_path: Path) -> Path:
     # Create waveform data — 2 channels, 100 samples each
     num_channels = 2
     num_samples = 100
-    sample_rate = 500.0
+    sampling_rate = 500.0
 
     wf = Dataset()
     wf.NumberOfWaveformChannels = num_channels
     wf.NumberOfWaveformSamples = num_samples
-    wf.SamplingFrequency = sample_rate
+    wf.SamplingFrequency = sampling_rate
     wf.WaveformBitsAllocated = 16
 
     # Channel definitions
@@ -583,7 +583,7 @@ def create_wfdb_files(directory: Path) -> Path:
     """Create minimal WFDB .hea + .dat files and return the .hea path."""
     num_signals = 2
     num_samples = 500
-    sample_rate = 500
+    sampling_rate = 500
     gain = 200.0
 
     # Build .dat file: Format 16, interleaved int16
@@ -597,7 +597,7 @@ def create_wfdb_files(directory: Path) -> Path:
 
     # Build .hea file
     hea_lines = [
-        f"test_wfdb {num_signals} {sample_rate} {num_samples} 10:30:00 01/12/2023",
+        f"test_wfdb {num_signals} {sampling_rate} {num_samples} 10:30:00 01/12/2023",
         f"test_wfdb.dat 16 {gain}(0)/mV 12 0 0 0 0 I",
         f"test_wfdb.dat 16 {gain}(0)/mV 12 0 0 0 0 II",
         "# Age: 43",
@@ -622,7 +622,7 @@ def wfdb_file(tmp_path: Path) -> Path:
 def create_mfer_binary(
     num_channels: int = 2,
     num_samples: int = 500,
-    sample_rate: int = 500,
+    sampling_rate: int = 500,
 ) -> bytes:
     """Build a minimal valid MFER binary file in memory."""
     data = bytearray()
@@ -649,7 +649,7 @@ def create_mfer_binary(
     add_tlv(0x03, b"\x00")
 
     # Sampling interval in µs
-    interval_us = int(1_000_000 / sample_rate)
+    interval_us = int(1_000_000 / sampling_rate)
     add_tlv(0x04, struct.pack(">h", interval_us))
 
     # Number of channels

@@ -42,7 +42,7 @@ def power_spectrum(
         nperseg = min(256, len(lead.samples))
 
     freqs, psd = sig.welch(
-        lead.samples, fs=lead.sample_rate, nperseg=nperseg
+        lead.samples, fs=lead.sampling_rate, nperseg=nperseg
     )
     return freqs.astype(np.float64), psd.astype(np.float64)
 
@@ -65,7 +65,7 @@ def fft(lead: LeadLike, *, fs: int | None = None) -> tuple[NDArray[np.float64], 
     lead = ensure_lead(lead, fs=fs)
     n = len(lead.samples)
     yf = np.fft.rfft(lead.samples)
-    xf = np.fft.rfftfreq(n, d=1.0 / lead.sample_rate)
+    xf = np.fft.rfftfreq(n, d=1.0 / lead.sampling_rate)
     magnitudes = (2.0 / n) * np.abs(yf)
     return xf.astype(np.float64), magnitudes.astype(np.float64)
 
@@ -102,8 +102,8 @@ def segment_beats(
     if peaks is None:
         peaks = detect_r_peaks(lead)
 
-    pre = int(round(before * lead.sample_rate))
-    post = int(round(after * lead.sample_rate))
+    pre = int(round(before * lead.sampling_rate))
+    post = int(round(after * lead.sampling_rate))
     n = len(lead.samples)
     beats: list[Lead] = []
 
@@ -151,8 +151,8 @@ def average_beat(
     lead = ensure_lead(lead, fs=fs)
     beats = segment_beats(lead, peaks, before, after)
     if not beats:
-        pre = int(round(before * lead.sample_rate))
-        post = int(round(after * lead.sample_rate))
+        pre = int(round(before * lead.sampling_rate))
+        post = int(round(after * lead.sampling_rate))
         return new_lead(
             lead,
             samples=np.zeros(pre + post, dtype=np.float64),

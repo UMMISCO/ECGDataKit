@@ -125,7 +125,7 @@ class MortaraEL250Parser(Parser):
             leads.append(Lead(
                 label=xml_lead["@NAME"],
                 samples=samples,
-                sample_rate=sampling_freq,
+                sampling_rate=sampling_freq,
                 resolution=adc_resolution,
                 resolution_unit=adc_units,
                 units="" if raw else adc_units,
@@ -320,7 +320,7 @@ class MortaraEL250Parser(Parser):
             record.median_beats.append(Lead(
                 label=lead_name,
                 samples=np.array(samples_list, dtype=np.float64),
-                sample_rate=rep_beat_rate,
+                sampling_rate=rep_beat_rate,
                 resolution=adc_resolution,
                 resolution_unit=adc_units,
                 units="" if raw else adc_units,
@@ -379,7 +379,7 @@ class MortaraEL250Parser(Parser):
             record.interpretation = interp
 
         record.recording.acquisition.signal = SignalCharacteristics(
-            sample_rate=sampling_freq,
+            sampling_rate=sampling_freq,
             bits_per_sample=16,
             signal_signed=True,
             number_channels_valid=len(record.leads),

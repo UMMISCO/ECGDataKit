@@ -123,14 +123,14 @@ class BeneHeartR12Parser(Parser):
         if clinical_info:
             record.raw_metadata["clinical_info"] = clinical_info
 
-        if record.leads and record.recording.acquisition.signal.sample_rate == 0:
-            record.recording.acquisition.signal.sample_rate = record.leads[0].sample_rate
-        if record.leads and record.recording.acquisition.signal.sample_rate > 0:
-            duration_s = len(record.leads[0].samples) / record.recording.acquisition.signal.sample_rate
+        if record.leads and record.recording.acquisition.signal.sampling_rate == 0:
+            record.recording.acquisition.signal.sampling_rate = record.leads[0].sampling_rate
+        if record.leads and record.recording.acquisition.signal.sampling_rate > 0:
+            duration_s = len(record.leads[0].samples) / record.recording.acquisition.signal.sampling_rate
             record.recording.duration = timedelta(seconds=duration_s)
 
         record.recording.acquisition.signal = SignalCharacteristics(
-            sample_rate=record.recording.acquisition.signal.sample_rate,
+            sampling_rate=record.recording.acquisition.signal.sampling_rate,
             signal_signed=True,
             number_channels_valid=len(record.leads),
             data_encoding="base64_int16le",
@@ -217,7 +217,7 @@ class BeneHeartR12Parser(Parser):
             sr_str = self._get_text(acq, "SampleRate") or self._get_text(acq, "SamplingRate")
             if sr_str:
                 try:
-                    info.acquisition.signal.sample_rate = int(float(sr_str))
+                    info.acquisition.signal.sampling_rate = int(float(sr_str))
                 except ValueError:
                     pass
 
@@ -232,11 +232,11 @@ class BeneHeartR12Parser(Parser):
             find_tag(root, "Channels")
         )
 
-        sample_rate = 500
+        sampling_rate = 500
         sr_node = find_tag(root, "SampleRate") or find_tag(root, "SamplingRate")
         if sr_node is not None:
             try:
-                sample_rate = int(str(sr_node))
+                sampling_rate = int(str(sr_node))
             except ValueError:
                 pass
 
@@ -255,7 +255,7 @@ class BeneHeartR12Parser(Parser):
                             leads.append(Lead(
                                 label=label,
                                 samples=samples,
-                                sample_rate=sample_rate,
+                                sampling_rate=sampling_rate,
                                 resolution=1.0,  # BeneHeart R12: 1 uV/LSB per Mindray spec
                                 resolution_unit="uV",
                                 units="uV",  # resolution=1.0 → samples already in uV
@@ -298,7 +298,7 @@ class BeneHeartR12Parser(Parser):
                                 leads.append(Lead(
                                     label=label,
                                     samples=samples,
-                                    sample_rate=sample_rate,
+                                    sampling_rate=sampling_rate,
                                     resolution=res,
                                     resolution_unit="uV",
                                     units="" if raw else "uV",

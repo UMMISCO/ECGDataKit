@@ -246,7 +246,7 @@ class SCPECGParser(Parser):
         recording = RecordingInfo()
         sr = 0
         if record.leads:
-            sr = record.leads[0].sample_rate
+            sr = record.leads[0].sampling_rate
             if sr > 0:
                 duration_s = len(record.leads[0].samples) / sr
                 recording.duration = timedelta(seconds=duration_s)
@@ -268,7 +268,7 @@ class SCPECGParser(Parser):
 
         # Populate signal characteristics
         sig = SignalCharacteristics(
-            sample_rate=sr,
+            sampling_rate=sr,
             signal_signed=True,
             number_channels_allocated=num_leads,
             number_channels_valid=len(record.leads),
@@ -558,7 +558,7 @@ class SCPECGParser(Parser):
 
         pos += 6
 
-        sample_rate = int(1_000_000 / sample_time) if sample_time > 0 else 500
+        sampling_rate = int(1_000_000 / sample_time) if sample_time > 0 else 500
 
         num_leads = len(lead_defs) if lead_defs else 1
         lead_byte_lengths: list[int] = []
@@ -601,7 +601,7 @@ class SCPECGParser(Parser):
             leads.append(Lead(
                 label=label,
                 samples=samples,
-                sample_rate=sample_rate,
+                sampling_rate=sampling_rate,
                 resolution=res,
                 resolution_unit="uV",
                 adc_resolution=avm_f,
@@ -721,7 +721,7 @@ class SCPECGParser(Parser):
 
         pos += 6
 
-        sample_rate = int(1_000_000 / sample_time) if sample_time > 0 else 500
+        sampling_rate = int(1_000_000 / sample_time) if sample_time > 0 else 500
 
         num_leads = len(lead_defs) if lead_defs else 1
         lead_byte_lengths: list[int] = []
@@ -764,7 +764,7 @@ class SCPECGParser(Parser):
             leads.append(Lead(
                 label=label,
                 samples=samples,
-                sample_rate=sample_rate,
+                sampling_rate=sampling_rate,
                 resolution=res,
                 resolution_unit="uV",
                 adc_resolution=avm_f,

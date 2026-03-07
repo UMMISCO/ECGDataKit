@@ -49,9 +49,9 @@ class TestBeneHeartR12Parser:
         assert record.recording.date is not None
         assert record.recording.date.year == 2023
 
-    def test_recording_sample_rate(self, beneheart_r12_file: Path):
+    def test_recording_sampling_rate(self, beneheart_r12_file: Path):
         record = BeneHeartR12Parser().parse(beneheart_r12_file)
-        assert record.recording.acquisition.signal.sample_rate == 500
+        assert record.recording.acquisition.signal.sampling_rate == 500
 
     def test_recording_device(self, beneheart_r12_file: Path):
         record = BeneHeartR12Parser().parse(beneheart_r12_file)

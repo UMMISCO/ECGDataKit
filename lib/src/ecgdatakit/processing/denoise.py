@@ -124,7 +124,7 @@ def denoise_deepfade(
     torch = _require_torch()
     lead = ensure_lead(lead, fs=fs)
 
-    original_fs = lead.sample_rate
+    original_fs = lead.sampling_rate
     if original_fs != _EXPECTED_FS:
         from ecgdatakit.processing.resample import resample
         lead_500 = resample(lead, _EXPECTED_FS)

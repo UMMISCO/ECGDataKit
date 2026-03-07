@@ -406,7 +406,7 @@ def iplot_peaks(
         for i, p in enumerate(peaks):
             parts = [f"Peak #{i}", f"Pos: {x[p]:.3f}" if x_axis == "time" else f"Sample: {x[p]}"]
             if i > 0:
-                rr = (peaks[i] - peaks[i - 1]) / lead.sample_rate * 1000
+                rr = (peaks[i] - peaks[i - 1]) / lead.sampling_rate * 1000
                 hr = 60_000.0 / rr if rr > 0 else 0
                 parts.append(f"RR: {rr:.0f}ms")
                 parts.append(f"HR: {hr:.0f}bpm")
@@ -491,7 +491,7 @@ def iplot_spectrum(
         y_label = "Magnitude"
         title_suffix = "FFT Magnitude"
 
-    nyquist = lead.sample_rate / 2
+    nyquist = lead.sampling_rate / 2
     fig.add_vrect(x0=0.05, x1=150, fillcolor="green", opacity=0.05, line_width=0, annotation_text="ECG band")
 
     fig.update_layout(
@@ -684,7 +684,7 @@ def iplot_report(
 
     for i, ld in enumerate(leads[:n_leads], start=1):
         x, _, _ = _x_data_i(ld, x_axis)
-        max_s = int(10.0 * ld.sample_rate)
+        max_s = int(10.0 * ld.sampling_rate)
         sl = slice(0, min(max_s, len(ld.samples)))
         fig.add_trace(
             go.Scatter(

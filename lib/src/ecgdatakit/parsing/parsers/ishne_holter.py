@@ -155,7 +155,7 @@ class ISHNEHolterParser(Parser):
             record.leads.append(Lead(
                 label=label,
                 samples=samples,
-                sample_rate=sr,
+                sampling_rate=sr,
                 resolution=res,
                 resolution_unit=res_unit,
                 adc_resolution=raw_res,
@@ -179,7 +179,7 @@ class ISHNEHolterParser(Parser):
                 variable_block_hex = f.read(var_block_size).hex()
 
         record.recording.acquisition.signal = SignalCharacteristics(
-            sample_rate=sr,
+            sampling_rate=sr,
             bits_per_sample=16,
             signal_signed=True,
             number_channels_allocated=nleads,

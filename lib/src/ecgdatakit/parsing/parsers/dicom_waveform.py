@@ -69,10 +69,10 @@ class DICOMWaveformParser(Parser):
         record.recording.acquisition.filters = filters
         record.recording.acquisition.signal = signal
         if record.leads:
-            if record.recording.acquisition.signal.sample_rate == 0:
-                record.recording.acquisition.signal.sample_rate = record.leads[0].sample_rate
-            if record.recording.acquisition.signal.sample_rate > 0 and len(record.leads[0].samples) > 0:
-                duration_s = len(record.leads[0].samples) / record.recording.acquisition.signal.sample_rate
+            if record.recording.acquisition.signal.sampling_rate == 0:
+                record.recording.acquisition.signal.sampling_rate = record.leads[0].sampling_rate
+            if record.recording.acquisition.signal.sampling_rate > 0 and len(record.leads[0].samples) > 0:
+                duration_s = len(record.leads[0].samples) / record.recording.acquisition.signal.sampling_rate
                 record.recording.duration = timedelta(seconds=duration_s)
 
         record.interpretation, record.measurements = self._read_annotations(ds)
@@ -190,7 +190,7 @@ class DICOMWaveformParser(Parser):
         for wf in waveform_seq:
             num_channels = int(getattr(wf, "NumberOfWaveformChannels", 0))
             num_samples = int(getattr(wf, "NumberOfWaveformSamples", 0))
-            sample_rate = float(getattr(wf, "SamplingFrequency", 0))
+            sampling_rate = float(getattr(wf, "SamplingFrequency", 0))
             bits_allocated = int(getattr(wf, "WaveformBitsAllocated", 16))
 
             sig.bits_per_sample = bits_allocated
@@ -295,7 +295,7 @@ class DICOMWaveformParser(Parser):
                 leads.append(Lead(
                     label=label,
                     samples=samples,
-                    sample_rate=int(sample_rate),
+                    sampling_rate=int(sampling_rate),
                     resolution=sensitivity,
                     resolution_unit=units,
                     offset=offset_val,

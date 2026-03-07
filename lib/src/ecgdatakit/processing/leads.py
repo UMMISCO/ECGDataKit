@@ -13,10 +13,10 @@ from ecgdatakit.processing._core import ensure_lead, new_lead
 
 
 def _check_compatible(a: Lead, b: Lead) -> None:
-    if a.sample_rate != b.sample_rate:
+    if a.sampling_rate != b.sampling_rate:
         raise ValueError(
-            f"Sample rates must match: {a.label}={a.sample_rate} Hz, "
-            f"{b.label}={b.sample_rate} Hz"
+            f"Sample rates must match: {a.label}={a.sampling_rate} Hz, "
+            f"{b.label}={b.sampling_rate} Hz"
         )
     if len(a.samples) != len(b.samples):
         raise ValueError(

@@ -20,7 +20,7 @@ def make_ecg_lead(fs=500, duration=10.0, bpm=72):
         pos += rr_s
     # Add small baseline wander
     signal += 0.05 * np.sin(2 * np.pi * 0.3 * t)
-    lead = Lead(label="II", samples=signal.astype(np.float64), sample_rate=fs)
+    lead = Lead(label="II", samples=signal.astype(np.float64), sampling_rate=fs)
     return lead, np.array(peak_positions, dtype=np.intp)
 
 class TestDetectRPeaks:
@@ -59,7 +59,7 @@ class TestRRIntervals:
         assert np.all(np.abs(rr - 1000.0) < 5.0)  # within 5 ms
 
     def test_empty_with_fewer_than_2_peaks(self):
-        lead = Lead(label="II", samples=np.zeros(100, dtype=np.float64), sample_rate=500)
+        lead = Lead(label="II", samples=np.zeros(100, dtype=np.float64), sampling_rate=500)
         rr = rr_intervals(lead, peaks=np.array([50], dtype=np.intp))
         assert len(rr) == 0
 

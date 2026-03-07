@@ -7,7 +7,7 @@ def make_lead(label, values=None, fs=500):
     if values is None:
         np.random.seed(hash(label) % 2**31)
         values = np.random.randn(1000)
-    return Lead(label=label, samples=np.array(values, dtype=np.float64), sample_rate=fs)
+    return Lead(label=label, samples=np.array(values, dtype=np.float64), sampling_rate=fs)
 
 class TestDeriveLeadIII:
     def test_iii_equals_ii_minus_i(self):
@@ -19,15 +19,15 @@ class TestDeriveLeadIII:
         np.testing.assert_array_almost_equal(iii.samples, ii_vals - i_vals)
         assert iii.label == "III"
 
-    def test_sample_rate_mismatch_raises(self):
-        a = Lead(label="I", samples=np.zeros(10, dtype=np.float64), sample_rate=500)
-        b = Lead(label="II", samples=np.zeros(10, dtype=np.float64), sample_rate=250)
+    def test_sampling_rate_mismatch_raises(self):
+        a = Lead(label="I", samples=np.zeros(10, dtype=np.float64), sampling_rate=500)
+        b = Lead(label="II", samples=np.zeros(10, dtype=np.float64), sampling_rate=250)
         with pytest.raises(ValueError, match="Sample rates"):
             derive_lead_iii(a, b)
 
     def test_length_mismatch_raises(self):
-        a = Lead(label="I", samples=np.zeros(10, dtype=np.float64), sample_rate=500)
-        b = Lead(label="II", samples=np.zeros(20, dtype=np.float64), sample_rate=500)
+        a = Lead(label="I", samples=np.zeros(10, dtype=np.float64), sampling_rate=500)
+        b = Lead(label="II", samples=np.zeros(20, dtype=np.float64), sampling_rate=500)
         with pytest.raises(ValueError, match="Sample counts"):
             derive_lead_iii(a, b)
 

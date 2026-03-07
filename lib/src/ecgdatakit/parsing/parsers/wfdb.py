@@ -66,11 +66,11 @@ class WFDBParser(Parser):
         record_name = parts[0]
         num_signals = int(parts[1])
 
-        sample_rate = 250
+        sampling_rate = 250
         if len(parts) >= 3:
             sr_part = parts[2].split("/")[0]
             try:
-                sample_rate = int(float(sr_part))
+                sampling_rate = int(float(sr_part))
             except ValueError:
                 pass
 
@@ -134,14 +134,14 @@ class WFDBParser(Parser):
         elif base_date:
             recording.date = base_date
 
-        if num_samples > 0 and sample_rate > 0:
-            recording.duration = timedelta(seconds=num_samples / sample_rate)
+        if num_samples > 0 and sampling_rate > 0:
+            recording.duration = timedelta(seconds=num_samples / sampling_rate)
 
         record.recording = recording
 
         if signal_specs:
             record.leads = self._read_signals(
-                hea_path, signal_specs, num_signals, num_samples, sample_rate
+                hea_path, signal_specs, num_signals, num_samples, sampling_rate
             )
 
         # Apply additional context from comments
@@ -157,7 +157,7 @@ class WFDBParser(Parser):
         bits = signal_specs[0].get("adc_resolution", 12) if signal_specs else 12
         adc_zero = signal_specs[0].get("adc_zero", 0) if signal_specs else 0
         record.recording.acquisition.signal = SignalCharacteristics(
-            sample_rate=sample_rate,
+            sampling_rate=sampling_rate,
             bits_per_sample=bits,
             signal_offset=adc_zero if adc_zero != 0 else None,
             signal_signed=True,
@@ -310,7 +310,7 @@ class WFDBParser(Parser):
         signal_specs: list[dict],
         num_signals: int,
         num_samples: int,
-        sample_rate: int,
+        sampling_rate: int,
     ) -> list[Lead]:
         """Read signal data from .dat file."""
         leads: list[Lead] = []
@@ -351,7 +351,7 @@ class WFDBParser(Parser):
                         leads.append(Lead(
                             label=label,
                             samples=samples,
-                            sample_rate=sample_rate,
+                            sampling_rate=sampling_rate,
                             resolution=res,
                             resolution_unit=spec["units"],
                             offset=ofs,
@@ -379,7 +379,7 @@ class WFDBParser(Parser):
                     leads.append(Lead(
                         label=label,
                         samples=samples,
-                        sample_rate=sample_rate,
+                        sampling_rate=sampling_rate,
                         resolution=res,
                         resolution_unit=spec["units"],
                         offset=ofs,

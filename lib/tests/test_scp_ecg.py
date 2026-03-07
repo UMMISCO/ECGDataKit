@@ -39,9 +39,9 @@ class TestSCPECGParser:
         assert record.patient.birth_date is not None
         assert record.patient.birth_date.year == 1980
 
-    def test_recording_sample_rate(self, scp_ecg_file: Path):
+    def test_recording_sampling_rate(self, scp_ecg_file: Path):
         record = SCPECGParser().parse(scp_ecg_file)
-        assert record.recording.acquisition.signal.sample_rate == 500
+        assert record.recording.acquisition.signal.sampling_rate == 500
 
     def test_lead_count(self, scp_ecg_file: Path):
         record = SCPECGParser().parse(scp_ecg_file)

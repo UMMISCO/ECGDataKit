@@ -187,7 +187,7 @@ from ecgdatakit import Lead
 lead = Lead(
     label="II",
     samples=samples,
-    sample_rate=500,
+    sampling_rate=500,
     units="mV",
     is_raw=False,
 )
@@ -200,7 +200,7 @@ filtered = diagnostic_filter(lead)
 
 ```python
 raw_array = lead.samples     # NDArray[np.float64]
-fs = lead.sample_rate        # int (Hz)
+fs = lead.sampling_rate        # int (Hz)
 ```
 
 ### Building a Lead from external data
@@ -214,7 +214,7 @@ fs = 500
 t = np.arange(fs * 10, dtype=np.float64) / fs
 signal = np.sin(2 * np.pi * 1.2 * t)
 
-lead = Lead(label="II", samples=signal, sample_rate=fs, units="mV", is_raw=False)
+lead = Lead(label="II", samples=signal, sampling_rate=fs, units="mV", is_raw=False)
 ```
 
 ```python
@@ -225,7 +225,7 @@ df = pd.read_csv("ecg_data.csv")
 lead = Lead(
     label="V1",
     samples=df["voltage"].to_numpy(dtype=np.float64),
-    sample_rate=250,
+    sampling_rate=250,
     units="mV",
     is_raw=False,
 )
@@ -239,13 +239,13 @@ import numpy as np
 
 leads = [
     Lead(label=name, samples=np.random.randn(5000).astype(np.float64),
-         sample_rate=500, units="mV", is_raw=False)
+         sampling_rate=500, units="mV", is_raw=False)
     for name in ["I", "II", "III", "aVR", "aVL", "aVF",
                  "V1", "V2", "V3", "V4", "V5", "V6"]
 ]
 
 rec = RecordingInfo()
-rec.acquisition.signal.sample_rate = 500
+rec.acquisition.signal.sampling_rate = 500
 
 record = ECGRecord(
     patient=PatientInfo(patient_id="001", first_name="Jane", last_name="Doe"),

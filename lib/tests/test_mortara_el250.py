@@ -41,9 +41,9 @@ class TestMortaraEL250Parser:
         record = MortaraEL250Parser().parse(mortara_file)
         assert record.recording.date == datetime(2023, 12, 1, 12, 0, 0)
 
-    def test_recording_sample_rate(self, mortara_file: Path):
+    def test_recording_sampling_rate(self, mortara_file: Path):
         record = MortaraEL250Parser().parse(mortara_file)
-        assert record.recording.acquisition.signal.sample_rate == 500
+        assert record.recording.acquisition.signal.sampling_rate == 500
 
     def test_device_model(self, mortara_file: Path):
         record = MortaraEL250Parser().parse(mortara_file)

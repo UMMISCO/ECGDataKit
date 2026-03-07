@@ -46,7 +46,7 @@ def _make_lead(label: str = "II", fs: int = 500, duration: float = 5.0) -> Lead:
     n = int(fs * duration)
     t = np.arange(n, dtype=np.float64) / fs
     samples = np.sin(2 * np.pi * 10 * t) + 0.1 * np.random.default_rng(42).standard_normal(n)
-    return Lead(label=label, samples=samples.astype(np.float64), sample_rate=fs, units="mV")
+    return Lead(label=label, samples=samples.astype(np.float64), sampling_rate=fs, units="mV")
 
 
 def _make_ecg_lead(label: str = "II", fs: int = 500, duration: float = 5.0) -> Lead:
@@ -62,7 +62,7 @@ def _make_ecg_lead(label: str = "II", fs: int = 500, duration: float = 5.0) -> L
         for j in range(lo, hi):
             signal[j] = 1.5 * np.exp(-((j - pos) / (0.008 * fs)) ** 2)
     signal += 0.05 * np.random.default_rng(42).standard_normal(n)
-    return Lead(label=label, samples=signal, sample_rate=fs, units="mV")
+    return Lead(label=label, samples=signal, sampling_rate=fs, units="mV")
 
 
 def _make_12leads(fs: int = 500, duration: float = 5.0) -> list[Lead]:
@@ -74,7 +74,7 @@ def _make_12leads(fs: int = 500, duration: float = 5.0) -> list[Lead]:
 def _make_record(fs: int = 500, duration: float = 5.0) -> ECGRecord:
     """Create a full ECGRecord with metadata."""
     rec = RecordingInfo()
-    rec.acquisition.signal.sample_rate = fs
+    rec.acquisition.signal.sampling_rate = fs
     rec.device = DeviceInfo(manufacturer="TestCo", model="ECG-1000")
     rec.acquisition.filters = FilterSettings(highpass=0.05, lowpass=150.0)
     return ECGRecord(

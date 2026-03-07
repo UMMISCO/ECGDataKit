@@ -39,8 +39,8 @@ def lowpass(lead: LeadLike, cutoff: float, order: int = 4, *, fs: int | None = N
     """
     lead = ensure_lead(lead, fs=fs)
     sig = require_scipy("signal")
-    _validate_nyquist(cutoff, lead.sample_rate, "cutoff")
-    sos = sig.butter(order, cutoff, btype="low", fs=lead.sample_rate, output="sos")
+    _validate_nyquist(cutoff, lead.sampling_rate, "cutoff")
+    sos = sig.butter(order, cutoff, btype="low", fs=lead.sampling_rate, output="sos")
     filtered = sig.sosfiltfilt(sos, lead.samples).astype(np.float64)
     return new_lead(lead, samples=filtered)
 
@@ -61,8 +61,8 @@ def highpass(lead: LeadLike, cutoff: float, order: int = 4, *, fs: int | None = 
     """
     lead = ensure_lead(lead, fs=fs)
     sig = require_scipy("signal")
-    _validate_nyquist(cutoff, lead.sample_rate, "cutoff")
-    sos = sig.butter(order, cutoff, btype="high", fs=lead.sample_rate, output="sos")
+    _validate_nyquist(cutoff, lead.sampling_rate, "cutoff")
+    sos = sig.butter(order, cutoff, btype="high", fs=lead.sampling_rate, output="sos")
     filtered = sig.sosfiltfilt(sos, lead.samples).astype(np.float64)
     return new_lead(lead, samples=filtered)
 
@@ -85,12 +85,12 @@ def bandpass(lead: LeadLike, low: float, high: float, order: int = 4, *, fs: int
     """
     lead = ensure_lead(lead, fs=fs)
     sig = require_scipy("signal")
-    _validate_nyquist(high, lead.sample_rate, "high")
+    _validate_nyquist(high, lead.sampling_rate, "high")
     if low <= 0:
         raise ValueError(f"low must be positive, got {low}")
     if low >= high:
         raise ValueError(f"low ({low}) must be less than high ({high})")
-    sos = sig.butter(order, [low, high], btype="band", fs=lead.sample_rate, output="sos")
+    sos = sig.butter(order, [low, high], btype="band", fs=lead.sampling_rate, output="sos")
     filtered = sig.sosfiltfilt(sos, lead.samples).astype(np.float64)
     return new_lead(lead, samples=filtered)
 
@@ -111,8 +111,8 @@ def notch(lead: LeadLike, freq: float = 50.0, quality: float = 30.0, *, fs: int 
     """
     lead = ensure_lead(lead, fs=fs)
     sig = require_scipy("signal")
-    _validate_nyquist(freq, lead.sample_rate, "freq")
-    b, a = sig.iirnotch(freq, quality, fs=lead.sample_rate)
+    _validate_nyquist(freq, lead.sampling_rate, "freq")
+    b, a = sig.iirnotch(freq, quality, fs=lead.sampling_rate)
     sos = sig.tf2sos(b, a)
     filtered = sig.sosfiltfilt(sos, lead.samples).astype(np.float64)
     return new_lead(lead, samples=filtered)

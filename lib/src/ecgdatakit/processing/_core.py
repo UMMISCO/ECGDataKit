@@ -30,11 +30,11 @@ def new_lead(source: Lead, *, samples: NDArray[np.float64], **overrides) -> Lead
     Parameters
     ----------
     source : Lead
-        The lead to copy metadata from (label, sample_rate, units, etc.).
+        The lead to copy metadata from (label, sampling_rate, units, etc.).
     samples : NDArray
         New sample data for the returned lead.
     **overrides
-        Any Lead field to override (e.g., ``sample_rate=250``).
+        Any Lead field to override (e.g., ``sampling_rate=250``).
     """
     return dataclasses.replace(source, samples=samples, **overrides)
 
@@ -63,11 +63,11 @@ def ensure_lead(
         return lead_like
     if fs is None:
         raise TypeError(
-            "sample_rate (fs) is required when passing a numpy array "
+            "sampling_rate (fs) is required when passing a numpy array "
             "instead of a Lead object"
         )
     return Lead(
         label=label,
         samples=np.asarray(lead_like, dtype=np.float64),
-        sample_rate=fs,
+        sampling_rate=fs,
     )

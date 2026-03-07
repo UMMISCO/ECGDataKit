@@ -27,7 +27,7 @@ def _sine_signal(fs=500, duration=2.0, freq=10.0):
 class TestEnsureLeadProcessing:
     def test_lead_passthrough(self):
         from ecgdatakit.processing._core import ensure_lead
-        lead = Lead(label="II", samples=_sine_signal(), sample_rate=500)
+        lead = Lead(label="II", samples=_sine_signal(), sampling_rate=500)
         assert ensure_lead(lead) is lead
 
     def test_numpy_with_fs(self):
@@ -35,7 +35,7 @@ class TestEnsureLeadProcessing:
         arr = _sine_signal()
         result = ensure_lead(arr, fs=500)
         assert isinstance(result, Lead)
-        assert result.sample_rate == 500
+        assert result.sampling_rate == 500
         assert np.array_equal(result.samples, arr)
 
     def test_numpy_without_fs_raises(self):
@@ -63,7 +63,7 @@ class TestEnsureLeadProcessing:
 class TestEnsureLeadPlotting:
     def test_lead_passthrough(self):
         from ecgdatakit.plotting._core import ensure_lead
-        lead = Lead(label="II", samples=_sine_signal(), sample_rate=500)
+        lead = Lead(label="II", samples=_sine_signal(), sampling_rate=500)
         assert ensure_lead(lead) is lead
 
     def test_numpy_with_fs(self):
@@ -71,7 +71,7 @@ class TestEnsureLeadPlotting:
         arr = _sine_signal()
         result = ensure_lead(arr, fs=500)
         assert isinstance(result, Lead)
-        assert result.sample_rate == 500
+        assert result.sampling_rate == 500
 
     def test_numpy_without_fs_raises(self):
         from ecgdatakit.plotting._core import ensure_lead
@@ -88,7 +88,7 @@ class TestFiltersNumpyInput:
         from ecgdatakit.processing.filters import lowpass
         result = lowpass(_sine_signal(), cutoff=50, fs=500)
         assert isinstance(result, Lead)
-        assert result.sample_rate == 500
+        assert result.sampling_rate == 500
 
     def test_lowpass_no_fs_raises(self):
         from ecgdatakit.processing.filters import lowpass
@@ -135,7 +135,7 @@ class TestResampleNumpyInput:
         from ecgdatakit.processing.resample import resample
         result = resample(_sine_signal(), target_rate=250, fs=500)
         assert isinstance(result, Lead)
-        assert result.sample_rate == 250
+        assert result.sampling_rate == 250
 
     def test_resample_no_fs_raises(self):
         from ecgdatakit.processing.resample import resample
@@ -276,7 +276,7 @@ class TestCleanNumpyInput:
         from ecgdatakit.processing.clean import clean_ecg
         result = clean_ecg(_sine_signal(), method="default", fs=500)
         assert isinstance(result, Lead)
-        assert result.sample_rate == 500
+        assert result.sampling_rate == 500
 
     def test_clean_no_fs_raises(self):
         from ecgdatakit.processing.clean import clean_ecg
@@ -340,20 +340,20 @@ class TestLeadBackwardCompat:
 
     def test_lowpass_with_lead(self):
         from ecgdatakit.processing.filters import lowpass
-        lead = Lead(label="II", samples=_sine_signal(), sample_rate=500)
+        lead = Lead(label="II", samples=_sine_signal(), sampling_rate=500)
         result = lowpass(lead, cutoff=50)
         assert isinstance(result, Lead)
         assert result.label == "II"
 
     def test_plot_lead_with_lead(self):
         from ecgdatakit.plotting import plot_lead
-        lead = Lead(label="II", samples=_sine_signal(), sample_rate=500, units="mV")
+        lead = Lead(label="II", samples=_sine_signal(), sampling_rate=500, units="mV")
         fig = plot_lead(lead)
         assert fig is not None
 
     def test_fs_ignored_for_lead(self):
         """When a Lead is passed, fs is silently ignored."""
         from ecgdatakit.processing.filters import lowpass
-        lead = Lead(label="II", samples=_sine_signal(), sample_rate=500)
+        lead = Lead(label="II", samples=_sine_signal(), sampling_rate=500)
         result = lowpass(lead, cutoff=50, fs=9999)  # fs should be ignored
-        assert result.sample_rate == 500  # original sample_rate preserved
+        assert result.sampling_rate == 500  # original sampling_rate preserved

@@ -10,13 +10,13 @@ def make_lead(freqs, fs=500, duration=2.0, label="II"):
     """Create a Lead with a sum of sine waves at given frequencies."""
     t = np.arange(0, duration, 1.0/fs)
     signal = sum(np.sin(2 * np.pi * f * t) for f in freqs)
-    return Lead(label=label, samples=signal.astype(np.float64), sample_rate=fs)
+    return Lead(label=label, samples=signal.astype(np.float64), sampling_rate=fs)
 
 def dominant_freq(lead):
     """Find the dominant frequency in a lead's signal."""
     n = len(lead.samples)
     yf = np.abs(np.fft.rfft(lead.samples))
-    xf = np.fft.rfftfreq(n, d=1.0/lead.sample_rate)
+    xf = np.fft.rfftfreq(n, d=1.0/lead.sampling_rate)
     return xf[np.argmax(yf[1:]) + 1]  # skip DC
 
 class TestLowpass:
@@ -26,7 +26,7 @@ class TestLowpass:
         # After lowpass at 50 Hz, 200 Hz should be gone
         n = len(result.samples)
         yf = np.abs(np.fft.rfft(result.samples))
-        xf = np.fft.rfftfreq(n, d=1.0/result.sample_rate)
+        xf = np.fft.rfftfreq(n, d=1.0/result.sampling_rate)
         # Power at 200 Hz should be < 1% of power at 10 Hz
         idx_10 = np.argmin(np.abs(xf - 10))
         idx_200 = np.argmin(np.abs(xf - 200))
@@ -36,7 +36,7 @@ class TestLowpass:
         lead = make_lead([10], fs=500, label="V1")
         result = lowpass(lead, cutoff=100)
         assert result.label == "V1"
-        assert result.sample_rate == 500
+        assert result.sampling_rate == 500
         assert len(result.samples) == len(lead.samples)
 
     def test_returns_new_lead(self):
@@ -68,7 +68,7 @@ class TestNotch:
         result = notch(lead, freq=50.0)
         n = len(result.samples)
         yf = np.abs(np.fft.rfft(result.samples))
-        xf = np.fft.rfftfreq(n, d=1.0/result.sample_rate)
+        xf = np.fft.rfftfreq(n, d=1.0/result.sampling_rate)
         idx_10 = np.argmin(np.abs(xf - 10))
         idx_50 = np.argmin(np.abs(xf - 50))
         assert yf[idx_50] < yf[idx_10] * 0.1
@@ -77,7 +77,7 @@ class TestRemoveBaseline:
     def test_removes_drift(self):
         t = np.arange(0, 5.0, 1.0/500)
         signal = np.sin(2 * np.pi * 10 * t) + 2.0 * np.sin(2 * np.pi * 0.1 * t)
-        lead = Lead(label="II", samples=signal, sample_rate=500)
+        lead = Lead(label="II", samples=signal, sampling_rate=500)
         result = remove_baseline(lead)
         assert abs(dominant_freq(result) - 10.0) < 1.0
 

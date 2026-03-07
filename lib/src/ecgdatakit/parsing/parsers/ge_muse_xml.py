@@ -80,8 +80,8 @@ class GEMuseXMLParser(Parser):
         record.leads = rhythm_leads
         record.median_beats = median_leads
 
-        if record.leads and record.recording.acquisition.signal.sample_rate == 0:
-            record.recording.acquisition.signal.sample_rate = record.leads[0].sample_rate
+        if record.leads and record.recording.acquisition.signal.sampling_rate == 0:
+            record.recording.acquisition.signal.sampling_rate = record.leads[0].sampling_rate
 
         annotations, measurements, interpretation = self._read_annotations(root)
         record.annotations = annotations
@@ -121,7 +121,7 @@ class GEMuseXMLParser(Parser):
                         all_lead_count += len(ld_nodes)
 
         record.recording.acquisition.signal = SignalCharacteristics(
-            sample_rate=record.recording.acquisition.signal.sample_rate,
+            sampling_rate=record.recording.acquisition.signal.sampling_rate,
             bits_per_sample=16,
             signal_signed=True,
             number_channels_valid=len(record.leads),
@@ -241,10 +241,10 @@ class GEMuseXMLParser(Parser):
         for wf_node in waveform_nodes:
             wf_type = self._get_text(wf_node, "WaveformType")
 
-            sample_rate_str = self._get_text(wf_node, "SampleBase")
-            sample_rate = (
-                int(sample_rate_str)
-                if sample_rate_str and sample_rate_str.isdigit()
+            sampling_rate_str = self._get_text(wf_node, "SampleBase")
+            sampling_rate = (
+                int(sampling_rate_str)
+                if sampling_rate_str and sampling_rate_str.isdigit()
                 else 500
             )
 
@@ -283,7 +283,7 @@ class GEMuseXMLParser(Parser):
                 wf_leads.append(Lead(
                     label=label,
                     samples=samples,
-                    sample_rate=sample_rate,
+                    sampling_rate=sampling_rate,
                     resolution=scale,
                     resolution_unit=res_unit,
                     units="" if raw else res_unit,

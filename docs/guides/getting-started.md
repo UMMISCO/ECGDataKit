@@ -76,7 +76,7 @@ print(patient.sex)          # Sex ("M", "F", or "U")
 ```python
 recording = record.recording
 print(recording.date)         # Acquisition date
-print(recording.sample_rate)  # Sampling frequency in Hz
+print(recording.acquisition.signal.sampling_rate)  # Sampling frequency in Hz
 print(recording.duration)     # Duration as timedelta
 ```
 

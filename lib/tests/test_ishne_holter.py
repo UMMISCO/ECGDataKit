@@ -37,9 +37,9 @@ class TestISHNEHolterParser:
         assert record.patient.birth_date is not None
         assert record.patient.birth_date.year == 1980
 
-    def test_recording_sample_rate(self, ishne_file: Path):
+    def test_recording_sampling_rate(self, ishne_file: Path):
         record = ISHNEHolterParser().parse(ishne_file)
-        assert record.recording.acquisition.signal.sample_rate == 200
+        assert record.recording.acquisition.signal.sampling_rate == 200
 
     def test_recording_date(self, ishne_file: Path):
         record = ISHNEHolterParser().parse(ishne_file)
@@ -56,10 +56,10 @@ class TestISHNEHolterParser:
         assert "I" in labels
         assert "II" in labels
 
-    def test_lead_sample_rate(self, ishne_file: Path):
+    def test_lead_sampling_rate(self, ishne_file: Path):
         record = ISHNEHolterParser().parse(ishne_file)
         for lead in record.leads:
-            assert lead.sample_rate == 200
+            assert lead.sampling_rate == 200
 
     def test_lead_samples_are_float(self, ishne_file: Path):
         record = ISHNEHolterParser().parse(ishne_file)

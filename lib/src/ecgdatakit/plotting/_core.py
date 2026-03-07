@@ -61,20 +61,20 @@ def ensure_lead(
         return lead_like
     if fs is None:
         raise TypeError(
-            "sample_rate (fs) is required when passing a numpy array "
+            "sampling_rate (fs) is required when passing a numpy array "
             "instead of a Lead object"
         )
     return Lead(
         label=label,
         samples=np.asarray(lead_like, dtype=np.float64),
-        sample_rate=fs,
+        sampling_rate=fs,
     )
 
 
 def time_axis(lead: LeadLike, *, fs: int | None = None) -> NDArray[np.float64]:
     """Build a time array in seconds for a lead's samples."""
     lead = ensure_lead(lead, fs=fs)
-    return np.arange(len(lead.samples), dtype=np.float64) / lead.sample_rate
+    return np.arange(len(lead.samples), dtype=np.float64) / lead.sampling_rate
 
 
 GRID_12LEAD: list[list[str]] = [
@@ -136,7 +136,7 @@ def _resolve_leads(leads_or_record, *, fs: int | None = None):
             Lead(
                 label=f"Lead {i}",
                 samples=np.asarray(row, dtype=np.float64),
-                sample_rate=fs,
+                sampling_rate=fs,
             )
             for i, row in enumerate(leads_or_record)
         ]
@@ -157,7 +157,7 @@ def _resolve_leads(leads_or_record, *, fs: int | None = None):
             Lead(
                 label=f"Lead {i}",
                 samples=np.asarray(arr, dtype=np.float64),
-                sample_rate=fs,
+                sampling_rate=fs,
             )
             for i, arr in enumerate(leads_or_record)
         ]
