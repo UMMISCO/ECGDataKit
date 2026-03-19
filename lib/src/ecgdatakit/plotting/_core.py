@@ -15,7 +15,9 @@ def require_matplotlib() -> ModuleType:
     """Lazily import matplotlib, raising a helpful error if missing."""
     try:
         import matplotlib
+        import matplotlib.pyplot as plt
 
+        plt.style.use("bmh")
         return matplotlib
     except ImportError as exc:
         raise ImportError(
