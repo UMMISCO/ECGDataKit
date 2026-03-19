@@ -98,3 +98,49 @@ class TestNormalizeMultipleLeads:
         assert normalize_minmax([]) == []
         assert normalize_zscore([]) == []
         assert normalize_amplitude([]) == []
+
+
+class TestNormalize2DArray:
+    """Test 2-D numpy array (n_leads x n_samples) — per-row normalization."""
+
+    def _make_2d(self):
+        return np.array([
+            [1.0, 2.0, 3.0, 4.0, 5.0],
+            [10.0, 20.0, 30.0, 40.0, 50.0],
+        ])
+
+    def test_minmax_2d(self):
+        data = self._make_2d()
+        result = normalize_minmax(data)
+        assert isinstance(result, np.ndarray)
+        assert result.shape == (2, 5)
+        for row in result:
+            assert row.min() == pytest.approx(-1.0)
+            assert row.max() == pytest.approx(1.0)
+
+    def test_zscore_2d(self):
+        data = self._make_2d()
+        result = normalize_zscore(data)
+        assert isinstance(result, np.ndarray)
+        assert result.shape == (2, 5)
+        for row in result:
+            assert abs(row.mean()) < 1e-10
+            assert abs(row.std() - 1.0) < 0.01
+
+    def test_amplitude_2d(self):
+        data = self._make_2d()
+        result = normalize_amplitude(data, target_mv=3.0)
+        assert isinstance(result, np.ndarray)
+        assert result.shape == (2, 5)
+        for row in result:
+            assert np.abs(row).max() == pytest.approx(3.0)
+
+    def test_per_row_independence(self):
+        """Ensure each row is normalized independently, not across all rows."""
+        data = np.array([
+            [0.0, 10.0],
+            [0.0, 100.0],
+        ])
+        result = normalize_minmax(data)
+        # Both rows should have identical normalized values despite different scales
+        np.testing.assert_array_almost_equal(result[0], result[1])
