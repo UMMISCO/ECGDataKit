@@ -10,7 +10,7 @@ from typing import overload
 import numpy as np
 from numpy.typing import NDArray
 
-from ecgdatakit.models import Lead, LeadLike
+from ecgdatakit.models import Lead
 from ecgdatakit.processing._core import ensure_lead, new_lead
 
 
@@ -19,27 +19,25 @@ def _is_lead_list(obj: object) -> bool:
     return isinstance(obj, list) and (not obj or isinstance(obj[0], Lead))
 
 
-def _is_2d_array(obj: object) -> bool:
-    """Return True if *obj* is a numpy array with ndim == 2."""
-    return isinstance(obj, np.ndarray) and obj.ndim == 2
-
-
 # ---------------------------------------------------------------------------
 # normalize_minmax
 # ---------------------------------------------------------------------------
 
 @overload
-def normalize_minmax(lead: LeadLike, *, fs: int | None = None) -> Lead: ...
-@overload
-def normalize_minmax(lead: list[Lead], *, fs: int | None = None) -> list[Lead]: ...
+def normalize_minmax(lead: Lead, *, fs: int | None = None) -> Lead: ...
 @overload
 def normalize_minmax(lead: NDArray[np.float64], *, fs: int | None = None) -> NDArray[np.float64]: ...
+@overload
+def normalize_minmax(lead: list[Lead], *, fs: int | None = None) -> list[Lead]: ...
 
-def normalize_minmax(lead: LeadLike | list[Lead] | NDArray[np.float64], *, fs: int | None = None) -> Lead | list[Lead] | NDArray[np.float64]:
+def normalize_minmax(lead: Lead | NDArray[np.float64] | list[Lead], *, fs: int | None = None) -> Lead | NDArray[np.float64] | list[Lead]:
     """Scale signal to the [-1, 1] range.
 
     When *lead* is a list of :class:`Lead` or a 2-D numpy array
     (n_leads x n_samples), each lead is normalized independently.
+
+    Returns the same type as the input: :class:`Lead` in → :class:`Lead`
+    out, numpy array in → numpy array out.
 
     Parameters
     ----------
@@ -50,16 +48,20 @@ def normalize_minmax(lead: LeadLike | list[Lead] | NDArray[np.float64], *, fs: i
     """
     if _is_lead_list(lead):
         return [normalize_minmax(ld) for ld in lead]
-    if _is_2d_array(lead):
-        return np.array([normalize_minmax(row, fs=fs or 1).samples for row in lead])
+    if isinstance(lead, np.ndarray):
+        if lead.ndim == 2:
+            return np.array([_minmax_samples(row) for row in lead])
+        return _minmax_samples(lead)
     lead = ensure_lead(lead, fs=fs)
-    samples = lead.samples
+    return new_lead(lead, samples=_minmax_samples(lead.samples))
+
+
+def _minmax_samples(samples: NDArray[np.float64]) -> NDArray[np.float64]:
     vmin, vmax = samples.min(), samples.max()
     span = vmax - vmin
     if span == 0:
-        return new_lead(lead, samples=np.zeros_like(samples))
-    normalized = 2.0 * (samples - vmin) / span - 1.0
-    return new_lead(lead, samples=normalized.astype(np.float64))
+        return np.zeros_like(samples)
+    return (2.0 * (samples - vmin) / span - 1.0).astype(np.float64)
 
 
 # ---------------------------------------------------------------------------
@@ -67,17 +69,20 @@ def normalize_minmax(lead: LeadLike | list[Lead] | NDArray[np.float64], *, fs: i
 # ---------------------------------------------------------------------------
 
 @overload
-def normalize_zscore(lead: LeadLike, *, fs: int | None = None) -> Lead: ...
-@overload
-def normalize_zscore(lead: list[Lead], *, fs: int | None = None) -> list[Lead]: ...
+def normalize_zscore(lead: Lead, *, fs: int | None = None) -> Lead: ...
 @overload
 def normalize_zscore(lead: NDArray[np.float64], *, fs: int | None = None) -> NDArray[np.float64]: ...
+@overload
+def normalize_zscore(lead: list[Lead], *, fs: int | None = None) -> list[Lead]: ...
 
-def normalize_zscore(lead: LeadLike | list[Lead] | NDArray[np.float64], *, fs: int | None = None) -> Lead | list[Lead] | NDArray[np.float64]:
+def normalize_zscore(lead: Lead | NDArray[np.float64] | list[Lead], *, fs: int | None = None) -> Lead | NDArray[np.float64] | list[Lead]:
     """Normalize signal to zero mean and unit variance (z-score).
 
     When *lead* is a list of :class:`Lead` or a 2-D numpy array
     (n_leads x n_samples), each lead is normalized independently.
+
+    Returns the same type as the input: :class:`Lead` in → :class:`Lead`
+    out, numpy array in → numpy array out.
 
     Parameters
     ----------
@@ -88,15 +93,19 @@ def normalize_zscore(lead: LeadLike | list[Lead] | NDArray[np.float64], *, fs: i
     """
     if _is_lead_list(lead):
         return [normalize_zscore(ld) for ld in lead]
-    if _is_2d_array(lead):
-        return np.array([normalize_zscore(row, fs=fs or 1).samples for row in lead])
+    if isinstance(lead, np.ndarray):
+        if lead.ndim == 2:
+            return np.array([_zscore_samples(row) for row in lead])
+        return _zscore_samples(lead)
     lead = ensure_lead(lead, fs=fs)
-    samples = lead.samples
+    return new_lead(lead, samples=_zscore_samples(lead.samples))
+
+
+def _zscore_samples(samples: NDArray[np.float64]) -> NDArray[np.float64]:
     std = samples.std()
     if std == 0:
-        return new_lead(lead, samples=np.zeros_like(samples))
-    normalized = (samples - samples.mean()) / std
-    return new_lead(lead, samples=normalized.astype(np.float64))
+        return np.zeros_like(samples)
+    return ((samples - samples.mean()) / std).astype(np.float64)
 
 
 # ---------------------------------------------------------------------------
@@ -104,17 +113,20 @@ def normalize_zscore(lead: LeadLike | list[Lead] | NDArray[np.float64], *, fs: i
 # ---------------------------------------------------------------------------
 
 @overload
-def normalize_amplitude(lead: LeadLike, target_mv: float = 1.0, *, fs: int | None = None) -> Lead: ...
-@overload
-def normalize_amplitude(lead: list[Lead], target_mv: float = 1.0, *, fs: int | None = None) -> list[Lead]: ...
+def normalize_amplitude(lead: Lead, target_mv: float = 1.0, *, fs: int | None = None) -> Lead: ...
 @overload
 def normalize_amplitude(lead: NDArray[np.float64], target_mv: float = 1.0, *, fs: int | None = None) -> NDArray[np.float64]: ...
+@overload
+def normalize_amplitude(lead: list[Lead], target_mv: float = 1.0, *, fs: int | None = None) -> list[Lead]: ...
 
-def normalize_amplitude(lead: LeadLike | list[Lead] | NDArray[np.float64], target_mv: float = 1.0, *, fs: int | None = None) -> Lead | list[Lead] | NDArray[np.float64]:
+def normalize_amplitude(lead: Lead | NDArray[np.float64] | list[Lead], target_mv: float = 1.0, *, fs: int | None = None) -> Lead | NDArray[np.float64] | list[Lead]:
     """Scale signal so that its maximum absolute amplitude equals *target_mv*.
 
     When *lead* is a list of :class:`Lead` or a 2-D numpy array
     (n_leads x n_samples), each lead is normalized independently.
+
+    Returns the same type as the input: :class:`Lead` in → :class:`Lead`
+    out, numpy array in → numpy array out.
 
     Parameters
     ----------
@@ -127,12 +139,16 @@ def normalize_amplitude(lead: LeadLike | list[Lead] | NDArray[np.float64], targe
     """
     if _is_lead_list(lead):
         return [normalize_amplitude(ld, target_mv=target_mv) for ld in lead]
-    if _is_2d_array(lead):
-        return np.array([normalize_amplitude(row, target_mv=target_mv, fs=fs or 1).samples for row in lead])
+    if isinstance(lead, np.ndarray):
+        if lead.ndim == 2:
+            return np.array([_amplitude_samples(row, target_mv) for row in lead])
+        return _amplitude_samples(lead, target_mv)
     lead = ensure_lead(lead, fs=fs)
-    samples = lead.samples
+    return new_lead(lead, samples=_amplitude_samples(lead.samples, target_mv))
+
+
+def _amplitude_samples(samples: NDArray[np.float64], target_mv: float) -> NDArray[np.float64]:
     peak = np.abs(samples).max()
     if peak == 0:
-        return new_lead(lead, samples=np.zeros_like(samples))
-    normalized = samples * (target_mv / peak)
-    return new_lead(lead, samples=normalized.astype(np.float64))
+        return np.zeros_like(samples)
+    return (samples * (target_mv / peak)).astype(np.float64)

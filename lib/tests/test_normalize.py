@@ -135,6 +135,17 @@ class TestNormalize2DArray:
         for row in result:
             assert np.abs(row).max() == pytest.approx(3.0)
 
+    def test_1d_array_returns_array(self):
+        """1-D numpy in → 1-D numpy out, not a Lead."""
+        data = np.array([1.0, 2.0, 3.0, 4.0, 5.0])
+        result_mm = normalize_minmax(data, fs=500)
+        result_zs = normalize_zscore(data, fs=500)
+        result_amp = normalize_amplitude(data, fs=500)
+        assert isinstance(result_mm, np.ndarray)
+        assert isinstance(result_zs, np.ndarray)
+        assert isinstance(result_amp, np.ndarray)
+        assert result_mm.ndim == 1
+
     def test_per_row_independence(self):
         """Ensure each row is normalized independently, not across all rows."""
         data = np.array([
