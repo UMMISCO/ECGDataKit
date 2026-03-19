@@ -52,3 +52,49 @@ class TestNormalizeAmplitude:
         lead = make_lead([0, 0, 0])
         result = normalize_amplitude(lead)
         np.testing.assert_array_equal(result.samples, np.zeros(3))
+
+
+class TestNormalizeMultipleLeads:
+    """Test list[Lead] overloads — per-lead normalization."""
+
+    def _make_leads(self):
+        return [
+            make_lead([1, 2, 3, 4, 5], label="I"),
+            make_lead([10, 20, 30], label="II"),
+        ]
+
+    def test_minmax_list(self):
+        leads = self._make_leads()
+        result = normalize_minmax(leads)
+        assert isinstance(result, list)
+        assert len(result) == 2
+        for r in result:
+            assert isinstance(r, Lead)
+            assert r.samples.min() == pytest.approx(-1.0)
+            assert r.samples.max() == pytest.approx(1.0)
+        assert result[0].label == "I"
+        assert result[1].label == "II"
+
+    def test_zscore_list(self):
+        leads = self._make_leads()
+        result = normalize_zscore(leads)
+        assert isinstance(result, list)
+        assert len(result) == 2
+        for r in result:
+            assert isinstance(r, Lead)
+            assert abs(r.samples.mean()) < 1e-10
+            assert abs(r.samples.std() - 1.0) < 0.01
+
+    def test_amplitude_list(self):
+        leads = self._make_leads()
+        result = normalize_amplitude(leads, target_mv=2.0)
+        assert isinstance(result, list)
+        assert len(result) == 2
+        for r in result:
+            assert isinstance(r, Lead)
+            assert np.abs(r.samples).max() == pytest.approx(2.0)
+
+    def test_empty_list(self):
+        assert normalize_minmax([]) == []
+        assert normalize_zscore([]) == []
+        assert normalize_amplitude([]) == []

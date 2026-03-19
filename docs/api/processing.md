@@ -34,6 +34,8 @@ See {doc}`models` for details.
 
 ## {doc}`Normalization <processing/normalization>`
 
+All normalization functions accept a single lead **or** a `list[Lead]` for per-lead normalization.
+
 | | |
 |---|---|
 | {func}`~ecgdatakit.processing.normalize_minmax` | Scale signal to the [−1, 1] range |

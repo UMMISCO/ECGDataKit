@@ -2,6 +2,8 @@
 
 Pure numpy — no scipy required.
 
+All functions accept a single lead (`Lead` or numpy array) **or** a `list[Lead]` for per-lead normalization across multiple leads.
+
 | | |
 |---|---|
 | {func}`~ecgdatakit.processing.normalize_minmax` | Scale signal to the [−1, 1] range |

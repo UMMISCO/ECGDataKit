@@ -4,6 +4,23 @@ All notable changes to ECGDataKit are documented here.
 
 ---
 
+## v1.0.0 — Stable Release
+
+### New features
+
+- **Per-lead normalization** — `normalize_minmax`, `normalize_zscore`, and `normalize_amplitude` now accept a `list[Lead]` and return a `list[Lead]`, normalizing each lead independently. Pass `record.leads` directly instead of looping manually
+- **Type-safe overloads** — all three normalization functions use `@overload` so type checkers correctly narrow the return type (`Lead` for single-lead input, `list[Lead]` for multi-lead input)
+
+### Improvements
+
+- Normalization functions guard against `list[float]` input being mistakenly interpreted as multiple single-sample leads — only `list[Lead]` triggers the multi-lead path; plain lists fall through to numpy conversion as before
+
+### Signal Processing
+
+- Resampling and normalization (min-max, z-score, amplitude) now support batch processing across all leads of an ECG record
+
+---
+
 ## v0.0.9 - ADC resolution pipeline
 
 ### Breaking changes
