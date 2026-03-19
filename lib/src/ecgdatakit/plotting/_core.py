@@ -17,7 +17,7 @@ def require_matplotlib() -> ModuleType:
         import matplotlib
         import matplotlib.pyplot as plt
 
-        plt.style.use("bmh")
+        plt.style.use("seaborn-v0_8-whitegrid")
         return matplotlib
     except ImportError as exc:
         raise ImportError(
