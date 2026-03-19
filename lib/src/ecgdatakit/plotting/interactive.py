@@ -101,6 +101,7 @@ def iplot_lead(
         xaxis_title=xlabel,
         yaxis_title=f"Amplitude ({lead.units})" if lead.units else "Amplitude",
         height=height,
+        template="plotly_white",
         xaxis=dict(
             rangeslider=dict(visible=True),
             showspikes=True, spikemode="across", spikethickness=1,
@@ -203,6 +204,7 @@ def iplot_leads(
     fig.update_layout(
         title=title or "ECG Leads",
         height=h,
+        template="plotly_white",
         hovermode="x unified",
         showlegend=True,
     )
@@ -219,6 +221,7 @@ def iplot_leads(
 def iplot_12lead(
     leads: list[Lead] | ECGRecord | NDArray[np.float64] | list[NDArray[np.float64]],
     record: ECGRecord | None = None,
+    title: str | None = None,
     height: int | None = None,
     *,
     fs: int | None = None,
@@ -240,6 +243,8 @@ def iplot_12lead(
         (n_leads × n_samples) or a list of 1-D numpy arrays.
     record : ECGRecord | None
         Optional record for header annotations.
+    title : str | None
+        Overall figure title.
     height : int | None
         Figure height in pixels (auto-calculated if ``None``).
     fs : int | None
@@ -309,11 +314,15 @@ def iplot_12lead(
         )
 
     xlabel = "Sample" if x_axis == "samples" else "Time (s)"
-    fig.update_layout(
+    layout_opts: dict = dict(
         height=h,
         hovermode="closest",
-        margin=dict(t=80 if rec else 40),
+        margin=dict(t=80 if rec or title else 40),
+        template="plotly_white",
     )
+    if title:
+        layout_opts["title_text"] = title
+    fig.update_layout(**layout_opts)
     for ci in range(1, c + 1):
         fig.update_xaxes(title_text=xlabel, row=r, col=ci)
 
@@ -426,6 +435,7 @@ def iplot_peaks(
         xaxis_title=xlabel,
         yaxis_title=f"Amplitude ({lead.units})" if lead.units else "Amplitude",
         height=height,
+        template="plotly_white",
         xaxis=dict(rangeslider=dict(visible=True)),
         hovermode="closest",
     )
@@ -499,6 +509,7 @@ def iplot_spectrum(
         xaxis_title="Frequency (Hz)",
         yaxis_title=y_label,
         height=height,
+        template="plotly_white",
         xaxis=dict(range=[0, min(nyquist, 250)]),
         hovermode="x unified",
     )
@@ -553,6 +564,7 @@ def iplot_rr_tachogram(
         xaxis_title="Beat number",
         yaxis_title="RR interval (ms)",
         height=height,
+        template="plotly_white",
         hovermode="x unified",
     )
 
@@ -636,6 +648,7 @@ def iplot_poincare(
         xaxis_title="RR(n) (ms)",
         yaxis_title="RR(n+1) (ms)",
         height=height,
+        template="plotly_white",
         yaxis=dict(scaleanchor="x", scaleratio=1),
         hovermode="closest",
     )
@@ -727,6 +740,7 @@ def iplot_report(
     xlabel = "Sample" if x_axis == "samples" else "Time (s)"
     fig.update_layout(
         height=height,
+        template="plotly_white",
         hovermode="closest",
         margin=dict(t=60),
     )

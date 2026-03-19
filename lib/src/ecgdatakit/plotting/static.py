@@ -263,6 +263,7 @@ def plot_leads(
 def plot_12lead(
     leads: list[Lead] | ECGRecord | NDArray[np.float64] | list[NDArray[np.float64]],
     record: ECGRecord | None = None,
+    title: str | None = None,
     show_grid: bool = True,
     figsize: tuple[float, float | None] = (12, None),
     share_x: bool = True,
@@ -286,6 +287,8 @@ def plot_12lead(
         (n_leads × n_samples) or a list of 1-D numpy arrays.
     record : ECGRecord | None
         If provided, a header with patient/device/measurement info is shown.
+    title : str | None
+        Overall figure title.
     show_grid : bool
         Draw ECG paper-style grid (default ``True``).
     figsize : tuple
@@ -361,6 +364,8 @@ def plot_12lead(
     for ci in range(c):
         axes[-1][ci].set_xlabel("Sample" if x_axis == "samples" else "Time (s)")
 
+    if title:
+        fig.suptitle(title, fontsize=13)
     fig.tight_layout()
 
     if show:
