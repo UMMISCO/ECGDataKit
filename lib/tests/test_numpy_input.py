@@ -148,28 +148,47 @@ class TestResampleNumpyInput:
 # ---------------------------------------------------------------------------
 
 class TestNormalizeNumpyInput:
+    def _make_3d(self, fs=500):
+        """Return a 3-D array (n_ecgs, n_leads, n_samples)."""
+        signal = _sine_signal(fs=fs)
+        # 2 ECGs, 3 leads each
+        return np.stack([
+            np.stack([signal, signal * 2, signal * 0.5]),
+            np.stack([signal * 3, signal * 0.1, signal * 10]),
+        ])
+
     def test_minmax(self):
         from ecgdatakit.processing.normalize import normalize_minmax
-        result = normalize_minmax(_sine_signal(), fs=500)
-        assert isinstance(result, Lead)
-        assert result.samples.max() <= 1.0
-        assert result.samples.min() >= -1.0
+        data = self._make_3d()
+        result = normalize_minmax(data)
+        assert isinstance(result, np.ndarray)
+        assert result.shape == data.shape
+        for ecg_idx in range(result.shape[0]):
+            for lead_idx in range(result.shape[1]):
+                assert result[ecg_idx, lead_idx].max() <= 1.0
+                assert result[ecg_idx, lead_idx].min() >= -1.0
 
     def test_zscore(self):
         from ecgdatakit.processing.normalize import normalize_zscore
-        result = normalize_zscore(_sine_signal(), fs=500)
-        assert isinstance(result, Lead)
-        assert abs(result.samples.mean()) < 1e-10
+        data = self._make_3d()
+        result = normalize_zscore(data)
+        assert isinstance(result, np.ndarray)
+        for ecg_idx in range(result.shape[0]):
+            for lead_idx in range(result.shape[1]):
+                assert abs(result[ecg_idx, lead_idx].mean()) < 1e-10
 
     def test_amplitude(self):
         from ecgdatakit.processing.normalize import normalize_amplitude
-        result = normalize_amplitude(_sine_signal(), target_mv=2.0, fs=500)
-        assert isinstance(result, Lead)
-        assert abs(np.abs(result.samples).max() - 2.0) < 1e-10
+        data = self._make_3d()
+        result = normalize_amplitude(data, target_mv=2.0)
+        assert isinstance(result, np.ndarray)
+        for ecg_idx in range(result.shape[0]):
+            for lead_idx in range(result.shape[1]):
+                assert abs(np.abs(result[ecg_idx, lead_idx]).max() - 2.0) < 1e-10
 
-    def test_minmax_no_fs_raises(self):
+    def test_rejects_1d_numpy(self):
         from ecgdatakit.processing.normalize import normalize_minmax
-        with pytest.raises(TypeError, match="fs"):
+        with pytest.raises(ValueError, match="must be 3-D"):
             normalize_minmax(_sine_signal())
 
 
