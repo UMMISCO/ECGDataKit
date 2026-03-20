@@ -33,8 +33,9 @@ def normalize_minmax(lead: list[Lead], *, fs: int | None = None) -> list[Lead]: 
 def normalize_minmax(lead: Lead | NDArray[np.float64] | list[Lead], *, fs: int | None = None) -> Lead | NDArray[np.float64] | list[Lead]:
     """Scale signal to the [-1, 1] range.
 
-    When *lead* is a list of :class:`Lead` or a 2-D numpy array
-    (n_leads x n_samples), each lead is normalized independently.
+    When *lead* is a list of :class:`Lead`, a 2-D numpy array
+    (n_leads x n_samples), or a 3-D array (n_ecgs x n_leads x n_samples),
+    each lead is normalized independently.
 
     Returns the same type as the input: :class:`Lead` in → :class:`Lead`
     out, numpy array in → numpy array out.
@@ -42,16 +43,18 @@ def normalize_minmax(lead: Lead | NDArray[np.float64] | list[Lead], *, fs: int |
     Parameters
     ----------
     lead : Lead | NDArray[np.float64] | list[Lead]
-        Input ECG lead, raw signal array (1-D or 2-D), or list of leads.
+        Input ECG lead, raw signal array (1-D, 2-D, or 3-D), or list of leads.
     fs : int | None
         Sample rate in Hz.  Required when *lead* is a 1-D numpy array.
     """
     if _is_lead_list(lead):
         return [normalize_minmax(ld) for ld in lead]
     if isinstance(lead, np.ndarray):
-        if lead.ndim == 2:
-            return np.array([_minmax_samples(row) for row in lead])
-        return _minmax_samples(lead)
+        if lead.ndim == 1:
+            return _minmax_samples(lead)
+        shape = lead.shape
+        flat = lead.reshape(-1, shape[-1])
+        return np.array([_minmax_samples(row) for row in flat]).reshape(shape)
     lead = ensure_lead(lead, fs=fs)
     return new_lead(lead, samples=_minmax_samples(lead.samples))
 
@@ -78,8 +81,9 @@ def normalize_zscore(lead: list[Lead], *, fs: int | None = None) -> list[Lead]: 
 def normalize_zscore(lead: Lead | NDArray[np.float64] | list[Lead], *, fs: int | None = None) -> Lead | NDArray[np.float64] | list[Lead]:
     """Normalize signal to zero mean and unit variance (z-score).
 
-    When *lead* is a list of :class:`Lead` or a 2-D numpy array
-    (n_leads x n_samples), each lead is normalized independently.
+    When *lead* is a list of :class:`Lead`, a 2-D numpy array
+    (n_leads x n_samples), or a 3-D array (n_ecgs x n_leads x n_samples),
+    each lead is normalized independently.
 
     Returns the same type as the input: :class:`Lead` in → :class:`Lead`
     out, numpy array in → numpy array out.
@@ -87,16 +91,18 @@ def normalize_zscore(lead: Lead | NDArray[np.float64] | list[Lead], *, fs: int |
     Parameters
     ----------
     lead : Lead | NDArray[np.float64] | list[Lead]
-        Input ECG lead, raw signal array (1-D or 2-D), or list of leads.
+        Input ECG lead, raw signal array (1-D, 2-D, or 3-D), or list of leads.
     fs : int | None
         Sample rate in Hz.  Required when *lead* is a 1-D numpy array.
     """
     if _is_lead_list(lead):
         return [normalize_zscore(ld) for ld in lead]
     if isinstance(lead, np.ndarray):
-        if lead.ndim == 2:
-            return np.array([_zscore_samples(row) for row in lead])
-        return _zscore_samples(lead)
+        if lead.ndim == 1:
+            return _zscore_samples(lead)
+        shape = lead.shape
+        flat = lead.reshape(-1, shape[-1])
+        return np.array([_zscore_samples(row) for row in flat]).reshape(shape)
     lead = ensure_lead(lead, fs=fs)
     return new_lead(lead, samples=_zscore_samples(lead.samples))
 
@@ -122,8 +128,9 @@ def normalize_amplitude(lead: list[Lead], target_mv: float = 1.0, *, fs: int | N
 def normalize_amplitude(lead: Lead | NDArray[np.float64] | list[Lead], target_mv: float = 1.0, *, fs: int | None = None) -> Lead | NDArray[np.float64] | list[Lead]:
     """Scale signal so that its maximum absolute amplitude equals *target_mv*.
 
-    When *lead* is a list of :class:`Lead` or a 2-D numpy array
-    (n_leads x n_samples), each lead is normalized independently.
+    When *lead* is a list of :class:`Lead`, a 2-D numpy array
+    (n_leads x n_samples), or a 3-D array (n_ecgs x n_leads x n_samples),
+    each lead is normalized independently.
 
     Returns the same type as the input: :class:`Lead` in → :class:`Lead`
     out, numpy array in → numpy array out.
@@ -131,7 +138,7 @@ def normalize_amplitude(lead: Lead | NDArray[np.float64] | list[Lead], target_mv
     Parameters
     ----------
     lead : Lead | NDArray[np.float64] | list[Lead]
-        Input ECG lead, raw signal array (1-D or 2-D), or list of leads.
+        Input ECG lead, raw signal array (1-D, 2-D, or 3-D), or list of leads.
     target_mv : float
         Target peak amplitude (default 1.0).
     fs : int | None
@@ -140,9 +147,11 @@ def normalize_amplitude(lead: Lead | NDArray[np.float64] | list[Lead], target_mv
     if _is_lead_list(lead):
         return [normalize_amplitude(ld, target_mv=target_mv) for ld in lead]
     if isinstance(lead, np.ndarray):
-        if lead.ndim == 2:
-            return np.array([_amplitude_samples(row, target_mv) for row in lead])
-        return _amplitude_samples(lead, target_mv)
+        if lead.ndim == 1:
+            return _amplitude_samples(lead, target_mv)
+        shape = lead.shape
+        flat = lead.reshape(-1, shape[-1])
+        return np.array([_amplitude_samples(row, target_mv) for row in flat]).reshape(shape)
     lead = ensure_lead(lead, fs=fs)
     return new_lead(lead, samples=_amplitude_samples(lead.samples, target_mv))
 

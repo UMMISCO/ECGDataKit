@@ -155,3 +155,61 @@ class TestNormalize2DArray:
         result = normalize_minmax(data)
         # Both rows should have identical normalized values despite different scales
         np.testing.assert_array_almost_equal(result[0], result[1])
+
+
+class TestNormalize3DArray:
+    """Test 3-D numpy array (n_ecgs x n_leads x n_samples) — per-lead normalization."""
+
+    def _make_3d(self):
+        # 2 ECGs, 3 leads each, 5 samples per lead
+        return np.array([
+            [[1.0, 2.0, 3.0, 4.0, 5.0],
+             [10.0, 20.0, 30.0, 40.0, 50.0],
+             [0.0, 0.0, 0.0, 0.0, 0.0]],
+            [[5.0, 4.0, 3.0, 2.0, 1.0],
+             [50.0, 40.0, 30.0, 20.0, 10.0],
+             [100.0, 200.0, 300.0, 400.0, 500.0]],
+        ])
+
+    def test_minmax_3d_shape(self):
+        data = self._make_3d()
+        result = normalize_minmax(data)
+        assert isinstance(result, np.ndarray)
+        assert result.shape == (2, 3, 5)
+
+    def test_minmax_3d_per_lead(self):
+        data = self._make_3d()
+        result = normalize_minmax(data)
+        # Each non-constant lead should be in [-1, 1]
+        assert result[0, 0].min() == pytest.approx(-1.0)
+        assert result[0, 0].max() == pytest.approx(1.0)
+        assert result[1, 2].min() == pytest.approx(-1.0)
+        assert result[1, 2].max() == pytest.approx(1.0)
+        # Constant lead → all zeros
+        np.testing.assert_array_equal(result[0, 2], np.zeros(5))
+
+    def test_zscore_3d(self):
+        data = self._make_3d()
+        result = normalize_zscore(data)
+        assert result.shape == (2, 3, 5)
+        assert abs(result[0, 0].mean()) < 1e-10
+        assert abs(result[1, 2].std() - 1.0) < 0.01
+
+    def test_amplitude_3d(self):
+        data = self._make_3d()
+        result = normalize_amplitude(data, target_mv=2.0)
+        assert result.shape == (2, 3, 5)
+        assert np.abs(result[0, 0]).max() == pytest.approx(2.0)
+        assert np.abs(result[1, 1]).max() == pytest.approx(2.0)
+
+    def test_3d_independence(self):
+        """Each lead normalized independently across ECGs."""
+        data = np.array([
+            [[0.0, 10.0], [0.0, 100.0]],
+            [[0.0, 1.0], [0.0, 1000.0]],
+        ])
+        result = normalize_minmax(data)
+        # All leads should produce the same [-1, 1] result
+        np.testing.assert_array_almost_equal(result[0, 0], result[0, 1])
+        np.testing.assert_array_almost_equal(result[0, 0], result[1, 0])
+        np.testing.assert_array_almost_equal(result[0, 0], result[1, 1])
