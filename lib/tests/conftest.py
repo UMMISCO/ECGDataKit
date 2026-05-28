@@ -883,3 +883,53 @@ def edan_arc_archive(tmp_path: Path) -> Path:
     p = tmp_path / "test.arc"
     p.write_bytes(bytes(arc))
     return p
+
+
+def create_neutral_holter_arc(
+    channels: int = 3,
+    sampling_rate: int = 250,
+    duration_s: int = 10,
+    filename_stamp: str = "DT-06_05_2026-11_38_39",
+) -> tuple[str, bytes]:
+    """Build a minimal NEUTRAL HOLTER RECORDING .arc buffer in memory."""
+    HEADER_SIZE = 0x1000
+    header = bytearray(HEADER_SIZE)
+    # Constant record-count u32 at offset 0
+    struct.pack_into("<I", header, 0, 3)
+    # Magic at offset 4
+    sig = b"##NEUTRAL HOLTER RECORDING##"
+    header[4:4 + len(sig)] = sig
+    # UUID-style id at offset 0x36
+    header[0x36:0x36 + 13] = b"6a0c3d93-3b15"
+    # Filename literal at offset 0x5A
+    header[0x5A:0x5A + 15] = b"patientdata.dat"
+    # Index pointer at offset 0x56 — point past the ECG section
+    samples_per_ch = duration_s * sampling_rate
+    payload_bytes = samples_per_ch * channels * 2
+    ann_offset = HEADER_SIZE + payload_bytes + 1024
+    struct.pack_into("<I", header, 0x56, ann_offset)
+
+    # ECG payload — small sinusoid that clearly stays under the std threshold
+    t = np.arange(samples_per_ch) / sampling_rate
+    payload = bytearray()
+    for s in range(samples_per_ch):
+        for ch in range(channels):
+            val = int(20 * np.sin(2 * np.pi * 1.2 * t[s] + ch * np.pi / 4))
+            payload.extend(struct.pack("<h", val))
+
+    # Annotation tail — high-amplitude noise to ensure the std-jump scan
+    # locates the boundary cleanly
+    rng = np.random.default_rng(42)
+    tail = rng.integers(-20000, 20000, size=8192, dtype=np.int16).tobytes()
+
+    arc = bytes(header) + bytes(payload) + b"\x00" * 1024 + tail
+    return f"{filename_stamp}.arc", arc
+
+
+@pytest.fixture
+def neutral_holter_arc_file(tmp_path: Path) -> Path:
+    """Write a minimal NEUTRAL HOLTER .arc to disk."""
+    name, blob = create_neutral_holter_arc()
+    p = tmp_path / name
+    p.write_bytes(blob)
+    return p

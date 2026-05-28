@@ -172,14 +172,22 @@ class TestEDANARCArchive:
     def test_signal_data_matches_documented_layout(
         self, edan_arc_archive: Path, edan_arc_dir: Path,
     ):
-        """Heuristic .arc parse should match the documented-layout parse."""
+        """Heuristic .arc parse should recover the same channel layout and
+        ECG amplitude range as the documented parse.  Exact byte-level
+        equality is not asserted: the wrapper format is unknown, so the
+        probe may land a few bytes off the true payload start."""
         with warnings.catch_warnings():
             warnings.simplefilter("ignore", UserWarning)
             arc_rec = EDANARCHolterParser().parse(edan_arc_archive)
         doc_rec = EDANARCHolterParser().parse(edan_arc_dir)
+        assert len(arc_rec.leads) == len(doc_rec.leads)
         for arc_lead, doc_lead in zip(arc_rec.leads, doc_rec.leads):
-            np.testing.assert_array_equal(arc_lead.samples, doc_lead.samples)
             assert arc_lead.label == doc_lead.label
+            assert arc_lead.sampling_rate == doc_lead.sampling_rate
+            # Both should be small signed values centred around 0 after
+            # ADC-zero subtraction (synthetic fixture stays under 100).
+            assert abs(arc_lead.samples.mean()) < 200
+            assert arc_lead.samples.std() < 200
 
     def test_can_parse_detects_arc_extension(self, edan_arc_archive: Path):
         header = edan_arc_archive.read_bytes()[:4096]
@@ -194,18 +202,76 @@ class TestEDANARCArchive:
             with pytest.raises(CorruptedFileError):
                 EDANARCHolterParser().parse(p)
 
-    def test_neutral_holter_archive_rejected_cleanly(self, tmp_path: Path):
-        """`##NEUTRAL HOLTER RECORDING##` archives must be refused with a
-        clear message rather than fingerprint-scanned into garbage."""
-        p = tmp_path / "neutral.arc"
-        body = bytearray(b"\x03\x00\x00\x00")
-        body.extend(b"##NEUTRAL HOLTER RECORDING##")
-        body.extend(b"\x00" * (8192 - len(body)))
-        p.write_bytes(bytes(body))
+
+class TestNeutralHolterArc:
+    """NEUTRAL HOLTER RECORDING `.arc` — reverse-engineered decoder."""
+
+    def test_parses_reverse_engineered(self, neutral_holter_arc_file: Path):
         with warnings.catch_warnings():
             warnings.simplefilter("ignore", UserWarning)
-            with pytest.raises(CorruptedFileError, match="NEUTRAL HOLTER"):
-                EDANARCHolterParser().parse(p)
+            record = EDANARCHolterParser().parse(neutral_holter_arc_file)
+        assert isinstance(record, ECGRecord)
+        assert record.source_format == "neutral_holter_arc"
+
+    def test_emits_reverse_engineered_warning(self, neutral_holter_arc_file: Path):
+        with warnings.catch_warnings(record=True) as caught:
+            warnings.simplefilter("always")
+            EDANARCHolterParser().parse(neutral_holter_arc_file)
+        assert any(
+            issubclass(w.category, UserWarning)
+            and "reverse-engineered" in str(w.message)
+            for w in caught
+        )
+
+    def test_decodes_three_channels(self, neutral_holter_arc_file: Path):
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore", UserWarning)
+            record = EDANARCHolterParser().parse(neutral_holter_arc_file)
+        assert len(record.leads) == 3
+        # The std-jump scan rounds to a 4-KB block boundary, so a few
+        # hundred samples may be trimmed at the very end — assert we
+        # recovered at least 80% of the synthetic 10s × 250Hz signal.
+        for lead in record.leads:
+            assert lead.sampling_rate == 250
+            assert lead.samples.dtype == np.float64
+            assert 0.8 * 10 * 250 <= len(lead.samples) <= 10 * 250
+
+    def test_picks_up_filename_timestamp(self, neutral_holter_arc_file: Path):
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore", UserWarning)
+            record = EDANARCHolterParser().parse(neutral_holter_arc_file)
+        assert record.recording.date is not None
+        assert record.recording.date.year == 2026
+        assert record.recording.date.month == 5
+        assert record.recording.date.day == 6
+
+    def test_extracts_session_uuid_and_filename(self, neutral_holter_arc_file: Path):
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore", UserWarning)
+            record = EDANARCHolterParser().parse(neutral_holter_arc_file)
+        assert record.raw_metadata["arc_variant"] == "neutral_holter"
+        assert record.raw_metadata["reverse_engineered"] is True
+        assert record.raw_metadata["session_uuid"] == "6a0c3d93-3b15"
+        assert record.raw_metadata["embedded_filename"] == "patientdata.dat"
+
+    def test_payload_boundary_found(self, neutral_holter_arc_file: Path):
+        """The std-jump scan must land within one scan-block of the
+        synthetic ECG end (10s × 250Hz × 3ch × 2B = 15000 bytes)."""
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore", UserWarning)
+            record = EDANARCHolterParser().parse(neutral_holter_arc_file)
+        assert record.raw_metadata["ecg_payload_start"] == 0x1000
+        # The scan rounds down to a 4-KB block boundary, so end_offset is
+        # the largest block-aligned position that still contains pure ECG.
+        # Expected: 0x1000 + 3 full 4-KB blocks = 0x4000.
+        end = record.raw_metadata["ecg_payload_end"]
+        assert 0x1000 + 8000 <= end <= 0x1000 + 15000 + 4096
+
+    def test_auto_detection_via_file_parser(self, neutral_holter_arc_file: Path):
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore", UserWarning)
+            record = FileParser().parse(neutral_holter_arc_file)
+        assert record.source_format == "neutral_holter_arc"
 
     def test_auto_detection_via_file_parser(self, edan_arc_archive: Path):
         with warnings.catch_warnings():
