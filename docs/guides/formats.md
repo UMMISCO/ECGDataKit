@@ -1,6 +1,6 @@
 # Supported Formats
 
-ECGDataKit parses 12 ECG file formats via content-based detection — no file extension guessing.
+ECGDataKit parses 13 ECG file formats via content-based detection — no file extension guessing.
 
 | Format | File Types | Parser Class | Detection |
 |--------|-----------|--------------|-----------|
@@ -16,6 +16,7 @@ ECGDataKit parses 12 ECG file formats via content-based detection — no file ex
 | MFER | `.mwf`, `.mfer` | `MFERParser` | Valid MFER tag (0x01–0x3F) + BER length |
 | Mindray BeneHeart R12 | `.xml` | `BeneHeartR12Parser` | `<BeneHeartR12>` or `<MindrayECG>` |
 | GE MAC 2000 | `.xml` | `GEMAC2000Parser` | `<MAC2000>` or `<GE_MAC>` |
+| EDAN ARC Holter | `patient.hea` + `ecgraw.dat` | `EDANARCHolterParser` | filename `patient.hea` + sibling `ecgraw.dat` |
 
 ## HL7 aECG
 

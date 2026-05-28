@@ -780,3 +780,106 @@ def ge_mac2000_file(tmp_path: Path) -> Path:
     p = tmp_path / "test_mac2000.xml"
     p.write_text(GE_MAC2000_XML, encoding="utf-8")
     return p
+
+
+# ---------------------------------------------------------------------------
+# Minimal EDAN ARC Holter fixture
+# ---------------------------------------------------------------------------
+
+# Header layout follows https://paulbourke.net/dataformats/edan/
+# Patient header file is ~3 kB with fields at fixed offsets.  Build a 4-kB
+# buffer to comfortably cover every documented field.
+_EDAN_HEA_SIZE = 4096
+
+
+def create_edan_arc_hea(
+    channel_count: int = 3,
+    sampling_rate: int = 200,
+    start_epoch: int = 1_701_421_800,   # 2023-12-01 10:30:00 UTC
+    end_epoch: int = 1_701_421_810,     # +10 seconds
+    lead_labels: tuple[str, ...] = ("I", "II", "III"),
+) -> bytes:
+    """Build a minimal EDAN patient.hea buffer in memory."""
+    buf = bytearray(_EDAN_HEA_SIZE)
+    # Timestamps at offsets 4 and 8
+    struct.pack_into("<I", buf, 4, start_epoch)
+    struct.pack_into("<I", buf, 8, end_epoch)
+    # Channel count (byte 12)
+    buf[12] = channel_count
+    # Sampling rate (s16 at 32)
+    struct.pack_into("<h", buf, 32, sampling_rate)
+    # Height & weight (s16 at 60 and 64)
+    struct.pack_into("<h", buf, 60, 175)
+    struct.pack_into("<h", buf, 64, 70)
+    # Telephone at 68
+    buf[68:68 + 11] = b"555-1234567"
+    # Patient ID at 108
+    buf[108:108 + 8] = b"EDAN0001"
+    # Diagnosis at 140
+    buf[140:140 + 16] = b"Sinus rhythm    "
+    # Medication at 242
+    buf[242:242 + 7] = b"Aspirin"
+    # Lead labels (8 bytes each from offset 1796)
+    for i, lbl in enumerate(lead_labels[:channel_count]):
+        encoded = lbl.encode("ascii")[:8]
+        buf[1796 + i * 8:1796 + i * 8 + len(encoded)] = encoded
+    # Department at 1960
+    buf[1960:1960 + 10] = b"Cardiology"
+    # Recorder ID at 2304
+    buf[2304:2304 + 6] = b"SE2012"
+    # Version at 2314
+    buf[2314:2314 + 4] = b"1.0a"
+    # Low-pass filter at 2596
+    struct.pack_into("<h", buf, 2596, 75)
+    # DFT filter at 2628
+    buf[2628:2628 + 4] = b"50Hz"
+    # Patient name at 2637
+    buf[2637:2637 + 13] = b"Edan TestPatient"[:13]
+    # Physician name at 2700
+    buf[2700:2700 + 6] = b"Dr Liu"
+    # Technician at 2764
+    buf[2764:2764 + 5] = b"TechA"
+    return bytes(buf)
+
+
+def create_edan_arc_dat(
+    channel_count: int = 3,
+    samples_per_channel: int = 1000,
+) -> bytes:
+    """Build a minimal EDAN ecgraw.dat buffer (interleaved uint16, ADC zero 16384)."""
+    raw = np.zeros(samples_per_channel * channel_count, dtype="<u2")
+    for s in range(samples_per_channel):
+        for ch in range(channel_count):
+            # Centre on 16384 so the decoded signed value is small.
+            raw[s * channel_count + ch] = np.uint16(
+                16384 + (ch + 1) * 10 + (s % 50)
+            )
+    return raw.tobytes()
+
+
+@pytest.fixture
+def edan_arc_dir(tmp_path: Path) -> Path:
+    """Write minimal EDAN patient.hea + ecgraw.dat into ``tmp_path``."""
+    hea_path = tmp_path / "patient.hea"
+    dat_path = tmp_path / "ecgraw.dat"
+    hea_path.write_bytes(create_edan_arc_hea())
+    dat_path.write_bytes(create_edan_arc_dat())
+    return hea_path
+
+
+@pytest.fixture
+def edan_arc_archive(tmp_path: Path) -> Path:
+    """Write a minimal EDAN .arc bundle (filename markers + payloads) to disk."""
+    hea = create_edan_arc_hea()
+    dat = create_edan_arc_dat()
+    # A plausible (invented) wrapper: filename literal + 8-byte size + payload.
+    arc = bytearray()
+    arc.extend(b"EDANARC\x00")  # fake archive magic
+    for name, payload in [("patient.hea", hea), ("ecgraw.dat", dat)]:
+        arc.extend(name.encode("ascii"))
+        arc.extend(b"\x00")  # NUL terminator
+        arc.extend(struct.pack("<Q", len(payload)))  # 8-byte size
+        arc.extend(payload)
+    p = tmp_path / "test.arc"
+    p.write_bytes(bytes(arc))
+    return p

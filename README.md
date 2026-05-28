@@ -18,7 +18,7 @@ Developed at [UMMISCO](https://www.ummisco.fr) / [IRD](https://www.ird.fr) by Ah
 
 ## Features
 
-### Parsing — 12 ECG formats, one unified data model
+### Parsing — 13 ECG formats, one unified data model
 
 | Format | File Types | Detection |
 |--------|-----------|-----------|
@@ -34,6 +34,7 @@ Developed at [UMMISCO](https://www.ummisco.fr) / [IRD](https://www.ird.fr) by Ah
 | MFER | `.mwf`, `.mfer` | Valid MFER tag + BER length |
 | Mindray BeneHeart R12 | `.xml` | `<BeneHeartR12>` or `<MindrayECG>` |
 | GE MAC 2000 | `.xml` | `<MAC2000>` or `<GE_MAC>` |
+| EDAN ARC Holter | `patient.hea` + `ecgraw.dat` | filename `patient.hea` + sibling `ecgraw.dat` |
 
 ### Signal Processing
 
