@@ -194,6 +194,19 @@ class TestEDANARCArchive:
             with pytest.raises(CorruptedFileError):
                 EDANARCHolterParser().parse(p)
 
+    def test_neutral_holter_archive_rejected_cleanly(self, tmp_path: Path):
+        """`##NEUTRAL HOLTER RECORDING##` archives must be refused with a
+        clear message rather than fingerprint-scanned into garbage."""
+        p = tmp_path / "neutral.arc"
+        body = bytearray(b"\x03\x00\x00\x00")
+        body.extend(b"##NEUTRAL HOLTER RECORDING##")
+        body.extend(b"\x00" * (8192 - len(body)))
+        p.write_bytes(bytes(body))
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore", UserWarning)
+            with pytest.raises(CorruptedFileError, match="NEUTRAL HOLTER"):
+                EDANARCHolterParser().parse(p)
+
     def test_auto_detection_via_file_parser(self, edan_arc_archive: Path):
         with warnings.catch_warnings():
             warnings.simplefilter("ignore", UserWarning)

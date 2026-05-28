@@ -49,6 +49,18 @@ _HEA_BLOB_MAX = 4096
 # Plausible Unix epochs: 1990-01-01 .. 2070-01-01
 _EPOCH_MIN = 631_152_000
 _EPOCH_MAX = 3_155_760_000
+# EDAN SE-2012 ships with a small set of sampling rates; restricting the
+# fingerprint to these dramatically cuts false-positives when scanning a
+# multi-MB .arc archive.
+_VALID_SAMPLING_RATES = {100, 128, 200, 250, 256, 500, 1000}
+# Documented channel counts for SE-2012 (3-lead or 12-lead recorder).
+_VALID_CHANNEL_COUNTS = {3, 12}
+# Holter recordings rarely exceed a few days — used to validate the
+# (start_epoch, end_epoch) pair.
+_MAX_RECORDING_SECONDS = 14 * 24 * 3600  # 14 days
+# Signature that identifies the "NEUTRAL HOLTER RECORDING" archive
+# variant — a different, undocumented format the heuristic cannot parse.
+_NEUTRAL_HOLTER_SIGNATURE = b"##NEUTRAL HOLTER RECORDING##"
 
 
 def _ascii(buf: bytes, offset: int, length: int) -> str:
@@ -86,21 +98,41 @@ def _epoch_to_datetime(seconds: int) -> datetime | None:
 def _looks_like_patient_hea(buf: bytes, off: int) -> bool:
     """Structural fingerprint for a patient.hea header at offset *off*.
 
-    Validates three independent fields against plausible ranges:
-    channel count (byte 12), sampling rate (s16 at 32), and the start
-    timestamp (u32 at 4).  Combined the false-positive rate is very low.
+    Combines five independent checks against documented SE-2012 values:
+
+    * channel count (byte 12) is 3 or 12,
+    * sampling rate (s16 at 32) is one of the SE-2012 rates,
+    * both timestamps (u32 at 4 and 8) decode to plausible epochs,
+    * the recording length implied by the timestamps is below 14 days,
+    * the per-channel lead label slot at offset 1796 contains
+      mostly-ASCII bytes.
+
+    The combination yields a very low false-positive rate even when
+    scanning a hundred-megabyte .arc archive.
     """
     if off < 0 or off + 64 > len(buf):
         return False
     nch = buf[off + 12]
-    if not (1 <= nch <= _MAX_CHANNELS):
+    if nch not in _VALID_CHANNEL_COUNTS:
         return False
     sr = struct.unpack_from("<h", buf, off + 32)[0]
-    if not (50 <= sr <= 4000):
+    if sr not in _VALID_SAMPLING_RATES:
         return False
-    epoch = struct.unpack_from("<I", buf, off + 4)[0]
-    if not (_EPOCH_MIN <= epoch <= _EPOCH_MAX):
+    start_epoch = struct.unpack_from("<I", buf, off + 4)[0]
+    end_epoch = struct.unpack_from("<I", buf, off + 8)[0]
+    if not (_EPOCH_MIN <= start_epoch <= _EPOCH_MAX):
         return False
+    if not (_EPOCH_MIN <= end_epoch <= _EPOCH_MAX):
+        return False
+    if not (0 < end_epoch - start_epoch <= _MAX_RECORDING_SECONDS):
+        return False
+    # Lead labels at offset 1796 are 8-byte ASCII strings — if the file
+    # is long enough, sample the first label to confirm it's text.
+    label_off = off + 1796
+    if label_off + 8 <= len(buf):
+        label = buf[label_off:label_off + 8].split(b"\x00", 1)[0]
+        if label and not all(32 <= b < 127 for b in label):
+            return False
     return True
 
 
@@ -262,6 +294,16 @@ class EDANARCHolterParser(Parser):
         if len(arc) < 64:
             raise CorruptedFileError(
                 f"EDAN .arc too small: {len(arc)} bytes"
+            )
+        # Reject the unrelated "NEUTRAL HOLTER RECORDING" archive variant
+        # up-front so it can't trigger a misleading false-positive scan.
+        if _NEUTRAL_HOLTER_SIGNATURE in arc[:512]:
+            raise CorruptedFileError(
+                "File appears to be a 'NEUTRAL HOLTER RECORDING' archive, "
+                "not an EDAN SE-2012 export. This variant is not currently "
+                "supported (its wrapper format is undocumented and differs "
+                "from the EDAN layout described at "
+                "https://paulbourke.net/dataformats/edan/)."
             )
         hea_off = _scan_for_patient_hea(arc)
         hea_bytes = arc[hea_off:hea_off + _HEA_BLOB_MAX]
