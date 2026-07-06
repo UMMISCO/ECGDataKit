@@ -610,5 +610,94 @@ def _generate_activity_page(app):
     out_path.write_text("\n".join(lines), encoding="utf-8")
 
 
+# ---------------------------------------------------------------------------
+# Auto-generated Releases page (fetched from GitHub Releases at build time)
+# ---------------------------------------------------------------------------
+import json
+import os
+import urllib.error
+import urllib.request
+
+GITHUB_REPO = "UMMISCO/ECGDataKit"
+
+
+def _fetch_github_releases(repo, timeout=10):
+    """Return the list of GitHub releases (newest first), or ``None`` on failure."""
+    url = f"https://api.github.com/repos/{repo}/releases?per_page=100"
+    req = urllib.request.Request(url, headers={
+        "Accept": "application/vnd.github+json",
+        "User-Agent": "ecgdatakit-docs-build",
+    })
+    token = os.environ.get("GITHUB_TOKEN") or os.environ.get("GH_TOKEN")
+    if token:
+        req.add_header("Authorization", f"Bearer {token}")
+    try:
+        with urllib.request.urlopen(req, timeout=timeout) as resp:
+            if resp.status != 200:
+                return None
+            return json.loads(resp.read().decode("utf-8"))
+    except (urllib.error.URLError, TimeoutError, ValueError, OSError):
+        return None
+
+
+def _render_releases_md(releases):
+    """Render the GitHub releases JSON into the releases.md page.
+
+    Each release gets an explicit MyST anchor matching ``tag.replace(".", "-")``
+    so the Activity page's ``releases.html#v1-0-2`` cross-links resolve.
+    """
+    lines = [
+        "# Releases",
+        "",
+        "All published releases of ECGDataKit, fetched from "
+        f"[GitHub Releases](https://github.com/{GITHUB_REPO}/releases) at build time.",
+        "",
+        "---",
+        "",
+    ]
+    for rel in releases:
+        if rel.get("draft"):
+            continue
+        tag = (rel.get("tag_name") or "").strip()
+        name = (rel.get("name") or tag or "Untitled").strip()
+        slug = tag.replace(".", "-")
+        date = (rel.get("published_at") or "")[:10]
+        html_url = rel.get("html_url", "")
+        suffix = " (pre-release)" if rel.get("prerelease") else ""
+        body = (rel.get("body") or "").strip()
+
+        if slug:
+            lines.append(f"({slug})=")
+        lines.append(f"## {name}{suffix}")
+        lines.append("")
+        meta = []
+        if date:
+            meta.append(f"*Released {date}*")
+        if html_url:
+            meta.append(f"[View on GitHub]({html_url})")
+        if meta:
+            lines.append(" &middot; ".join(meta))
+            lines.append("")
+        lines.append(body if body else "_No release notes provided._")
+        lines.append("")
+        lines.append("---")
+        lines.append("")
+    return "\n".join(lines).rstrip() + "\n"
+
+
+def _generate_releases_page(app):
+    """Regenerate releases.md from GitHub Releases at build time.
+
+    On any network/rate-limit failure the committed releases.md is left
+    untouched, so it always serves as an offline fallback.
+    """
+    releases = _fetch_github_releases(GITHUB_REPO)
+    if not releases:
+        return  # keep the committed fallback
+    out_path = Path(app.srcdir) / "releases.md"
+    out_path.write_text(_render_releases_md(releases), encoding="utf-8")
+
+
 def setup(app):
     app.connect("builder-inited", _generate_activity_page)
+    app.connect("builder-inited", _generate_releases_page)
