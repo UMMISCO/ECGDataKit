@@ -18,8 +18,15 @@ sys.path.insert(0, str(LIB_SRC))
 project = "ECGDataKit"
 copyright = "2026, Ahmad Fall — UMMISCO / IRD"
 author = "Ahmad Fall"
-release = "1.0.0"
-version = "1.0.0"
+
+# Single source of truth: read the version from the package (LIB_SRC is on
+# sys.path above), so the docs never drift from ecgdatakit.__version__.
+try:
+    from ecgdatakit import __version__ as _pkg_version
+except Exception:  # pragma: no cover - fallback if the package can't be imported
+    _pkg_version = "0.0.0"
+release = _pkg_version
+version = ".".join(_pkg_version.split(".")[:2])
 
 # ---------------------------------------------------------------------------
 # Extensions
