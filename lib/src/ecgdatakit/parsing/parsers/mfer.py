@@ -20,6 +20,7 @@ from ecgdatakit.models import (
     PatientInfo,
     RecordingInfo,
     SignalCharacteristics,
+    derive_is_raw,
 )
 from ecgdatakit.parsing.parser import Parser
 
@@ -347,7 +348,7 @@ class MFERParser(Parser):
                     units = channel_units[ch] if ch < len(channel_units) else ""
                     samples = channels[:, ch].astype(np.float64)
 
-                    raw = resolution != 1.0
+                    raw = derive_is_raw(resolution, 0.0, units)
                     leads.append(Lead(
                         label=label,
                         samples=samples,

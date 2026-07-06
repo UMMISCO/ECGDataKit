@@ -22,6 +22,7 @@ from ecgdatakit.models import (
     PatientInfo,
     RecordingInfo,
     SignalCharacteristics,
+    derive_is_raw,
 )
 from ecgdatakit.parsing.parser import Parser
 
@@ -290,8 +291,11 @@ class DICOMWaveformParser(Parser):
                             pass
 
                 samples = channels[:, ch_idx].astype(np.float64)
-                offset_val = -baseline * sensitivity
-                raw = not (sensitivity == 1.0 and offset_val == 0.0)
+                # DICOM Channel Baseline (003A,0213) is the physical value of
+                # encoded sample 0, expressed in the Channel Sensitivity units,
+                # so it is added directly: physical = sample * sensitivity + baseline.
+                offset_val = baseline
+                raw = derive_is_raw(sensitivity, offset_val, units)
                 leads.append(Lead(
                     label=label,
                     samples=samples,

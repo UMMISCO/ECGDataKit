@@ -20,6 +20,7 @@ from ecgdatakit.models import (
     PatientInfo,
     RecordingInfo,
     SignalCharacteristics,
+    derive_is_raw,
 )
 from ecgdatakit.parsing.parser import Parser
 
@@ -366,7 +367,7 @@ class HL7aECGParser(Parser):
                     if u:
                         res_unit = str(u)
 
-            raw = not (scale == 1.0 and origin == 0.0)
+            raw = derive_is_raw(scale, origin, res_unit)
             leads.append(Lead(
                 label=label,
                 samples=samples,

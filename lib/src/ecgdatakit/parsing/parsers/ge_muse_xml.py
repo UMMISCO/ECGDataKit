@@ -24,6 +24,7 @@ from ecgdatakit.models import (
     PatientInfo,
     RecordingInfo,
     SignalCharacteristics,
+    derive_is_raw,
 )
 from ecgdatakit.parsing.parser import Parser
 
@@ -271,15 +272,16 @@ class GEMuseXMLParser(Parser):
                     continue
 
                 scale = 1.0
+                res_unit = ""
                 amp_units = self._get_text(ld, "LeadAmplitudeUnitsPerBit")
                 if amp_units:
                     try:
                         scale = float(amp_units)
+                        res_unit = "uV"  # unit is known only when a scale is present
                     except ValueError:
                         pass
 
-                raw = scale != 1.0
-                res_unit = "uV" if raw else ""
+                raw = derive_is_raw(scale, 0.0, res_unit)
                 wf_leads.append(Lead(
                     label=label,
                     samples=samples,

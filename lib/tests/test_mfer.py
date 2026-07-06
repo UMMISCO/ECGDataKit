@@ -75,11 +75,13 @@ class TestMFERParser:
             assert lead.sampling_rate == 500
 
     def test_lead_units_and_is_raw(self, mfer_file: Path):
-        """Fixture has resolution=1 → already physical."""
+        """Fixture has resolution=1 and no units, so there is no scaling
+        metadata and samples stay raw ADC counts (is_raw=True)."""
         record = MFERParser().parse(mfer_file)
         for lead in record.leads:
             assert lead.resolution == 1.0
-            assert lead.is_raw is False
+            assert lead.resolution_unit == ""
+            assert lead.is_raw is True
 
     def test_can_parse_rejects_non_mfer(self, tmp_path: Path):
         f = tmp_path / "test.bin"

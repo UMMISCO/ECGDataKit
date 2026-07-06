@@ -24,6 +24,7 @@ from ecgdatakit.models import (
     PatientInfo,
     RecordingInfo,
     SignalCharacteristics,
+    derive_is_raw,
 )
 from ecgdatakit.parsing.parser import Parser
 
@@ -114,19 +115,19 @@ class MortaraEL250Parser(Parser):
                 units_per_mv = int(upm_str)
             except (ValueError, TypeError):
                 pass
-        adc_resolution = 1.0 / units_per_mv if units_per_mv > 0 else 1.0
+        resolution = 1.0 / units_per_mv if units_per_mv > 0 else 1.0
         adc_units = "mV" if units_per_mv > 0 else ""
 
         for xml_lead in xml_leads:
             sampling_duration = int(xml_lead["@DURATION"])
             sampling_freq = int(xml_lead["@SAMPLE_FREQ"])
             samples = _decode_lead(xml_lead["@DATA"])
-            raw = adc_resolution != 1.0
+            raw = derive_is_raw(resolution, 0.0, adc_units)
             leads.append(Lead(
                 label=xml_lead["@NAME"],
                 samples=samples,
                 sampling_rate=sampling_freq,
-                resolution=adc_resolution,
+                resolution=resolution,
                 resolution_unit=adc_units,
                 units="" if raw else adc_units,
                 is_raw=raw,
@@ -316,12 +317,12 @@ class MortaraEL250Parser(Parser):
             rep_beat_rate = sampling_freq
 
         for lead_name, samples_list in rep_beats.items():
-            raw = adc_resolution != 1.0
+            raw = derive_is_raw(resolution, 0.0, adc_units)
             record.median_beats.append(Lead(
                 label=lead_name,
                 samples=np.array(samples_list, dtype=np.float64),
                 sampling_rate=rep_beat_rate,
-                resolution=adc_resolution,
+                resolution=resolution,
                 resolution_unit=adc_units,
                 units="" if raw else adc_units,
                 is_raw=raw,

@@ -70,11 +70,13 @@ class TestGEMAC2000Parser:
             assert len(lead.samples) > 0
 
     def test_lead_units_and_is_raw(self, ge_mac2000_file: Path):
-        """Fixture has no LeadAmplitudeUnitsPerBit → scale=1.0 → already physical."""
+        """Fixture has no LeadAmplitudeUnitsPerBit, so there is no scaling
+        metadata and samples stay raw ADC counts (is_raw=True)."""
         record = GEMAC2000Parser().parse(ge_mac2000_file)
         for lead in record.leads:
             assert lead.resolution == 1.0
-            assert lead.is_raw is False
+            assert lead.resolution_unit == ""
+            assert lead.is_raw is True
 
     def test_annotations(self, ge_mac2000_file: Path):
         record = GEMAC2000Parser().parse(ge_mac2000_file)

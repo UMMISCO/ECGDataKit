@@ -68,11 +68,26 @@ class TestDICOMWaveformParser:
             assert len(lead.samples) == 100
 
     def test_lead_units_and_is_raw(self, dicom_file: Path):
-        """Fixture has sensitivity=1.0, baseline=0 → already physical."""
+        """Fixture has sensitivity=1.0, baseline=0 and no units, so there is no
+        scaling metadata and samples stay raw ADC counts (is_raw=True)."""
         record = DICOMWaveformParser().parse(dicom_file)
         for lead in record.leads:
             assert lead.resolution == 1.0
-            assert lead.is_raw is False
+            assert lead.resolution_unit == ""
+            assert lead.is_raw is True
+
+    def test_nonzero_baseline_offset(self, dicom_file_baseline: Path):
+        """Channel Baseline is in physical units and added directly:
+        physical = sample * sensitivity + baseline (regression for the
+        previous ``-baseline * sensitivity`` sign/scale bug)."""
+        record = DICOMWaveformParser().parse(dicom_file_baseline)
+        lead = record.leads[0]
+        assert lead.resolution == 2.5          # sensitivity (uV/LSB)
+        assert lead.offset == 5.0              # baseline in physical uV, added directly
+        assert lead.is_raw is True             # non-zero offset -> not yet physical
+        physical = lead.to_physical()
+        assert np.allclose(physical.samples, lead.samples * 2.5 + 5.0)
+        assert np.isclose(physical.samples[0], 255.0)  # 100 * 2.5 + 5
 
     def test_recording_duration(self, dicom_file: Path):
         record = DICOMWaveformParser().parse(dicom_file)

@@ -21,6 +21,7 @@ from ecgdatakit.models import (
     PatientInfo,
     RecordingInfo,
     SignalCharacteristics,
+    derive_is_raw,
 )
 from ecgdatakit.parsing.parser import Parser
 
@@ -369,8 +370,8 @@ class EDFParser(Parser):
                     rec_offset += block_size
                 pos = rec_offset
 
-            is_raw = not (gain == 1.0 and offset_val == 0.0)
             phys_unit = _clean_str(physical_dims[sig_idx])
+            is_raw = derive_is_raw(gain, offset_val, phys_unit)
             leads.append(Lead(
                 label=label,
                 samples=all_samples[:total_samples],

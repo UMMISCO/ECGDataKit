@@ -575,6 +575,66 @@ def dicom_file(tmp_path: Path) -> Path:
     return p
 
 
+@pytest.fixture
+def dicom_file_baseline(tmp_path: Path) -> Path:
+    """DICOM waveform with a non-zero Channel Baseline and sensitivity != 1.
+
+    Used to verify the physical conversion ``sample * sensitivity + baseline``
+    where Channel Baseline (003A,0213) is expressed in physical (sensitivity)
+    units and added directly.  ch1: sensitivity=2.5 uV/LSB, baseline=5 uV.
+    """
+    pytest.importorskip("pydicom")
+    import pydicom
+    from pydicom.dataset import Dataset, FileDataset
+    from pydicom.sequence import Sequence
+    from pydicom.uid import ExplicitVRLittleEndian
+
+    p = tmp_path / "test_baseline.dcm"
+
+    file_meta = Dataset()
+    file_meta.MediaStorageSOPClassUID = "1.2.840.10008.5.1.4.1.1.9.1.1"
+    file_meta.MediaStorageSOPInstanceUID = pydicom.uid.generate_uid()
+    file_meta.TransferSyntaxUID = ExplicitVRLittleEndian
+
+    ds = FileDataset(str(p), {}, file_meta=file_meta, preamble=b"\x00" * 128)
+    ds.is_little_endian = True
+    ds.is_implicit_VR = False
+    ds.PatientID = "DCMBL"
+    ds.Modality = "ECG"
+    ds.SOPClassUID = "1.2.840.10008.5.1.4.1.1.9.1.1"
+    ds.SOPInstanceUID = pydicom.uid.generate_uid()
+
+    num_channels = 1
+    num_samples = 10
+
+    wf = Dataset()
+    wf.NumberOfWaveformChannels = num_channels
+    wf.NumberOfWaveformSamples = num_samples
+    wf.SamplingFrequency = 500.0
+    wf.WaveformBitsAllocated = 16
+
+    ch1 = Dataset()
+    ch1_source = Dataset()
+    ch1_source.CodeMeaning = "I"
+    ch1.ChannelSourceSequence = Sequence([ch1_source])
+    ch1.ChannelSensitivity = "2.5"
+    ch1.ChannelBaseline = "5"
+    ch1.ChannelSensitivityCorrectionFactor = "1.0"
+    units_ds = Dataset()
+    units_ds.CodeMeaning = "microvolt"
+    ch1.ChannelSensitivityUnitsSequence = Sequence([units_ds])
+
+    wf.ChannelDefinitionSequence = Sequence([ch1])
+
+    # Constant raw ADC value of 100 in every sample -> physical 100*2.5 + 5 = 255
+    samples = np.full(num_samples * num_channels, 100, dtype="<i2")
+    wf.WaveformData = samples.tobytes()
+
+    ds.WaveformSequence = Sequence([wf])
+    ds.save_as(str(p))
+    return p
+
+
 # ---------------------------------------------------------------------------
 # Minimal WFDB fixture
 # ---------------------------------------------------------------------------

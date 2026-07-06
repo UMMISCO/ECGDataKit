@@ -28,6 +28,7 @@ from ecgdatakit.models import (
     PatientInfo,
     RecordingInfo,
     SignalCharacteristics,
+    derive_is_raw,
 )
 from ecgdatakit.parsing.parser import Parser
 
@@ -266,6 +267,7 @@ class GEMAC2000Parser(Parser):
 
             # Try waveform-level amplitude scale (GE convention)
             wf_scale = 1.0
+            wf_unit = ""
             wf_amp = (
                 find_tag(waveform, "LeadAmplitudeUnitsPerBit") or
                 find_tag(waveform, "AcquiredAmplitudeResolution") or
@@ -274,6 +276,7 @@ class GEMAC2000Parser(Parser):
             if wf_amp is not None:
                 try:
                     wf_scale = float(str(wf_amp))
+                    wf_unit = "uV"  # unit is known only when a scale is present
                 except (ValueError, TypeError):
                     pass
 
@@ -297,16 +300,17 @@ class GEMAC2000Parser(Parser):
                             )
                             # Per-lead scale overrides waveform-level scale
                             scale = wf_scale
+                            res_unit = wf_unit
                             amp_str = self._get_text(node, "LeadAmplitudeUnitsPerBit")
                             if amp_str:
                                 try:
                                     scale = float(amp_str)
+                                    res_unit = "uV"  # unit known when a scale is present
                                 except (ValueError, TypeError):
                                     pass
                             samples = _decode_lead_data(data_str)
                             if len(samples) > 0:
-                                raw = scale != 1.0
-                                res_unit = "uV" if raw else ""
+                                raw = derive_is_raw(scale, 0.0, res_unit)
                                 leads.append(Lead(
                                     label=label,
                                     samples=samples,

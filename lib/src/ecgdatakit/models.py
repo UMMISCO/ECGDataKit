@@ -106,6 +106,19 @@ _TO_UV: dict[str, float] = {
 """Conversion factors: multiply a value in the given unit to get microvolts."""
 
 
+def derive_is_raw(resolution: float, offset: float, resolution_unit: str) -> bool:
+    """Return ``True`` when a lead's samples are raw ADC counts.
+
+    Samples count as already-physical (``is_raw=False``) only when the
+    physical unit is known (*resolution_unit* is non-empty) **and**
+    applying the scale is a no-op (``resolution == 1.0`` and
+    ``offset == 0.0``).  A lead with no scaling metadata keeps the default
+    ``resolution == 1.0`` but has an empty unit, so its samples are treated
+    as raw ADC counts rather than mistaken for physical values.
+    """
+    return not (bool(resolution_unit) and resolution == 1.0 and offset == 0.0)
+
+
 # ---------------------------------------------------------------------------
 # Data models
 # ---------------------------------------------------------------------------
@@ -490,9 +503,11 @@ class Lead:
 
     **Auto-detection of** ``is_raw``
 
-    Parsers set ``is_raw`` automatically.  When ``resolution == 1.0``
-    and ``offset == 0.0`` the samples are already in physical units
-    (``is_raw=False``); otherwise they are raw ADC counts
+    Parsers set ``is_raw`` via :func:`derive_is_raw`.  Samples are already
+    in physical units (``is_raw=False``) only when the unit is known
+    (``resolution_unit`` is set) **and** scaling is a no-op
+    (``resolution == 1.0`` and ``offset == 0.0``).  Leads with a real scale
+    factor, or with no scaling metadata at all, are raw ADC counts
     (``is_raw=True``) that need scaling via :meth:`to_physical`.
     """
 
@@ -521,8 +536,10 @@ class Lead:
     ``"mV"``)."""
     is_raw: bool = True
     """``True`` if samples are raw ADC counts needing scaling, ``False``
-    if samples are already in physical ``units``.  Parsers set this
-    automatically: ``is_raw = not (resolution == 1.0 and offset == 0.0)``."""
+    if samples are already in physical ``units``.  Parsers set this via
+    :func:`derive_is_raw`: physical only when the unit is known
+    (``resolution_unit`` set) and scaling is a no-op; leads without scaling
+    metadata are raw even though their default ``resolution`` is ``1.0``."""
     adc_resolution: float = 0.0
     """Original ADC resolution exactly as stored in the source file,
     before any unit conversion.  For example, ISHNE stores nV/count and

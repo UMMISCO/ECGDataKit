@@ -22,6 +22,7 @@ from ecgdatakit.models import (
     PatientInfo,
     RecordingInfo,
     SignalCharacteristics,
+    derive_is_raw,
 )
 from ecgdatakit.parsing.parser import Parser
 
@@ -251,20 +252,24 @@ class ISHNEHolterParser(Parser):
             res_nv = meta.ampl_res[i]
             has_res = res_nv > 0 # is resolution present ?
             res_unit = "uV" if has_res else ""
+            resolution = (res_nv / 1_000.0) if has_res else 1.0
+            # Physical only when the unit is known and scaling is a no-op
+            # (e.g. 1000 nV = 1.0 uV/count). Leads with a real scale factor,
+            # or with no resolution at all, stay raw ADC counts.
+            is_raw = derive_is_raw(resolution, 0.0, res_unit)
             label = _LEAD_SPECS.get(meta.spec[i], f"Lead {i + 1}")
             leads.append(Lead(
                 label=label,
                 samples=signal[i].astype(np.float64),
                 sampling_rate=meta.sampling_rate,
-                resolution=(res_nv / 1_000.0) if has_res else 1.0,
+                resolution=resolution,
                 resolution_unit=res_unit,
                 offset=0.0,
                 adc_resolution=float(res_nv),
                 adc_resolution_unit="nV" if has_res else "",
                 quality=meta.quality[i],
-                # Samples stay as raw ADC counts whenever a scale factor exists.
-                units="" if has_res else res_unit,
-                is_raw=has_res,
+                units="" if is_raw else res_unit,
+                is_raw=is_raw,
             ))
         return leads
 

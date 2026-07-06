@@ -22,6 +22,7 @@ from ecgdatakit.models import (
     PatientInfo,
     RecordingInfo,
     SignalCharacteristics,
+    derive_is_raw,
 )
 from ecgdatakit.parsing.parser import Parser
 
@@ -347,7 +348,7 @@ class WFDBParser(Parser):
 
                         res = 1.0 / gain
                         ofs = -baseline / gain
-                        raw = not (res == 1.0 and ofs == 0.0)
+                        raw = derive_is_raw(res, ofs, spec["units"])
                         leads.append(Lead(
                             label=label,
                             samples=samples,
@@ -375,7 +376,7 @@ class WFDBParser(Parser):
                     label = spec["description"] or f"Ch{sig_idx}"
                     res = 1.0 / gain
                     ofs = -baseline / gain
-                    raw = not (res == 1.0 and ofs == 0.0)
+                    raw = derive_is_raw(res, ofs, spec["units"])
                     leads.append(Lead(
                         label=label,
                         samples=samples,

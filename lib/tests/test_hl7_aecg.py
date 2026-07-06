@@ -58,12 +58,14 @@ class TestHL7aECGParser:
         np.testing.assert_array_equal(lead_i.samples, [100, 200, 300, 400, 500])
 
     def test_lead_units_and_is_raw(self, hl7_aecg_file: Path):
-        """Fixture has no scale/origin → defaults 1.0/0.0 → already physical."""
+        """Fixture has no scale/origin/units, so there is no scaling metadata
+        and samples stay raw ADC counts (is_raw=True)."""
         record = HL7aECGParser().parse(hl7_aecg_file)
         for lead in record.leads:
             assert lead.resolution == 1.0
             assert lead.offset == 0.0
-            assert lead.is_raw is False
+            assert lead.resolution_unit == ""
+            assert lead.is_raw is True
 
     def test_to_dict_unified_schema(self, hl7_aecg_file: Path):
         record = HL7aECGParser().parse(hl7_aecg_file)
