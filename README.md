@@ -1,7 +1,7 @@
 # ECGDataKit
 
 [![PyPI](https://img.shields.io/pypi/v/ecgdatakit)](https://pypi.org/project/ecgdatakit/)
-[![Version](https://img.shields.io/badge/version-1.0.0-orange.svg)](https://github.com/UMMISCO/ECGDataKit/releases)
+[![Release](https://img.shields.io/github/v/release/UMMISCO/ECGDataKit)](https://github.com/UMMISCO/ECGDataKit/releases)
 [![Tests](https://github.com/UMMISCO/ECGDataKit/actions/workflows/tests.yml/badge.svg?branch=main)](https://github.com/UMMISCO/ECGDataKit/actions/workflows/tests.yml)
 [![Docs](https://github.com/UMMISCO/ECGDataKit/actions/workflows/docs.yml/badge.svg?branch=main)](https://ecgdatakit.ummisco.fr)
 [![Python 3.10+](https://img.shields.io/badge/python-3.10%2B-blue.svg)](https://www.python.org/downloads/)
@@ -12,13 +12,13 @@
 
 Developed at [UMMISCO](https://www.ummisco.fr) / [IRD](https://www.ird.fr) by Ahmad Fall.
 
-> **[ecgdatakit.ummisco.fr](https://ecgdatakit.ummisco.fr)** — Full documentation, API reference, and getting started guide.
+> **[ecgdatakit.ummisco.fr](https://ecgdatakit.ummisco.fr)**: Full documentation, API reference, and getting started guide.
 
 ---
 
 ## Features
 
-### Parsing — 13 ECG formats, one unified data model
+### Parsing - 13 ECG formats, one unified data model
 
 | Format | File Types | Detection |
 |--------|-----------|-----------|
@@ -48,7 +48,7 @@ Developed at [UMMISCO](https://www.ummisco.fr) / [IRD](https://www.ird.fr) by Ah
 | **Quality** | Signal quality index (SQI), SNR estimation |
 | **Leads** | Derive III, aVR/aVL/aVF, full 12-lead assembly |
 | **Cleaning** | Built-in, BioSPPy, NeuroKit2, combined pipelines |
-| **Deep Denoising** | DeepFADE — a DenseNet encoder-decoder denoising autoencoder trained on a large private ECG database (weights bundled) |
+| **Deep Denoising** | DeepFADE, a DenseNet encoder-decoder denoising autoencoder trained on a large private ECG database (weights bundled) |
 
 ### Visualization
 
@@ -83,7 +83,7 @@ pip install "ecgdatakit[cleaning]"
 # With DeepFADE denoising autoencoder (requires torch)
 pip install "ecgdatakit[denoising]"
 
-# Everything (except torch — install separately if needed)
+# Everything (except torch, install separately if needed)
 pip install "ecgdatakit[all]"
 ```
 
@@ -108,64 +108,25 @@ print(record.patient.first_name)       # "John"
 print(record.patient.age)              # 55
 print(record.recording.acquisition.signal.sampling_rate)  # 500
 print(record.measurements.heart_rate)  # 75
-print(record.device.manufacturer)      # "Philips"
-print(record.signal.data_encoding)     # "base64"
+print(record.recording.device.manufacturer)               # "Philips"
+print(record.recording.acquisition.signal.data_encoding)  # "base64_int16le"
 print(len(record.leads))               # 12
 
 json_str = record.to_json()
 ```
 
-### Process signals
-
-```python
-from ecgdatakit.processing import (
-    diagnostic_filter, detect_r_peaks, heart_rate,
-    rr_intervals, time_domain, signal_quality_index, clean_ecg,
-)
-
-lead = record.leads[1]
-
-filtered = diagnostic_filter(lead)
-
-peaks = detect_r_peaks(filtered)
-peaks_se = detect_r_peaks(filtered, method="shannon_energy")
-
-hr = heart_rate(filtered, peaks)
-rr = rr_intervals(filtered, peaks)
-
-hrv = time_domain(rr)
-print(hrv["sdnn"], hrv["rmssd"], hrv["pnn50"])
-
-sqi = signal_quality_index(lead)
-
-cleaned = clean_ecg(lead)
-cleaned = clean_ecg(lead, method="neurokit2")
-cleaned = clean_ecg(lead, method="deepfade")
-```
-
 ### Visualize
 
 ```python
-from ecgdatakit.plotting import (
-    plot_lead, plot_12lead, plot_peaks, plot_hrv_summary,
-    iplot_lead, iplot_12lead,
-)
+from ecgdatakit.plotting import plot_12lead, plot_lead, iplot_12lead
 
-# Static plots auto-display by default
-plot_12lead(record)
-plot_peaks(filtered, peaks)
-plot_hrv_summary(rr)
+plot_12lead(record)                # static 12-lead grid (auto-displays)
+plot_lead(record.leads[0])         # single lead
 
-# To get the figure without displaying (e.g. for saving):
-fig = plot_12lead(record, show=False)
+fig = plot_12lead(record, show=False)   # get the figure without displaying
 fig.savefig("ecg_12lead.png", dpi=150)
 
-# Use sample indices instead of time on the x-axis:
-plot_lead(filtered, x_axis="samples")
-
-# Interactive plots (plotly) — opens in browser
-iplot_lead(filtered, peaks).show()
-iplot_12lead(record).show()
+iplot_12lead(record).show()        # interactive (plotly), opens in browser
 ```
 
 ### Batch processing
@@ -181,46 +142,29 @@ for record in parse_batch(files, max_workers=4):
 
 ## Data Model
 
-All parsers produce the same `ECGRecord`:
+Every parser returns the same `ECGRecord`, so downstream code stays identical no matter which format was read. Leads hold raw ADC counts by default. Call `record.to_physical()` to scale them to voltage, then `record.convert_units("mV")` to switch between `uV`, `mV`, or `V`. Export the whole record with `record.to_dict()` or `record.to_json()`.
 
 ```
 ECGRecord
-  patient: PatientInfo        # ID, name, birth date, sex, age, weight, height, medications
-  recording: RecordingInfo    # date, duration, sample rate, ADC gain, technician, physician
-  device: DeviceInfo          # manufacturer, model, name, serial number, software version
-  filters: FilterSettings     # highpass, lowpass, notch frequencies
-  signal: SignalCharacteristics  # bits/sample, encoding, compression, channel counts
-  leads: list[Lead]           # label, samples (float64 array), sample rate, units
-  interpretation: Interpretation  # statements, severity, source, interpreter
-  measurements: GlobalMeasurements  # HR, PR, QRS, QT, QTc, axes, RR interval
-  median_beats: list[Lead]    # median/template beats if available
-  annotations: dict[str, str] # additional key-value annotations
-  source_format: str          # parser identifier
-  raw_metadata: dict          # original format-specific metadata
-```
-
-## Exceptions
-
-All exceptions inherit from `ECGDataKitError`:
-
-| Exception | When raised |
-|-----------|-------------|
-| `UnsupportedFormatError` | File format not recognized |
-| `CorruptedFileError` | File is truncated or structurally invalid |
-| `MissingElementError` | Required element or field is missing |
-| `ChecksumError` | Checksum validation failed |
-
-## Testing
-
-```bash
-pip install -e ".[all,dev,holter,dicom]"
-pytest tests/ -v
+  patient          PatientInfo             ID, name, birth date, sex, age, weight, height, medications, history
+  recording        RecordingInfo           date, end date, duration, technician, physician, room, location
+    ├─ device      DeviceInfo              manufacturer, model, serial number, software version, institution
+    └─ acquisition AcquisitionSetup
+         ├─ signal SignalCharacteristics   sampling rate, resolution, bits/sample, encoding, compression, channels
+         └─ filters FilterSettings         highpass, lowpass, notch frequencies
+  leads            list[Lead]              label, samples (float64), sampling rate, resolution, units, is_raw
+  measurements     GlobalMeasurements      HR, PR, QRS, QT, QTc (Bazett/Fridericia), P/QRS/T axes, RR interval
+  interpretation   Interpretation          statements, severity, source, interpreter
+  median_beats     list[Lead]              median/template beats, when available
+  annotations      dict[str, str]          additional key-value annotations
+  source_format    str                     parser identifier (e.g. "sierra_xml")
+  raw_metadata     dict                    original format-specific metadata
 ```
 
 ## Author
 
-**Ahmad Fall** — [UMMISCO](https://www.ummisco.fr) / [IRD](https://www.ird.fr)
+**Ahmad Fall**, [UMMISCO](https://www.ummisco.fr) / [IRD](https://www.ird.fr)
 
 ## License
 
-Apache 2.0 — see [LICENSE](LICENSE) for details.
+Apache 2.0. See [LICENSE](LICENSE) for details.

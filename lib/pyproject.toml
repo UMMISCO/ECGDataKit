@@ -44,7 +44,7 @@ UMMISCO = "https://www.ummisco.fr"
 IRD = "https://www.ird.fr"
 
 [project.optional-dependencies]
-holter = ["PyCRC>=0.11"]
+holter = ["crccheck>=1.3"]
 
 dicom = ["pydicom>=2.4"]
 processing = ["scipy>=1.10"]
