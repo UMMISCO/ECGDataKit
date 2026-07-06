@@ -37,6 +37,10 @@ jobs:
           pip install -e "./lib[all]"
 
       - name: Build documentation
+        env:
+          # Lets conf.py fetch the Releases page from the GitHub API without
+          # hitting the unauthenticated rate limit on shared runner IPs.
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: sphinx-build -b html docs docs/_build/html
 
       - name: Copy CNAME for custom domain

@@ -664,7 +664,13 @@ def _render_releases_md(releases):
         date = (rel.get("published_at") or "")[:10]
         html_url = rel.get("html_url", "")
         suffix = " (pre-release)" if rel.get("prerelease") else ""
-        body = (rel.get("body") or "").strip()
+        # Drop standalone horizontal rules from the body: the release headings
+        # already delimit versions, and stray "---" rules trigger docutils
+        # "transition" warnings when embedded mid-section.
+        body = "\n".join(
+            bl for bl in (rel.get("body") or "").splitlines()
+            if not re.match(r"^\s*([-*_])\1{2,}\s*$", bl)
+        ).strip()
 
         if slug:
             lines.append(f"({slug})=")
@@ -679,8 +685,6 @@ def _render_releases_md(releases):
             lines.append(" &middot; ".join(meta))
             lines.append("")
         lines.append(body if body else "_No release notes provided._")
-        lines.append("")
-        lines.append("---")
         lines.append("")
     return "\n".join(lines).rstrip() + "\n"
 

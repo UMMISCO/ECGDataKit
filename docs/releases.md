@@ -11,8 +11,6 @@ All published releases of ECGDataKit, fetched from [GitHub Releases](https://git
 
 **Full Changelog**: https://github.com/UMMISCO/ECGDataKit/compare/v1.0.0...v1.0.2
 
----
-
 (v1-0-0)=
 ## v1.0.0 - Stable Release
 
@@ -23,11 +21,8 @@ All published releases of ECGDataKit, fetched from [GitHub Releases](https://git
 - **Per-lead normalization** — `normalize_minmax`, `normalize_zscore`, and `normalize_amplitude` now accept a `list[Lead]` and return a `list[Lead]`, normalizing each lead independently. Pass `record.leads` directly instead of looping manually
 - Resampling and normalization (min-max, z-score, amplitude) now support batch processing across all leads (independently) of an ECG record
 
-    ---
 
 **Full Changelog**: https://github.com/UMMISCO/ECGDataKit/compare/v0.0.9...v1.0.0
-
----
 
 (v0-0-9)=
 ## v0.0.9 - ADC resolution pipeline
@@ -63,11 +58,8 @@ All published releases of ECGDataKit, fetched from [GitHub Releases](https://git
   - `plot_12lead` and `iplot_12lead` assign standard 12-lead names to unnamed inputs
   - Static plots no longer force matplotlib Agg backend
   
-    ---
 
 **Full Changelog**: https://github.com/UMMISCO/ECGDataKit/commits/v0.0.9
-
----
 
 (v0-0-8)=
 ## v0.0.8 - Visualization
@@ -80,11 +72,8 @@ All published releases of ECGDataKit, fetched from [GitHub Releases](https://git
 - New `LeadsLike` type alias for multi-lead inputs: `list[Lead] | ECGRecord | NDArray | list[NDArray]`
 - Static plots no longer force the `Agg` backend — plots display inline in Jupyter and GUI environments by default
 
-  ---
 
 **Full Changelog**: https://github.com/UMMISCO/ECGDataKit/commits/v0.0.8
-
----
 
 (v0-0-0-7)=
 ## v0.0.7 - Signal Characteristics, Flexible Inputs & Sphinx Docs
@@ -151,8 +140,5 @@ All published releases of ECGDataKit, fetched from [GitHub Releases](https://git
   - SCP-ECG: now reads patient weight from Tag 12 (was silently skipped)
   - MFER: notch filter now correctly extracted from filter tag when 12+ bytes present
 
-  ---
 
 **Full Changelog**: https://github.com/UMMISCO/ECGDataKit/commits/v0.0.0.7
-
----
