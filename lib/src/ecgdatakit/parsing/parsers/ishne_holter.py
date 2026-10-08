@@ -15,7 +15,7 @@ from pathlib import Path
 
 import numpy as np
 from crccheck.crc import Crc16CcittFalse
-from ecgdatakit.exceptions import CorruptedFileError
+from ecgdatakit.exceptions import ChecksumWarning, CorruptedFileError
 from ecgdatakit.models import (
     DeviceInfo,
     ECGRecord,
@@ -117,6 +117,7 @@ class _Layout:
     var_block_offset: int
     ecg_block_offset: int
     data_offset: int = 0  # validated start of ECG data, set by _resolve_data_offset
+    checksum_valid: bool | None = None  # None when no checksum is stored
 
 
 @dataclass
@@ -236,13 +237,14 @@ class ISHNEHolterParser(Parser):
         computed = int(Crc16CcittFalse.calc(block))
         # Spec does not fix the byte order of the stored CRC, accept both
         swapped = ((computed & 0xFF) << 8) | (computed >> 8)
-        if stored not in (computed, swapped):
+        layout.checksum_valid = stored in (computed, swapped)
+        if not layout.checksum_valid:
             msg = (
                 f"ISHNE checksum mismatch: stored={stored:#06x} "
                 f"computed={computed:#06x}"
             )
             #raise ChecksumError(msg)
-            warnings.warn(msg, stacklevel=3)
+            warnings.warn(msg, ChecksumWarning, stacklevel=3)
 
     def _parse_patient(self, buf: bytes, meta: _LeadMeta) -> PatientInfo:
         patient = PatientInfo()
@@ -395,6 +397,7 @@ class ISHNEHolterParser(Parser):
         raw["ecg_size"] = layout.ecg_size
         raw["samples_per_lead"] = signal.shape[1]
         raw["checksum"] = layout.checksum
+        raw["checksum_valid"] = layout.checksum_valid
         raw["lead_spec"] = meta.spec[: meta.nleads]
         raw["lead_quality"] = quality
         raw["lead_quality_desc"] = [_QUALITY_CODES.get(q, "") for q in quality]

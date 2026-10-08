@@ -26,3 +26,11 @@ class RawSamplesError(ECGDataKitError):
 
     Call :meth:`Lead.to_physical` or :meth:`ECGRecord.to_physical` first.
     """
+
+
+class ChecksumWarning(UserWarning):
+    """Stored checksum does not match the computed one.
+
+    Silence it in batch processing with
+    ``warnings.filterwarnings("ignore", category=ChecksumWarning)``.
+    """

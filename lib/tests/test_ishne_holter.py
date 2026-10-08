@@ -11,7 +11,7 @@ from pathlib import Path
 import numpy as np
 import pytest
 
-from ecgdatakit.exceptions import CorruptedFileError
+from ecgdatakit.exceptions import ChecksumWarning, CorruptedFileError
 from ecgdatakit.models import ECGRecord
 from ecgdatakit.parsing.parser import FileParser
 from ecgdatakit.parsing.parsers.ishne_holter import ISHNEHolterParser
@@ -222,16 +222,36 @@ class TestISHNEHolterHeaderValidation:
 
     def test_checksum_mismatch_warns(self, tmp_path: Path):
         p = _build(tmp_path, crc=False, at={28: ("", b"Changed")})
-        _, w = _parse(p)
-        assert any("checksum mismatch" in str(x.message) for x in w)
+        record, w = _parse(p)
+        assert any(issubclass(x.category, ChecksumWarning) for x in w)
+        assert record.raw_metadata["checksum_valid"] is False
+
+    def test_checksum_warning_can_be_silenced(self, tmp_path: Path):
+        p = _build(tmp_path, crc=False, at={28: ("", b"Changed")})
+        with warnings.catch_warnings(record=True) as w:
+            warnings.simplefilter("always")
+            warnings.filterwarnings("ignore", category=ChecksumWarning)
+            record = ISHNEHolterParser().parse(p)
+        assert not w
+        assert record.raw_metadata["checksum_valid"] is False
+
+    def test_checksum_valid(self, tmp_path: Path):
+        record, _ = _parse(_build(tmp_path))
+        assert record.raw_metadata["checksum_valid"] is True
+
+    def test_checksum_absent(self, tmp_path: Path):
+        record, w = _parse(_build(tmp_path, crc=False, at={8: ("<H", 0)}))
+        assert not w
+        assert record.raw_metadata["checksum_valid"] is None
 
     def test_checksum_byte_swapped_accepted(self, tmp_path: Path):
         p = _build(tmp_path)
         data = bytearray(p.read_bytes())
         data[8], data[9] = data[9], data[8]
         p.write_bytes(bytes(data))
-        _, w = _parse(p)
+        record, w = _parse(p)
         assert not w
+        assert record.raw_metadata["checksum_valid"] is True
 
     def test_invalid_start_time_drops_date(self, tmp_path: Path):
         record, _ = _parse(_build(tmp_path, at={150: ("<hhh", (25, 0, 0))}))

@@ -22,6 +22,11 @@ Import: `from ecgdatakit import ECGDataKitError, UnsupportedFormatError, ...`
 {class}`~ecgdatakit.exceptions.RawSamplesError`
 : Operation requires physical-unit samples but the lead still contains raw ADC values. Call `to_physical()` first.
 
+## Warnings
+
+{class}`~ecgdatakit.exceptions.ChecksumWarning`
+: Stored checksum does not match the computed one. The file is still parsed and `raw_metadata["checksum_valid"]` is set to `False`. Some devices never write a real checksum, so in batch processing you can silence it with `warnings.filterwarnings("ignore", category=ChecksumWarning)`.
+
 ## Example
 
 ```python
@@ -53,4 +58,5 @@ except RawSamplesError:
 .. autoexception:: MissingElementError
 .. autoexception:: ChecksumError
 .. autoexception:: RawSamplesError
+.. autoexception:: ChecksumWarning
 ```
