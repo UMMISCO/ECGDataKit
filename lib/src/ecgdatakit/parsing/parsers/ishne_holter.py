@@ -6,6 +6,7 @@ Ann Noninvasive Electrocardiol. 1998;3(3):263-266.
 
 from __future__ import annotations
 
+import binascii
 import datetime
 import os
 import struct
@@ -14,7 +15,6 @@ from dataclasses import dataclass
 from pathlib import Path
 
 import numpy as np
-from crccheck.crc import Crc16CcittFalse
 from ecgdatakit.exceptions import ChecksumWarning, CorruptedFileError
 from ecgdatakit.models import (
     DeviceInfo,
@@ -139,6 +139,7 @@ class ISHNEHolterParser(Parser):
     FORMAT_NAME = "ISHNE Holter"
     FORMAT_DESCRIPTION = "ISHNE Holter standard binary format"
     FILE_EXTENSIONS = [".ecg"]
+    PRIORITY = 10
 
     @staticmethod
     def can_parse(file_path: Path, header: bytes) -> bool:
@@ -157,6 +158,12 @@ class ISHNEHolterParser(Parser):
         record = ECGRecord(source_format="ishne_holter")
         record.patient = self._parse_patient(header, lead_meta)
         record.recording = self._parse_recording(header)
+        birth, rec_date = record.patient.birth_date, record.recording.date
+        if birth is not None and rec_date is not None:
+            # The format has no age field, derive it from the dates
+            record.patient.age = rec_date.year - birth.year - (
+                (rec_date.month, rec_date.day) < (birth.month, birth.day)
+            )
         record.file_format = FileFormatInfo(
             version=str(_i16(header, 26)),
             creation_date=_date(header, 144),
@@ -234,7 +241,7 @@ class ISHNEHolterParser(Parser):
         with open(filename, "rb") as f:
             f.seek(_HEADER_RECORD_OFFSET)
             block = f.read(layout.data_offset - _HEADER_RECORD_OFFSET)
-        computed = int(Crc16CcittFalse.calc(block))
+        computed = binascii.crc_hqx(block, 0xFFFF)  # CRC-CCITT, init 0xFFFF
         # Spec does not fix the byte order of the stored CRC, accept both
         swapped = ((computed & 0xFF) << 8) | (computed >> 8)
         layout.checksum_valid = stored in (computed, swapped)

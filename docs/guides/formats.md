@@ -1,6 +1,6 @@
 # Supported Formats
 
-ECGDataKit parses 13 ECG file formats via content-based detection — no file extension guessing.
+ECGDataKit parses 13 ECG file formats via content-based detection, not file extensions. Parsers with a reliable magic number are tried first and loose sniffers last (`Parser.PRIORITY`).
 
 | Format | File Types | Parser Class | Detection |
 |--------|-----------|--------------|-----------|
@@ -8,15 +8,15 @@ ECGDataKit parses 13 ECG file formats via content-based detection — no file ex
 | Philips Sierra XML | `.xml` | `SierraXMLParser` | `<restingecgdata` in header |
 | GE MUSE XML | `.xml` | `GEMuseXMLParser` | `<RestingECG>` in header |
 | ISHNE Holter | `.ecg` | `ISHNEHolterParser` | `ISHNE1.0` magic bytes |
-| Mortara EL250 | `.xml` | `MortaraEL250Parser` | `<ECG` + `<CHANNEL` in header |
+| Mortara ELI (EL250/ELI280) | `.xml` | `MortaraEL250Parser` | `<ECG` root + ELI elements or attributes |
 | EDF / EDF+ | `.edf` | `EDFParser` | `"0       "` at offset 0 + valid structure |
-| SCP-ECG | `.scp` | `SCPECGParser` | Valid Section 0 pointer table at offset 6 |
+| SCP-ECG | `.scp` | `SCPECGParser` | Section 0 header at offset 6 (ID at byte 8) and a valid pointer table |
 | DICOM Waveform | `.dcm` | `DICOMWaveformParser` | `DICM` at offset 128 |
-| WFDB (PhysioNet) | `.hea` + `.dat` | `WFDBParser` | `.hea` extension + valid header |
-| MFER | `.mwf`, `.mfer` | `MFERParser` | Valid MFER tag (0x01–0x3F) + BER length |
+| WFDB (PhysioNet) | `.hea` + `.dat` | `WFDBParser` | valid `.hea` header, or a `.dat` with a sibling `.hea` |
+| MFER | `.mwf`, `.mfer`, `.mfr` | `MFERParser` | `MFR ` preamble or a chain of known MFER tags |
 | Mindray BeneHeart R12 | `.xml` | `BeneHeartR12Parser` | `<BeneHeartR12>` or `<MindrayECG>` |
 | GE MAC 2000 | `.xml` | `GEMAC2000Parser` | `<MAC2000>` or `<GE_MAC>` |
-| EDAN ARC Holter | `patient.hea` + `ecgraw.dat` | `EDANARCHolterParser` | filename `patient.hea` + sibling `ecgraw.dat` |
+| EDAN ARC Holter | recording folder, `patient.hea` + `ecgraw.dat`, `.arc` | `EDANARCHolterParser` | `patient.hea` with sibling `ecgraw.dat`, or an `.arc` with a known signature |
 
 ## HL7 aECG
 
@@ -40,11 +40,7 @@ XML export format from GE Healthcare's MUSE ECG management system. Contains base
 
 A binary format defined by the International Society for Holter and Noninvasive Electrocardiology. Designed for long-duration Holter recordings. Contains a fixed-length header with patient info and signal metadata, followed by raw sample data.
 
-**Dependencies:** `crccheck` for CRC-16 checksum validation.
-
-```bash
-pip install "ecgdatakit[holter]"
-```
+**Dependencies:** None (the CRC-16 check uses the standard library). Some recorders store a constant instead of a real checksum: the mismatch is reported as `ChecksumWarning` and `raw_metadata["checksum_valid"]`.
 
 ## Mortara EL250
 

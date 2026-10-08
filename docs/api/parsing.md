@@ -54,9 +54,16 @@ When `True` (default), leads with scaling metadata (`resolution`, `offset`, `uni
 Leads without sufficient metadata are left as raw ADC values and a warning is emitted:
 
 ```
-UserWarning: Leads ['Ch1', 'Ch2'] contain raw ADC samples — no scaling
+UserWarning: Leads ['Ch1', 'Ch2'] contain raw ADC samples, no scaling
 metadata available. Pass auto_scale=False to get raw values.
 ```
+
+With `auto_scale=False`, `lead.samples` are the values stored in the file, and
+`resolution`, `offset` and `resolution_unit` describe the conversion
+(`physical = samples * resolution + offset`).
+
+Warnings raised by a parser point at the line that called `FileParser.parse`.
+Errors while decoding a recognised file are raised as `CorruptedFileError`.
 
 ```python
 # Default — leads with scaling metadata are converted to mV
@@ -81,6 +88,9 @@ for fmt in FileParser.supported_formats():
 from ecgdatakit import parse_batch
 
 records = list(parse_batch(file_list, max_workers=4))
+
+# Keep going when a file fails, each failure is reported as BatchParseWarning
+records = list(parse_batch(file_list, on_error="warn", auto_scale=False))
 ```
 
 ```{toctree}

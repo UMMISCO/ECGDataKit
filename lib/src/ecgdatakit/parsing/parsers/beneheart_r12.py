@@ -1,22 +1,21 @@
-"""Mindray BeneHeart R12 XML format parser.
+"""Mindray BeneHeart R12 XML format parser (beta).
 
-Parses ECG exports from Mindray BeneHeart R12 devices.
-
-Note: This parser is marked as beta due to limited public documentation.
-Structure is inferred from device export samples and Mindray SDK docs.
+No public description of the BeneHeart R12 native XML export exists (the
+device can also export HL7 aECG, which the HL7 aECG parser handles). The
+element names below are inferred; amplitude scaling is applied only when
+the file states a resolution, otherwise samples stay raw counts.
 """
 
 from __future__ import annotations
 
-import base64
+import re
 from datetime import datetime, timedelta
 from pathlib import Path
+from xml.parsers.expat import ExpatError
 
-import numpy as np
 import xmltodict
 
-from ecgdatakit.exceptions import CorruptedFileError
-from ecgdatakit.parsing.helpers.xml import find_tag, read_path
+from ecgdatakit.exceptions import CorruptedFileError, MissingElementError
 from ecgdatakit.models import (
     DeviceInfo,
     ECGRecord,
@@ -27,37 +26,99 @@ from ecgdatakit.models import (
     PatientInfo,
     RecordingInfo,
     SignalCharacteristics,
+    _normalize_unit,
+    derive_is_raw,
 )
+from ecgdatakit.parsing.helpers import (
+    STANDARD_LEADS,
+    fill_signal_summary,
+    normalize_lead_label,
+    unique_labels,
+)
+from ecgdatakit.parsing.helpers.waveform_text import decode_int16_text
+from ecgdatakit.parsing.helpers.xml import find_tag
 from ecgdatakit.parsing.parser import Parser
 
+_ROOT_TAGS = ("beneheartr12", "mindrayecg", "ecgdata")
 
-def _decode_lead_data(data_str: str) -> np.ndarray:
-    """Decode lead data — try Base64, then comma-separated integers."""
-    data_str = data_str.strip()
-    if not data_str:
-        return np.array([], dtype=np.float64)
+_UNIT_TO_CM = {"CM": 1.0, "M": 100.0, "IN": 2.54, "INCH": 2.54}
+_UNIT_TO_KG = {"KG": 1.0, "G": 0.001, "LB": 0.45359237, "LBS": 0.45359237}
 
+_MEASUREMENTS = (
+    ("heart_rate", ("VentricularRate", "HeartRate")),
+    ("pr_interval", ("PRInterval",)),
+    ("qrs_duration", ("QRSDuration",)),
+    ("qt_interval", ("QTInterval",)),
+    ("qtc_bazett", ("QTcBazett",)),
+    ("qtc_fridericia", ("QTcFridericia", "QTcFredericia")),
+    ("p_axis", ("PAxis",)),
+    ("qrs_axis", ("QRSAxis", "RAxis")),
+    ("t_axis", ("TAxis",)),
+    ("rr_interval", ("RRInterval", "RR")),
+    ("qrs_count", ("QRSCount", "NumQRS")),
+)
+
+_STATEMENT_TAGS = ("DiagnosisStatement", "Statement", "StmtText", "Text", "Description")
+
+
+def _text(value) -> str:
+    if isinstance(value, list):
+        value = value[0] if value else None
+    if isinstance(value, dict):
+        value = value.get("#text")
+    return str(value).strip() if value is not None else ""
+
+
+def _child(node, tag: str):
+    """Direct child or attribute *tag* of *node* (case-insensitive)."""
+    if not isinstance(node, dict):
+        return None
+    lower = tag.lower()
+    for key, value in node.items():
+        if key.lower() in (lower, "@" + lower):
+            return value
+    return None
+
+
+def _number(value) -> float | None:
+    text = _text(value)
+    if not text:
+        return None
     try:
-        raw = base64.b64decode(data_str)
-        if len(raw) >= 2:
-            signal = np.frombuffer(raw, dtype="<i2")
-            return signal.astype(np.float64)
-    except Exception:
-        pass
-
-    try:
-        values = [int(v.strip()) for v in data_str.split(",") if v.strip()]
-        return np.array(values, dtype=np.float64)
+        return float(text)
     except ValueError:
-        pass
+        return None
 
-    try:
-        values = [int(v.strip()) for v in data_str.split() if v.strip()]
-        return np.array(values, dtype=np.float64)
-    except ValueError:
-        pass
 
-    return np.array([], dtype=np.float64)
+def _as_list(value) -> list:
+    if value is None:
+        return []
+    return value if isinstance(value, list) else [value]
+
+
+def _parse_dob(text: str) -> datetime | None:
+    """Parse ISO-like dates; d/m vs m/d only when unambiguous."""
+    text = text.strip()
+    for fmt in ("%Y%m%d", "%Y-%m-%d", "%Y/%m/%d"):
+        try:
+            return datetime.strptime(text, fmt)
+        except ValueError:
+            continue
+    m = re.fullmatch(r"(\d{1,2})/(\d{1,2})/(\d{4})", text)
+    if m:
+        a, b, year = int(m.group(1)), int(m.group(2)), int(m.group(3))
+        try:
+            if a > 12 >= b:
+                return datetime(year, b, a)
+            if b > 12 >= a:
+                return datetime(year, a, b)
+        except ValueError:
+            return None
+    return None
+
+
+def _years_between(start: datetime, end: datetime) -> int:
+    return end.year - start.year - ((end.month, end.day) < (start.month, start.day))
 
 
 class BeneHeartR12Parser(Parser):
@@ -66,464 +127,350 @@ class BeneHeartR12Parser(Parser):
     FORMAT_NAME = "Mindray BeneHeart R12"
     FORMAT_DESCRIPTION = "Mindray BeneHeart R12 XML ECG format (beta)"
     FILE_EXTENSIONS = [".xml"]
+    PRIORITY = 50
 
     @staticmethod
     def can_parse(file_path: Path, header: bytes) -> bool:
-        try:
-            text = header.decode("utf-8", errors="ignore")
-            upper = text.upper()
-            if "<BENEHEARTR12" in upper or "<MINDRAYECG" in upper:
-                return True
-            if "<ECGDATA" in upper and "MINDRAY" in upper:
-                return True
-            return False
-        except Exception:
-            return False
+        upper = header.decode("utf-8", errors="ignore").upper()
+        if "<BENEHEARTR12" in upper or "<MINDRAYECG" in upper:
+            return True
+        return "<ECGDATA" in upper and "MINDRAY" in upper
 
     def parse(self, file_path: Path) -> ECGRecord:
-        with open(file_path, "rb") as f:
-            doc = xmltodict.parse(f.read())
+        try:
+            with open(file_path, "rb") as f:
+                doc = xmltodict.parse(f.read())
+        except ExpatError as e:
+            raise CorruptedFileError(f"Malformed BeneHeart XML in {file_path}: {e}") from e
 
-        root = None
-        for key in ("BeneHeartR12", "MindrayECG", "ECGData"):
-            if key in doc:
-                root = doc[key]
-                break
-        if root is None:
-            for key in doc:
-                if key.lower() in ("beneheartr12", "mindrayecg", "ecgdata"):
-                    root = doc[key]
-                    break
-
-        if root is None:
+        root = next((v for k, v in doc.items() if k.lower() in _ROOT_TAGS), None)
+        if not isinstance(root, dict):
             raise CorruptedFileError(f"No recognized root element in {file_path}")
 
         record = ECGRecord(source_format="beneheart_r12")
+        raw = record.raw_metadata
 
-        record.patient = self._read_patient(root)
-        record.recording = self._read_recording(root)
-        record.leads = self._read_leads(root)
-        record.recording.device = self._read_device(root)
+        acq = self._first(root, ("AcquisitionInfo", "RecordingInfo", "TestInfo"))
+        record.recording = self._read_recording(acq, raw)
+        record.patient = self._read_patient(root, record.recording.date, raw)
+        record.leads, encodings = self._read_leads(root, acq, file_path)
+        if not record.leads:
+            raise CorruptedFileError(f"No lead waveform data in {file_path}")
+        record.recording.device = self._read_device(root, acq)
         record.recording.acquisition.filters = self._read_filters(root)
-        record.interpretation, record.measurements = self._read_annotations(root)
-        clinical_info: dict[str, str] = {}
+        record.interpretation, record.measurements, extra = self._read_annotations(root)
+        record.annotations.update(extra)
+
+        clinical: dict[str, str] = {}
         for tag in ("ClinicalInfo", "OrderInfo", "Indication"):
             node = find_tag(root, tag)
-            if node is not None:
-                if isinstance(node, list):
-                    node = node[0]
-                if isinstance(node, dict):
-                    for k, v in node.items():
-                        if isinstance(v, str):
-                            clinical_info[k] = v
-                        elif isinstance(v, dict) and "#text" in v:
-                            clinical_info[k] = v["#text"]
-                elif isinstance(node, str) and node.strip():
-                    clinical_info[tag] = node.strip()
-        if clinical_info:
-            record.raw_metadata["clinical_info"] = clinical_info
+            if isinstance(node, list):
+                node = node[0]
+            if isinstance(node, dict):
+                for key, value in node.items():
+                    text = _text(value)
+                    if text and not key.startswith("#"):
+                        clinical[key.lstrip("@")] = text
+            elif _text(node):
+                clinical[tag] = _text(node)
+        if clinical:
+            raw["clinical_info"] = clinical
+            record.patient.clinical_history = "\n".join(f"{k}: {v}" for k, v in clinical.items())
 
-        if record.leads and record.recording.acquisition.signal.sampling_rate == 0:
-            record.recording.acquisition.signal.sampling_rate = record.leads[0].sampling_rate
-        if record.leads and record.recording.acquisition.signal.sampling_rate > 0:
-            duration_s = len(record.leads[0].samples) / record.recording.acquisition.signal.sampling_rate
-            record.recording.duration = timedelta(seconds=duration_s)
+        lead = record.leads[0]
+        record.recording.duration = timedelta(seconds=lead.samples.size / lead.sampling_rate)
 
         record.recording.acquisition.signal = SignalCharacteristics(
-            sampling_rate=record.recording.acquisition.signal.sampling_rate,
+            sampling_rate=lead.sampling_rate,
             signal_signed=True,
             number_channels_valid=len(record.leads),
-            data_encoding="base64_int16le",
+            data_encoding=encodings.pop() if len(encodings) == 1 else "",
             compression="none",
         )
 
-        record.raw_metadata["filepath"] = str(file_path)
-
+        fill_signal_summary(record)
         return record
 
-    def _read_patient(self, root: dict) -> PatientInfo:
-        info = PatientInfo()
+    @staticmethod
+    def _first(root: dict, tags: tuple[str, ...]):
+        for tag in tags:
+            node = find_tag(root, tag)
+            if isinstance(node, list):
+                node = node[0]
+            if isinstance(node, dict):
+                return node
+        return None
 
-        demo = find_tag(root, "PatientInfo") or find_tag(root, "Patient") or find_tag(root, "Demographics")
+    def _read_patient(self, root: dict, acq_date: datetime | None, raw: dict) -> PatientInfo:
+        info = PatientInfo()
+        demo = self._first(root, ("PatientInfo", "Patient", "Demographics"))
         if demo is None:
             return info
 
-        if isinstance(demo, list):
-            demo = demo[0]
+        def get(*tags: str) -> str:
+            for tag in tags:
+                value = _text(_child(demo, tag))
+                if value:
+                    return value
+            return ""
 
-        info.patient_id = self._get_text(demo, "PatientID") or self._get_text(demo, "ID")
-        info.first_name = self._get_text(demo, "FirstName") or self._get_text(demo, "GivenName")
-        info.last_name = self._get_text(demo, "LastName") or self._get_text(demo, "FamilyName")
+        info.patient_id = get("PatientID", "ID")
+        info.first_name = get("FirstName", "GivenName")
+        info.last_name = get("LastName", "FamilyName")
 
-        sex = self._get_text(demo, "Sex") or self._get_text(demo, "Gender")
+        sex = get("Sex", "Gender").upper()
         if sex:
-            s = sex.upper()
-            info.sex = "M" if s in ("M", "MALE", "1") else "F" if s in ("F", "FEMALE", "2") else "U"
+            info.sex = "M" if sex in ("M", "MALE") else "F" if sex in ("F", "FEMALE") else "U"
 
-        dob = self._get_text(demo, "DateOfBirth") or self._get_text(demo, "BirthDate") or self._get_text(demo, "DOB")
+        dob = get("DateOfBirth", "BirthDate", "DOB")
         if dob:
-            for fmt in ("%Y%m%d", "%Y-%m-%d", "%m/%d/%Y", "%d/%m/%Y"):
-                try:
-                    info.birth_date = datetime.strptime(dob.strip(), fmt)
-                    break
-                except ValueError:
-                    continue
+            info.birth_date = _parse_dob(dob)
+            if info.birth_date is None:
+                raw["birth_date"] = dob
 
-        age_str = self._get_text(demo, "Age")
-        if age_str and age_str.isdigit():
-            info.age = int(age_str)
+        age = _number(_child(demo, "Age"))
+        if age is not None:
+            info.age = int(age)
+        elif info.birth_date is not None and acq_date is not None:
+            info.age = _years_between(info.birth_date, acq_date)
 
-        height_str = self._get_text(demo, "Height") or self._get_text(demo, "PatientHeight")
-        if height_str:
-            try:
-                info.height = float(height_str)
-            except (ValueError, TypeError):
-                pass
-
-        weight_str = self._get_text(demo, "Weight") or self._get_text(demo, "PatientWeight")
-        if weight_str:
-            try:
-                info.weight = float(weight_str)
-            except (ValueError, TypeError):
-                pass
-
+        info.height = self._with_unit(_child(demo, "Height") or _child(demo, "PatientHeight"),
+                                      _UNIT_TO_CM, "height", raw)
+        info.weight = self._with_unit(_child(demo, "Weight") or _child(demo, "PatientWeight"),
+                                      _UNIT_TO_KG, "weight", raw)
+        race = get("Race", "Ethnicity")
+        if race:
+            info.race = race
         return info
-
-    def _read_recording(self, root: dict) -> RecordingInfo:
-        info = RecordingInfo()
-
-        acq = find_tag(root, "AcquisitionInfo") or find_tag(root, "RecordingInfo") or find_tag(root, "TestInfo")
-        if acq is not None:
-            if isinstance(acq, list):
-                acq = acq[0]
-
-            date_str = self._get_text(acq, "AcquisitionDate") or self._get_text(acq, "Date")
-            time_str = self._get_text(acq, "AcquisitionTime") or self._get_text(acq, "Time")
-            if date_str:
-                for fmt in ("%Y%m%d", "%Y-%m-%d", "%m/%d/%Y"):
-                    try:
-                        dt = datetime.strptime(date_str.strip(), fmt)
-                        if time_str:
-                            try:
-                                t = datetime.strptime(time_str.strip(), "%H:%M:%S")
-                                dt = dt.replace(hour=t.hour, minute=t.minute, second=t.second)
-                            except ValueError:
-                                pass
-                        info.date = dt
-                        break
-                    except ValueError:
-                        continue
-
-            sr_str = self._get_text(acq, "SampleRate") or self._get_text(acq, "SamplingRate")
-            if sr_str:
-                try:
-                    info.acquisition.signal.sampling_rate = int(float(sr_str))
-                except ValueError:
-                    pass
-
-        return info
-
-    def _read_leads(self, root: dict) -> list[Lead]:
-        leads: list[Lead] = []
-
-        lead_container = (
-            find_tag(root, "Leads") or
-            find_tag(root, "WaveformData") or
-            find_tag(root, "Channels")
-        )
-
-        sampling_rate = 500
-        sr_node = find_tag(root, "SampleRate") or find_tag(root, "SamplingRate")
-        if sr_node is not None:
-            try:
-                sampling_rate = int(str(sr_node))
-            except ValueError:
-                pass
-
-        if lead_container is not None:
-            if isinstance(lead_container, list):
-                lead_container = lead_container[0]
-
-            lead_nodes = find_tag(lead_container, "Lead") or find_tag(lead_container, "Channel")
-            if lead_nodes is None:
-                for label in ("I", "II", "III", "aVR", "aVL", "aVF",
-                              "V1", "V2", "V3", "V4", "V5", "V6"):
-                    data = find_tag(lead_container, label)
-                    if data is not None:
-                        samples = _decode_lead_data(str(data))
-                        if len(samples) > 0:
-                            leads.append(Lead(
-                                label=label,
-                                samples=samples,
-                                sampling_rate=sampling_rate,
-                                resolution=1.0,  # BeneHeart R12: 1 uV/LSB per Mindray spec
-                                resolution_unit="uV",
-                                units="uV",  # resolution=1.0 → samples already in uV
-                                is_raw=False,
-                            ))
-            else:
-                if isinstance(lead_nodes, dict):
-                    lead_nodes = [lead_nodes]
-                if isinstance(lead_nodes, list):
-                    for node in lead_nodes:
-                        if isinstance(node, dict):
-                            label = (
-                                node.get("@Name") or node.get("@name") or
-                                node.get("@NAME") or node.get("@Label") or
-                                node.get("@label") or
-                                self._get_text(node, "Name") or
-                                self._get_text(node, "Label") or "?"
-                            )
-                            data_str = (
-                                node.get("@Data") or node.get("@data") or
-                                node.get("@DATA") or
-                                node.get("#text") or
-                                self._get_text(node, "Data") or
-                                self._get_text(node, "Samples") or ""
-                            )
-                            # Try XML-provided resolution; fallback to 1 uV/LSB
-                            res = 1.0
-                            res_str = (
-                                self._get_text(node, "Resolution") or
-                                self._get_text(node, "AmplitudeResolution")
-                            )
-                            if res_str:
-                                try:
-                                    res = float(res_str)
-                                except (ValueError, TypeError):
-                                    pass
-                            samples = _decode_lead_data(data_str)
-                            if len(samples) > 0:
-                                raw = res != 1.0
-                                leads.append(Lead(
-                                    label=label,
-                                    samples=samples,
-                                    sampling_rate=sampling_rate,
-                                    resolution=res,
-                                    resolution_unit="uV",
-                                    units="" if raw else "uV",
-                                    is_raw=raw,
-                                ))
-
-        return leads
-
-    def _read_annotations(self, root: dict) -> tuple[Interpretation, GlobalMeasurements]:
-        interp = Interpretation()
-        interp.source = "machine"
-        measurements = GlobalMeasurements()
-
-        statements: list[tuple[str, str]] = []
-        for tag in ("Diagnosis", "Interpretation", "AnalysisResult",
-                     "MachineInterpretation"):
-            node = find_tag(root, tag)
-            if node is None:
-                continue
-            if isinstance(node, dict):
-                node = [node]
-            if isinstance(node, list):
-                for item in node:
-                    if isinstance(item, dict):
-                        for stmt_tag in ("DiagnosisStatement", "Statement",
-                                         "StmtText", "Text", "Description"):
-                            stmt_node = find_tag(item, stmt_tag)
-                            if stmt_node is not None:
-                                if isinstance(stmt_node, list):
-                                    for s in stmt_node:
-                                        text = s.get("#text", "") if isinstance(s, dict) else str(s).strip()
-                                        if text:
-                                            statements.append((text, ""))
-                                elif isinstance(stmt_node, dict):
-                                    text = stmt_node.get("#text", "")
-                                    if text:
-                                        statements.append((text, ""))
-                                elif isinstance(stmt_node, str) and stmt_node.strip():
-                                    statements.append((stmt_node.strip(), ""))
-                        if not statements:
-                            text = (
-                                item.get("@TEXT") or item.get("@Text") or
-                                item.get("@DESCRIPTION") or item.get("#text", "")
-                            )
-                            if text and isinstance(text, str) and text.strip():
-                                statements.append((text.strip(), ""))
-                    elif isinstance(item, str) and item.strip():
-                        statements.append((item.strip(), ""))
-
-        for sev_tag in ("Severity", "DiagnosisSeverity"):
-            sev = self._get_text(root, sev_tag)
-            if sev:
-                interp.severity = sev.upper()
-                break
-
-        interp.statements = statements
-
-        meas_node = None
-        for tag in ("Measurements", "GlobalMeasurements",
-                     "RestingECGMeasurements", "OriginalRestingECGMeasurements"):
-            meas_node = find_tag(root, tag)
-            if meas_node is not None:
-                break
-
-        if meas_node is not None:
-            if isinstance(meas_node, list):
-                meas_node = meas_node[0]
-            if isinstance(meas_node, dict):
-                hr = self._get_text(meas_node, "VentricularRate") or self._get_text(meas_node, "HeartRate")
-                if hr:
-                    try:
-                        measurements.heart_rate = int(float(hr))
-                    except (ValueError, TypeError):
-                        pass
-
-                pr = self._get_text(meas_node, "PRInterval")
-                if pr:
-                    try:
-                        measurements.pr_interval = int(float(pr))
-                    except (ValueError, TypeError):
-                        pass
-
-                qrs = self._get_text(meas_node, "QRSDuration")
-                if qrs:
-                    try:
-                        measurements.qrs_duration = int(float(qrs))
-                    except (ValueError, TypeError):
-                        pass
-
-                qt = self._get_text(meas_node, "QTInterval")
-                if qt:
-                    try:
-                        measurements.qt_interval = int(float(qt))
-                    except (ValueError, TypeError):
-                        pass
-
-                qtc = self._get_text(meas_node, "QTCorrected") or self._get_text(meas_node, "QTcBazett")
-                if qtc:
-                    try:
-                        measurements.qtc_bazett = int(float(qtc))
-                    except (ValueError, TypeError):
-                        pass
-
-                p_axis = self._get_text(meas_node, "PAxis")
-                if p_axis:
-                    try:
-                        measurements.p_axis = int(float(p_axis))
-                    except (ValueError, TypeError):
-                        pass
-
-                qrs_axis = self._get_text(meas_node, "QRSAxis") or self._get_text(meas_node, "RAxis")
-                if qrs_axis:
-                    try:
-                        measurements.qrs_axis = int(float(qrs_axis))
-                    except (ValueError, TypeError):
-                        pass
-
-                t_axis = self._get_text(meas_node, "TAxis")
-                if t_axis:
-                    try:
-                        measurements.t_axis = int(float(t_axis))
-                    except (ValueError, TypeError):
-                        pass
-
-                rr = self._get_text(meas_node, "RRInterval") or self._get_text(meas_node, "RR")
-                if rr:
-                    try:
-                        measurements.rr_interval = int(float(rr))
-                    except (ValueError, TypeError):
-                        pass
-
-                qrs_count = self._get_text(meas_node, "QRSCount") or self._get_text(meas_node, "NumQRS")
-                if qrs_count:
-                    try:
-                        measurements.qrs_count = int(float(qrs_count))
-                    except (ValueError, TypeError):
-                        pass
-
-        return interp, measurements
-
-    def _read_device(self, root: dict) -> DeviceInfo:
-        dev = DeviceInfo()
-        dev.model = "BeneHeart R12"
-
-        acq = find_tag(root, "AcquisitionInfo") or find_tag(root, "RecordingInfo")
-        sources = [acq, root] if acq is not None else [root]
-
-        for src in sources:
-            if isinstance(src, list):
-                src = src[0]
-            if not isinstance(src, dict):
-                continue
-
-            if not dev.model or dev.model == "BeneHeart R12":
-                name = (
-                    self._get_text(src, "DeviceName") or
-                    self._get_text(src, "DeviceModel") or
-                    self._get_text(src, "Device") or
-                    self._get_text(src, "Model")
-                )
-                if name:
-                    dev.model = name
-
-            if not dev.manufacturer:
-                dev.manufacturer = self._get_text(src, "Manufacturer")
-
-            if not dev.serial_number:
-                dev.serial_number = self._get_text(src, "SerialNumber")
-
-            if not dev.software_version:
-                dev.software_version = (
-                    self._get_text(src, "SoftwareVersion")
-                    or self._get_text(src, "FirmwareVersion")
-                )
-
-        if not dev.manufacturer:
-            dev.manufacturer = "Mindray"
-
-        return dev
-
-    def _read_filters(self, root: dict) -> FilterSettings:
-        filters = FilterSettings()
-
-        filt_node = find_tag(root, "FilterSettings")
-        if filt_node is None:
-            filt_node = root
-
-        if isinstance(filt_node, list):
-            filt_node = filt_node[0]
-
-        if isinstance(filt_node, dict):
-            hp = self._get_text(filt_node, "HighPass") or self._get_text(filt_node, "HighPassFilter")
-            if hp:
-                try:
-                    filters.highpass = float(hp)
-                except (ValueError, TypeError):
-                    pass
-
-            lp = self._get_text(filt_node, "LowPass") or self._get_text(filt_node, "LowPassFilter")
-            if lp:
-                try:
-                    filters.lowpass = float(lp)
-                except (ValueError, TypeError):
-                    pass
-
-            nf = self._get_text(filt_node, "NotchFilter") or self._get_text(filt_node, "Notch")
-            if nf:
-                try:
-                    filters.notch = float(nf)
-                    if filters.notch:
-                        filters.notch_active = True
-                except (ValueError, TypeError):
-                    pass
-
-        return filters
 
     @staticmethod
-    def _get_text(node: dict | None, tag: str) -> str:
-        if node is None:
+    def _with_unit(node, table: dict, key: str, raw: dict) -> float | None:
+        """Convert a value whose unit is given by a unit attribute; else keep it raw."""
+        value = _number(node)
+        if not value:
+            return None
+        unit = ""
+        if isinstance(node, dict):
+            unit = _text(_child(node, "Unit") or _child(node, "Units")).upper()
+        if unit in table:
+            return round(value * table[unit], 3)
+        raw[key] = {"value": value, "units": unit}
+        return None
+
+    def _read_recording(self, acq, raw: dict) -> RecordingInfo:
+        info = RecordingInfo()
+        if acq is None:
+            return info
+        date_str = _text(_child(acq, "AcquisitionDate") or _child(acq, "Date"))
+        time_str = _text(_child(acq, "AcquisitionTime") or _child(acq, "Time"))
+        if not date_str:
+            return info
+        try:
+            if "T" in date_str:
+                info.date = datetime.fromisoformat(date_str)
+                return info
+        except ValueError:
+            pass
+        day = None
+        for fmt in ("%Y%m%d", "%Y-%m-%d", "%Y/%m/%d"):
+            try:
+                day = datetime.strptime(date_str, fmt)
+                break
+            except ValueError:
+                continue
+        if day is None:
+            raw["acquisition_date"] = date_str
+            return info
+        for fmt in ("%H:%M:%S", "%H%M%S", "%H:%M"):
+            try:
+                t = datetime.strptime(time_str, fmt)
+                info.date = day.replace(hour=t.hour, minute=t.minute, second=t.second)
+                break
+            except ValueError:
+                continue
+        if info.date is None:
+            # No time of day in the file: keep the date without inventing one
+            raw["acquisition_date"] = day.date().isoformat()
+        return info
+
+    @staticmethod
+    def _resolution(node) -> tuple[float | None, str]:
+        """Resolution and its unit from a node's children or attributes."""
+        for tag in ("Resolution", "AmplitudeResolution"):
+            value = _child(node, tag)
+            res = _number(value)
+            if res:
+                unit = ""
+                if isinstance(value, dict):
+                    unit = _text(_child(value, "Unit") or _child(value, "Units"))
+                unit = unit or _text(_child(node, "ResolutionUnit") or _child(node, "Unit")
+                                     or _child(node, "Units"))
+                return res, (_normalize_unit(unit) or "") if unit else ""
+        return None, ""
+
+    def _read_leads(self, root: dict, acq, file_path: Path) -> tuple[list[Lead], set]:
+        container = self._first(root, ("Leads", "WaveformData", "Channels"))
+        if container is None:
+            return [], set()
+
+        rate = (_number(_child(container, "SampleRate")) or _number(_child(container, "SamplingRate"))
+                or _number(_child(acq, "SampleRate")) or _number(_child(acq, "SamplingRate"))
+                or _number(find_tag(root, "SampleRate")) or _number(find_tag(root, "SamplingRate")))
+        if not rate or rate <= 0:
+            raise MissingElementError(f"No sampling rate in {file_path}")
+
+        default_res, default_unit = self._resolution(container)
+        if default_res is None:
+            default_res, default_unit = self._resolution(acq)
+
+        entries: list[tuple[str, object, dict | None]] = []
+        nodes = _as_list(_child(container, "Lead")) or _as_list(_child(container, "Channel"))
+        if nodes:
+            for i, node in enumerate(nodes):
+                if not isinstance(node, dict):
+                    entries.append((f"CH{i + 1}", node, None))
+                    continue
+                label = (_text(_child(node, "Name")) or _text(_child(node, "Label"))
+                         or f"CH{i + 1}")
+                data = (_text(_child(node, "Data")) or _text(node.get("#text"))
+                        or _text(_child(node, "Samples")))
+                entries.append((label, data, node))
+        else:
+            # One child element per lead, named after the lead
+            for label in STANDARD_LEADS:
+                node = _child(container, label)
+                if node is not None:
+                    entries.append((label, _text(node), node if isinstance(node, dict) else None))
+
+        leads: list[Lead] = []
+        encodings: set[str] = set()
+        for label, data, node in entries:
+            try:
+                samples, encoding = decode_int16_text(_text(data))
+            except ValueError as e:
+                raise CorruptedFileError(f"Lead {label} in {file_path}: {e}") from e
+            if samples.size == 0:
+                raise CorruptedFileError(f"Lead {label} in {file_path} has no waveform data")
+            encodings.add(encoding)
+
+            res, unit = self._resolution(node) if node is not None else (None, "")
+            if res is None:
+                res, unit = default_res, default_unit
+            resolution = res or 1.0
+            is_raw = derive_is_raw(resolution, 0.0, unit)
+            leads.append(Lead(
+                label=normalize_lead_label(label),
+                samples=samples,
+                sampling_rate=int(round(rate)),
+                resolution=resolution,
+                resolution_unit=unit,
+                units="" if is_raw else unit,
+                is_raw=is_raw,
+                adc_resolution=res or 0.0,
+                adc_resolution_unit=unit,
+            ))
+        for lead, unique in zip(leads, unique_labels([l.label for l in leads])):
+            lead.label = unique
+        return leads, encodings
+
+    @staticmethod
+    def _item_statements(item) -> list[str]:
+        """Statement texts of one Diagnosis-like element (or plain string)."""
+        if isinstance(item, str):
+            return [s.strip() for s in item.splitlines() if s.strip()]
+        if not isinstance(item, dict):
+            return []
+        out: list[str] = []
+        for tag in _STATEMENT_TAGS:
+            for sub in _as_list(_child(item, tag)):
+                text = _text(sub)
+                if not text and isinstance(sub, dict):
+                    text = _text(_child(sub, "StmtText") or _child(sub, "Text"))
+                if text:
+                    out.append(text)
+        if not out:
+            text = _text(item.get("#text"))
+            if text:
+                out.append(text)
+        return out
+
+    def _read_annotations(
+        self, root: dict,
+    ) -> tuple[Interpretation, GlobalMeasurements, dict[str, str]]:
+        interp = Interpretation()
+        statements: list[tuple[str, str]] = []
+        seen: set[str] = set()
+        for tag in ("Diagnosis", "Interpretation", "AnalysisResult", "MachineInterpretation"):
+            for item in _as_list(find_tag(root, tag)):
+                for text in self._item_statements(item):
+                    if text not in seen:
+                        seen.add(text)
+                        statements.append((text, ""))
+        if statements:
+            interp.statements = statements
+            interp.source = "machine"
+            severity = _text(find_tag(root, "Severity")) or _text(find_tag(root, "DiagnosisSeverity"))
+            if severity:
+                interp.severity = severity.upper()
+
+        measurements = GlobalMeasurements()
+        node = self._first(root, ("Measurements", "GlobalMeasurements",
+                                  "RestingECGMeasurements", "OriginalRestingECGMeasurements"))
+        if node is not None:
+            for attr, tags in _MEASUREMENTS:
+                for tag in tags:
+                    value = _number(_child(node, tag))
+                    if value is not None:
+                        setattr(measurements, attr, int(round(value)))
+                        break
+        extra: dict[str, str] = {}
+        if node is not None:
+            # QTc without a stated formula is not filed as Bazett or Fridericia
+            qtc = _number(_child(node, "QTCorrected"))
+            if qtc is not None:
+                extra["qtc"] = f"{qtc:g} ms (formula not stated)"
+        return interp, measurements, extra
+
+    @staticmethod
+    def _read_device(root: dict, acq) -> DeviceInfo:
+        sources = [src for src in (acq, root) if isinstance(src, dict)]
+
+        def get(*tags: str) -> str:
+            for src in sources:
+                for tag in tags:
+                    value = _text(_child(src, tag))
+                    if value:
+                        return value
             return ""
-        val = find_tag(node, tag)
-        if val is None:
-            return ""
-        if isinstance(val, list):
-            val = val[0]
-        if isinstance(val, dict):
-            return val.get("#text", "")
-        return str(val).strip()
+
+        return DeviceInfo(
+            manufacturer=get("Manufacturer") or "Mindray",
+            model=get("DeviceModel", "DeviceName", "Device", "Model") or "BeneHeart R12",
+            serial_number=get("SerialNumber"),
+            software_version=get("SoftwareVersion", "FirmwareVersion"),
+            institution=get("Institution", "Hospital"),
+            department=get("Department"),
+        )
+
+    @staticmethod
+    def _read_filters(root: dict) -> FilterSettings:
+        filters = FilterSettings()
+        node = find_tag(root, "FilterSettings")
+        if isinstance(node, list):
+            node = node[0]
+        if not isinstance(node, dict):
+            node = root
+
+        def hz(*tags: str) -> float | None:
+            for tag in tags:
+                value = _number(find_tag(node, tag))
+                if value:
+                    return value
+            return None
+
+        filters.highpass = hz("HighPass", "HighPassFilter")
+        filters.lowpass = hz("LowPass", "LowPassFilter")
+        filters.notch = hz("NotchFilter", "Notch")
+        if filters.notch:
+            filters.notch_active = True
+        return filters

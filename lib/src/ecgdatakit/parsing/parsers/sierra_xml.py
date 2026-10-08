@@ -1,36 +1,40 @@
 """Philips Sierra ECG XML format parser.
 
 Supports document types ``SierraECG`` and ``PhilipsECG`` versions
-1.03, 1.04, 1.04.01 and 1.04.02.
+1.03, 1.04, 1.04.01 and 1.04.02 (PageWriter, TraceMasterVue and
+IntelliSpace ECG exports, UTF-8 or UTF-16).
 
-The ``<signalcharacteristics><resolution>`` field stores **microvolts
-per ADC count** (typically 5 µV).  Each :class:`~ecgdatakit.models.Lead`
-is created with ``resolution=<uV/count>`` and ``units="uV"``.
-``is_raw`` is auto-detected: ``True`` when resolution ≠ 1.0 (raw ADC
-needing scaling), ``False`` when resolution = 1.0 (samples already in
-physical units).
+Rhythm waveforms (``<parsedwaveforms>``) are Base64 16-bit samples or
+plain text, optionally XLI compressed.  In XLI data leads III, aVR, aVL
+and aVF are stored as residuals and rebuilt from leads I and II.
+Samples are kept as raw ADC counts with ``resolution`` in µV per count
+(``<resolution>``, ``<signalresolution>`` in 1.03).  Representative
+beats (``<repbeats>``) carry their own resolution and sampling rate.
 """
 
 from __future__ import annotations
 
+import binascii
+import re
+import warnings
 from base64 import b64decode
-from datetime import datetime, timedelta
-from math import floor
+from datetime import date, datetime, timedelta
 from pathlib import Path
-from typing import cast
-from xml.dom.minidom import Attr, Document
+from xml.parsers.expat import ExpatError
 
 import numpy as np
 import numpy.typing as npt
 import xmltodict
-from defusedxml import minidom
 
-from ecgdatakit.parsing.codecs.xli import xli_decode
-from ecgdatakit.exceptions import MissingElementError, UnsupportedFormatError
-from ecgdatakit.parsing.helpers.xml import find_tag, read_path
+from ecgdatakit.exceptions import (
+    CorruptedFileError,
+    MissingElementError,
+    UnsupportedFormatError,
+)
 from ecgdatakit.models import (
     DeviceInfo,
     ECGRecord,
+    FileFormatInfo,
     FilterSettings,
     GlobalMeasurements,
     Interpretation,
@@ -38,1040 +42,1034 @@ from ecgdatakit.models import (
     PatientInfo,
     RecordingInfo,
     SignalCharacteristics,
+    derive_is_raw,
+)
+from ecgdatakit.parsing.codecs.xli import xli_decode
+from ecgdatakit.parsing.helpers import (
+    STANDARD_LEADS,
+    decode_text,
+    fill_signal_summary,
+    find_tag,
+    normalize_lead_label,
+    read_path,
+    unique_labels,
 )
 from ecgdatakit.parsing.parser import Parser
 
 _SUPPORTED_TYPES = {"SierraECG", "PhilipsECG"}
 _SUPPORTED_VERSIONS = {"1.03", "1.04", "1.04.01", "1.04.02"}
 
-
-# ── Severity code mapping ────────────────────────────────────────────
 _SEVERITY_MAP: dict[str, str] = {
     "NM": "NORMAL",
     "ON": "OTHERWISE NORMAL",
     "BL": "BORDERLINE",
+    "BO": "BORDERLINE",
     "AB": "ABNORMAL",
 }
 
+_SEX_MAP = {"male": "M", "m": "M", "female": "F", "f": "F"}
 
-class XMLField:
-    """Declarative descriptor for extracting a typed value from an xmltodict tree."""
+# <pacestatus> values; "Unknown" and anything else leave has_pacemaker unset
+_PACED = {"yes", "paced", "pacemaker", "true"}
+_NOT_PACED = {"no", "notpaced", "not paced", "nopacemaker", "no pacemaker", "false"}
 
-    def __init__(self, root_node_name: str, field_path: str, dtype: str) -> None:
-        supported = ("str", "int", "float", "bool")
-        if dtype not in supported:
-            raise ValueError(f"Invalid dtype, supported values are {supported}")
-        self._root_node_name = root_node_name
-        self._field_path = field_path
-        self._dtype = dtype
+_LIMB_LEADS = list(STANDARD_LEADS[:6])
 
-    def get_value(self, doc: dict) -> str | int | float | bool | None:
-        extracted = find_tag(doc, self._root_node_name)
-        if extracted is None:
+# Numeric placeholders in unparsed statements, e.g. "***" or "*.**"
+_PLACEHOLDER = re.compile(r"\*+(?:\.\*+)?")
+_SIGNATURE_DATE = re.compile(
+    r"\s+(\d{1,2}-[A-Za-z]{3}-\d{4}\s+\d{1,2}:\d{2}(?::\d{2})?"
+    r"|\d{1,2}/\d{1,2}/\d{4}\s+\d{1,2}:\d{2}(?::\d{2})?)\s*$"
+)
+
+
+# ── xmltodict access helpers ────────────────────────────────────────
+
+def _first(node: object) -> object:
+    if isinstance(node, list):
+        return node[0] if node else None
+    return node
+
+
+def _as_list(node: object) -> list:
+    if node is None:
+        return []
+    return node if isinstance(node, list) else [node]
+
+
+def _get(node: object, *path: str) -> object:
+    """Follow child element names, taking the first match at each level."""
+    for key in path:
+        node = _first(node)
+        if not isinstance(node, dict):
             return None
-        data = read_path(extracted, self._field_path)
-        if data is None or data == "":
-            return None
-        try:
-            if self._dtype == "str":
-                return str(data)
-            elif self._dtype == "int":
-                return int(data)
-            elif self._dtype == "float":
-                return float(data)
-            elif self._dtype == "bool":
-                return str(data).lower() in ("yes", "true", "t", "1")
-        except (ValueError, TypeError):
-            return None
+        node = node.get(key)
+    return node
+
+
+def _text(node: object) -> str:
+    """Stripped text content of an element ('' when absent)."""
+    node = _first(node)
+    if isinstance(node, dict):
+        node = node.get("#text")
+    if node is None:
+        return ""
+    return str(node).strip()
+
+
+def _value(node: object) -> str:
+    """Like :func:`_text` but treats the Philips placeholder ``---`` as empty."""
+    text = _text(node)
+    return "" if text.strip("- ") == "" else text
+
+
+def _attr(node: object, name: str) -> str:
+    node = _first(node)
+    if isinstance(node, dict):
+        value = node.get("@" + name)
+        if value is not None:
+            return str(value).strip()
+    return ""
+
+
+def _to_float(text: str) -> float | None:
+    try:
+        value = float(text)
+    except (TypeError, ValueError):
         return None
+    return value if np.isfinite(value) else None
 
 
-
-PATIENT_FIELDS: dict[str, XMLField] = {
-    "patient_id": XMLField("generalpatientdata", "patientid", "str"),
-    "first_name": XMLField("generalpatientdata", "firstname", "str"),
-    "last_name": XMLField("generalpatientdata", "lastname", "str"),
-    "age": XMLField("generalpatientdata", "age/years", "int"),
-    "age_default": XMLField("generalpatientdata", "age/@defaultage", "int"),
-    "sex": XMLField("generalpatientdata", "sex", "str"),
-    "weight": XMLField("generalpatientdata", "kg", "float"),
-    "weight_lb": XMLField("generalpatientdata", "lb", "float"),
-    "height": XMLField("generalpatientdata", "cm", "float"),
-    "height_inch": XMLField("generalpatientdata", "inch", "float"),
-    "race": XMLField("generalpatientdata", "race", "str"),
-    "date_of_birth": XMLField("generalpatientdata", "dateofbirth", "str"),
-    "pace_status": XMLField("generalpatientdata", "pacestatus", "str"),
-    "unique_patient_id": XMLField("generalpatientdata", "uniquepatientid", "str"),
-    "mrn": XMLField("generalpatientdata", "MRN", "str"),
-}
-
-RECORDING_FIELDS: dict[str, XMLField] = {
-    "start_date": XMLField("dataacquisition", "@date", "str"),
-    "start_time": XMLField("dataacquisition", "@time", "str"),
-    "stat_flag": XMLField("dataacquisition", "@statflag", "bool"),
-    "duration": XMLField("parsedwaveforms", "@durationperchannel", "int"),
-}
-
-ACQUIRER_FIELDS: dict[str, XMLField] = {
-    "operator_id": XMLField("acquirer", "operator/@id", "str"),
-    "department_id": XMLField("acquirer", "departmentid", "str"),
-    "department_name": XMLField("acquirer", "departmentname", "str"),
-    "institution_id": XMLField("acquirer", "institutionid", "str"),
-    "institution_name": XMLField("acquirer", "institutionname", "str"),
-    "facility_id": XMLField("acquirer", "facilityid", "str"),
-    "facility_name": XMLField("acquirer", "facilityname", "str"),
-    "room": XMLField("acquirer", "room", "str"),
-    "bed": XMLField("acquirer", "bed", "str"),
-    "encounter": XMLField("acquirer", "encounter", "str"),
-}
-
-SIGNAL_CHARACTERISTICS_FIELDS: list[dict[str, XMLField | int]] = [
-    {
-        "origin": XMLField("dataacquisition", "machine/#text", "str"),
-        "sampling_rate": XMLField("signalcharacteristics", "samplingrate", "int"),
-        "resolution": XMLField("signalcharacteristics", "resolution", "int"),
-        "hipass": XMLField("signalcharacteristics", "hipass", "float"),
-        "lowpass": XMLField("signalcharacteristics", "lowpass", "float"),
-        "acsetting": XMLField("signalcharacteristics", "acsetting", "int"),
-        "notch_filtered": XMLField("signalcharacteristics", "notchfiltered", "bool"),
-        "notch_filter_freqs": XMLField("signalcharacteristics", "notchfilterfreqs", "int"),
-        "acquisition_type": XMLField("signalcharacteristics", "acquisitiontype", "str"),
-        "bits_per_sample": XMLField("signalcharacteristics", "bitspersample", "int"),
-        "signal_offset": XMLField("signalcharacteristics", "signaloffset", "int"),
-        "signal_signed": XMLField("signalcharacteristics", "signalsigned", "bool"),
-        "number_channels_allocated": XMLField("signalcharacteristics", "numberchannelsallocated", "int"),
-        "number_channels_valid": XMLField("signalcharacteristics", "numberchannelsvalid", "int"),
-        "electrode_placement": XMLField("signalcharacteristics", "electrodeplacement", "str"),
-    },
-    {
-        "data_encoding": XMLField("parsedwaveforms", "@dataencoding", "str"),
-        "compression": XMLField("parsedwaveforms", "@compression", "str"),
-        "number_of_leads": XMLField("parsedwaveforms", "@numberofleads", "int"),
-        "duration": XMLField("parsedwaveforms", "@durationperchannel", "int"),
-        "sampling_rate": XMLField("parsedwaveforms", "@samplespersecond", "int"),
-        "resolution": XMLField("parsedwaveforms", "@resolution", "int"),
-        "signal_offset": XMLField("parsedwaveforms", "@signaloffset", "int"),
-        "signal_signed": XMLField("parsedwaveforms", "@signalsigned", "bool"),
-        "bits_per_sample": XMLField("parsedwaveforms", "@bitspersample", "int"),
-        "hipass": XMLField("parsedwaveforms", "@hipass", "float"),
-        "lowpass": XMLField("parsedwaveforms", "@lowpass", "float"),
-        "notch_filtered": XMLField("parsedwaveforms", "@notchfiltered", "bool"),
-        "notch_filter_freqs": XMLField("parsedwaveforms", "@notchfilterfreqs", "int"),
-        "artifact_filtered": XMLField("parsedwaveforms", "@artfiltered", "bool"),
-        "waveform_modified": XMLField("parsedwaveforms", "@waveformmodified", "bool"),
-        "origin": XMLField("parsedwaveforms", "@modifiedby", "str"),
-        "upsampled": XMLField("parsedwaveforms", "@upsampled", "bool"),
-        "upsampling_method": XMLField("parsedwaveforms", "@upsamplemethod", "str"),
-        "downsampled": XMLField("parsedwaveforms", "@downsampled", "bool"),
-    },
-]
-
-ANNOTATION_FIELDS: dict[str, XMLField] = {
-    "interpretation_date": XMLField("interpretation", "@date", "str"),
-    "interpretation_time": XMLField("interpretation", "@time", "str"),
-    "criteria_version": XMLField("interpretation", "@criteriaversion", "str"),
-    "criteria_version_date": XMLField("interpretation", "@criteriaversiondate", "str"),
-    # globalmeasurements – values may carry an @editedflag attribute so
-    # the text content lives under #text when parsed by xmltodict.
-    "heartrate": XMLField("globalmeasurements", "heartrate/#text", "str"),
-    "atrialrate": XMLField("globalmeasurements", "atrialrate/#text", "str"),
-    "rrint": XMLField("globalmeasurements", "rrint/#text", "str"),
-    "pdur": XMLField("globalmeasurements", "pdur/#text", "str"),
-    "print": XMLField("globalmeasurements", "print/#text", "str"),
-    "qonset": XMLField("globalmeasurements", "qonset/#text", "str"),
-    "qrsdur": XMLField("globalmeasurements", "qrsdur/#text", "str"),
-    "qtint": XMLField("globalmeasurements", "qtint/#text", "str"),
-    "qtcb": XMLField("globalmeasurements", "qtcb/#text", "str"),
-    "qtcf": XMLField("globalmeasurements", "qtcf/#text", "str"),
-    # frontal-plane axes
-    "pfrontaxis": XMLField("globalmeasurements", "pfrontaxis/#text", "str"),
-    "i40frontaxis": XMLField("globalmeasurements", "i40frontaxis/#text", "str"),
-    "t40frontaxis": XMLField("globalmeasurements", "t40frontaxis/#text", "str"),
-    "qrsfrontaxis": XMLField("globalmeasurements", "qrsfrontaxis/#text", "str"),
-    "stfrontaxis": XMLField("globalmeasurements", "stfrontaxis/#text", "str"),
-    "tfrontaxis": XMLField("globalmeasurements", "tfrontaxis/#text", "str"),
-    # horizontal-plane axes
-    "phorizaxis": XMLField("globalmeasurements", "phorizaxis/#text", "str"),
-    "i40horizaxis": XMLField("globalmeasurements", "i40horizaxis/#text", "str"),
-    "t40horizaxis": XMLField("globalmeasurements", "t40horizaxis/#text", "str"),
-    "qrshorizaxis": XMLField("globalmeasurements", "qrshorizaxis/#text", "str"),
-    "sthorizaxis": XMLField("globalmeasurements", "sthorizaxis/#text", "str"),
-    "thorizaxis": XMLField("globalmeasurements", "thorizaxis/#text", "str"),
-    # interpretation metadata
-    "md_signature_line": XMLField("interpretation", "mdsignatureline", "str"),
-    "severity_code": XMLField("severity", "@code", "str"),
-    "severity_id": XMLField("severity", "@id", "str"),
-    "severity_text": XMLField("severity", "#text", "str"),
-}
+def _to_int(text: str) -> int | None:
+    value = _to_float(text)
+    return None if value is None else int(round(value))
 
 
-# ── DOM helpers (used by _read_sierra_leads for waveform decoding) ───
-
-def _get_node(xdoc: Document, tag_name: str) -> Document:
-    xelt = _get_opt_node(xdoc, tag_name)
-    if xelt is None:
-        raise MissingElementError(tag_name)
-    return xelt
-
-
-def _get_opt_node(xdoc: Document, tag_name: str) -> Document | None:
-    for xelt in xdoc.getElementsByTagName(tag_name):
-        return cast(Document, xelt)
+def _to_bool(text: str) -> bool | None:
+    key = text.strip().lower()
+    if key in ("true", "yes", "t", "1"):
+        return True
+    if key in ("false", "no", "f", "0"):
+        return False
     return None
 
 
-def _get_nodes(xdoc: Document, tag_name: str) -> list[Document]:
-    return [cast(Document, xelt) for xelt in xdoc.getElementsByTagName(tag_name)]
+def _parse_datetime(day: str, time: str) -> datetime | None:
+    if not day or not time:
+        return None
+    try:
+        return datetime.strptime(f"{day} {time}", "%Y-%m-%d %H:%M:%S")
+    except ValueError:
+        return None
 
 
-def _get_attr(xdoc: Document, attr_name: str, default: str | None = None) -> str:
-    if attr_name in xdoc.attributes:
-        return _get_text(xdoc.attributes[attr_name])
-    if default is None:
-        raise MissingElementError(attr_name)
-    return default
+def _parse_date(text: str) -> datetime | None:
+    for fmt in ("%Y-%m-%d", "%m/%d/%Y"):
+        try:
+            return datetime.strptime(text, fmt)
+        except ValueError:
+            continue
+    return None
 
 
-def _get_text(xdoc: Document | Attr) -> str:
-    rc: list[str] = []
-    for node in xdoc.childNodes:
-        if node.nodeType == node.TEXT_NODE:
-            rc.append(node.data)
-    return "".join(rc)
+def _age_at(birth: date, when: date) -> int:
+    return when.year - birth.year - ((when.month, when.day) < (birth.month, birth.day))
 
 
-def _assert_version(root: Document) -> tuple[str, str]:
-    doc_info = _get_node(root, "documentinfo")
-    doc_type = _get_text(_get_node(doc_info, "documenttype")).strip()
-    doc_ver = _get_text(_get_node(doc_info, "documentversion")).strip()
-    if doc_type not in _SUPPORTED_TYPES or doc_ver not in _SUPPORTED_VERSIONS:
-        raise UnsupportedFormatError(f"Files of type {doc_type} {doc_ver} are unsupported")
-    return doc_type, doc_ver
+def _flatten(node: object, skip: tuple[str, ...] = ()) -> dict[str, str]:
+    """Attributes and simple child texts of an element as ``{name: text}``."""
+    node = _first(node)
+    result: dict[str, str] = {}
+    if not isinstance(node, dict):
+        return result
+    for key, value in node.items():
+        if key.startswith("#") or key in skip or key.lstrip("@") in skip:
+            continue
+        if key.startswith("@"):
+            if key != "@xmlns" and str(value).strip():
+                result[key[1:]] = str(value).strip()
+            continue
+        if isinstance(value, list) or (isinstance(value, dict) and any(
+            not k.startswith(("@", "#")) for k in value
+        )):
+            continue
+        text = _text(value)
+        if text:
+            result[key] = text
+    return result
 
 
-def _get_or_create_labels(signal_details: Document, parsed_waveforms: Document) -> list[str]:
-    lead_labels = _get_attr(parsed_waveforms, "leadlabels", "")
-    if lead_labels != "":
-        lead_count = int(_get_attr(parsed_waveforms, "numberofleads"))
-        return lead_labels.split(" ")[:lead_count]
-    good_channels = int(_get_text(_get_node(signal_details, "numberchannelsallocated")))
-    leads_used = _get_text(_get_node(signal_details, "acquisitiontype"))
-    return [_get_lead_name(leads_used, x + 1) for x in range(good_channels)]
+def _parse_xml(data: bytes) -> dict:
+    """Parse the document, retrying with a lossless decode on encoding errors."""
+    try:
+        return xmltodict.parse(data)
+    except ExpatError as first_error:
+        # Undeclared non-UTF-8 bytes: decode without loss and drop the prolog
+        try:
+            text = decode_text(data)
+            text = re.sub(r"^﻿?\s*<\?xml[^>]*\?>", "", text)
+            return xmltodict.parse(text)
+        except ExpatError:
+            raise CorruptedFileError(f"Malformed XML: {first_error}") from first_error
 
 
-def _get_lead_name(leads_used: str, index: int) -> str:
-    if leads_used in ("STD-12", "10-WIRE"):
-        names = {1: "I", 2: "II", 3: "III", 4: "aVR", 5: "aVL", 6: "aVF"}
-        if index in names:
-            return names[index]
-        if 6 < index <= 12:
-            return f"V{index - 6}"
+# ── waveform helpers ────────────────────────────────────────────────
+
+def _lead_name(lead_set: str, index: int) -> str:
+    if lead_set in ("STD-12", "10-WIRE"):
+        if 1 <= index <= 12:
+            return STANDARD_LEADS[index - 1]
     return f"Channel {index}"
 
 
-def _split_leads(waveform_data: bytes, lead_count: int, samples: int) -> list[npt.NDArray[np.int16]]:
-    all_samples: npt.NDArray[np.int16] = np.frombuffer(waveform_data, dtype=np.int16)
-    leads: list[npt.NDArray[np.int16]] = []
-    offset = 0
-    while offset < lead_count * samples:
-        leads.append(all_samples[offset: offset + samples])
-        offset += samples
-    return leads
+def _compression(waveform: object) -> str:
+    """Compression method of a waveform element, '' when uncompressed."""
+    flag = _attr(waveform, "compressflag")
+    method = _attr(waveform, "compression") or _attr(waveform, "compressmethod")
+    if flag and _to_bool(flag) is False:
+        return ""
+    if method.lower() in ("", "uncompressed", "none"):
+        return ""
+    return method
 
 
-def _infer_compression(parsed_waveforms: Document) -> str:
-    return _get_attr(
-        parsed_waveforms,
-        "compressmethod",
-        _get_attr(parsed_waveforms, "compression", "Uncompressed"),
-    )
+def _decode_base64(text: str, what: str) -> bytes:
+    try:
+        raw = b64decode("".join(text.split()), validate=True)
+    except (binascii.Error, ValueError) as e:
+        raise CorruptedFileError(f"{what}: invalid Base64 data ({e})") from e
+    if not raw:
+        raise CorruptedFileError(f"{what}: no waveform data")
+    return raw
 
 
-def _get_waveform_data(
-    signal_details: Document,
-    parsed_waveforms: Document,
-    labels: list[str],
-) -> list[npt.NDArray[np.int16]]:
-    sampling_freq = int(_get_text(_get_node(signal_details, "samplingrate")))
-    duration = int(_get_attr(parsed_waveforms, "durationperchannel"))
-    sample_count = int(duration * (sampling_freq / 1000))
-
-    encoding = _get_attr(parsed_waveforms, "dataencoding")
-    if encoding != "Base64":
-        raise UnsupportedFormatError(f"Waveform data encoding unsupported: {encoding}")
-    waveform_data = b64decode(_get_text(parsed_waveforms))
-
-    compression = _infer_compression(parsed_waveforms)
-    if compression != "Uncompressed":
-        if compression == "XLI":
-            return xli_decode(waveform_data, labels)
-        raise UnsupportedFormatError(f"Compression unsupported: {compression}")
-
-    return _split_leads(waveform_data, len(labels), sample_count)
+def _decode_plain(text: str, what: str) -> npt.NDArray[np.int32]:
+    try:
+        values = np.array([int(v) for v in text.split()], dtype=np.int32)
+    except ValueError as e:
+        raise CorruptedFileError(f"{what}: invalid plain sample value ({e})") from e
+    if values.size == 0:
+        raise CorruptedFileError(f"{what}: no waveform data")
+    return values
 
 
-def _read_sierra_leads(filepath: Path) -> tuple[list[str], list[npt.NDArray[np.int16]], int, int, int]:
-    """Read leads from a Sierra ECG file using DOM parsing.
-
-    Returns
-    -------
-    labels : list[str]
-        Lead names.
-    sample_arrays : list[NDArray[int16]]
-        Raw ADC arrays per lead.
-    sampling_freq : int
-        Sampling rate (Hz).
-    duration_ms : int
-        Duration per channel (ms).
-    resolution_uv : int
-        Resolution in microvolts per ADC count.
-    """
-    xdom = minidom.parse(str(filepath))
-    root = _get_node(xdom, "restingecgdata")
-    _assert_version(root)
-
-    signal_details = _get_node(_get_node(root, "dataacquisition"), "signalcharacteristics")
-    parsed_waveforms = _get_node(root, "parsedwaveforms")
-
-    sampling_freq = int(_get_text(_get_node(signal_details, "samplingrate")))
-    duration = int(_get_attr(parsed_waveforms, "durationperchannel"))
-
-    # Resolution: uV per ADC count (typically 5)
-    resolution_uv = int(_get_text(_get_node(signal_details, "resolution")))
-
-    labels = _get_or_create_labels(signal_details, parsed_waveforms)
-    waveform_data = _get_waveform_data(signal_details, parsed_waveforms, labels)
-
-    # Einthoven / augmented limb lead corrections
-    if len(waveform_data) >= 6:
-        lead_i = waveform_data[0]
-        lead_ii = waveform_data[1]
-        lead_iii = waveform_data[2]
-        lead_avr = waveform_data[3]
-        lead_avl = waveform_data[4]
-        lead_avf = waveform_data[5]
-
-        for i in range(len(lead_iii)):
-            lead_iii[i] = lead_ii[i] - lead_i[i] - lead_iii[i]
-        for i in range(len(lead_avr)):
-            lead_avr[i] = -lead_avr[i] - floor((lead_i[i] + lead_ii[i]) / 2)
-        for i in range(len(lead_avl)):
-            lead_avl[i] = floor((lead_i[i] - lead_iii[i]) / 2) - lead_avl[i]
-        for i in range(len(lead_avf)):
-            lead_avf[i] = floor((lead_ii[i] + lead_iii[i]) / 2) - lead_avf[i]
-
-    return labels, waveform_data, sampling_freq, duration, resolution_uv
-
+def _rebuild_limb_leads(arrays: list[npt.NDArray[np.int32]]) -> None:
+    """Rebuild III, aVR, aVL, aVF from the XLI residuals (in place)."""
+    lead_i, lead_ii = arrays[0], arrays[1]
+    lead_iii = lead_ii - lead_i - arrays[2]
+    arrays[2] = lead_iii
+    arrays[3] = -arrays[3] - (lead_i + lead_ii) // 2
+    arrays[4] = (lead_i - lead_iii) // 2 - arrays[4]
+    arrays[5] = (lead_ii + lead_iii) // 2 - arrays[5]
 
 
 class SierraXMLParser(Parser):
     """Parser for Philips Sierra ECG XML files.
 
     Supports both ``SierraECG`` and ``PhilipsECG`` document types
-    (versions 1.03 – 1.04.02).  Waveform data may be uncompressed
-    or XLI-compressed and is always Base64-encoded.
+    (versions 1.03 to 1.04.02).  Waveform data may be uncompressed or
+    XLI-compressed, Base64 or plain text.
 
-    Each lead carries ``resolution`` (µV per count) and ``units="uV"``.
-    ``is_raw`` is auto-detected from the resolution metadata.
+    Leads carry raw ADC counts with ``resolution`` in µV per count.
     """
 
     FORMAT_NAME = "Philips Sierra XML"
     FORMAT_DESCRIPTION = "Philips Sierra ECG XML format"
     FILE_EXTENSIONS = [".xml"]
+    PRIORITY = 50
 
     @staticmethod
     def can_parse(file_path: Path, header: bytes) -> bool:
-        try:
-            text = header.decode("utf-8", errors="ignore").lower()
-            return "<restingecgdata" in text
-        except Exception:
-            return False
+        if b"<restingecgdata" in header:
+            return True
+        # UTF-16 exports (PageWriter TC, TraceMasterVue)
+        tag = "<restingecgdata"
+        return tag.encode("utf-16-le") in header or tag.encode("utf-16-be") in header
 
     def parse(self, file_path: Path) -> ECGRecord:
-        with open(file_path, "rb") as f:
-            doc = xmltodict.parse(f.read())
+        path = Path(file_path)
+        doc = _parse_xml(path.read_bytes())
+        root = doc.get("restingecgdata") if isinstance(doc, dict) else None
+        if not isinstance(root, dict):
+            raise UnsupportedFormatError("Missing <restingecgdata> root element")
+        doc_type, doc_ver = self._check_version(root)
 
         record = ECGRecord(source_format="sierra_xml")
-        record.patient = self._read_patient(doc)
-        record.recording = self._read_recording(doc)
-        record.leads = self._read_leads(file_path, doc)
-        record.median_beats = self._read_representative_beats(file_path)
-        record.annotations = self._read_annotations(doc)
-        record.recording.device = self._read_device(doc)
-        record.recording.acquisition.filters = self._read_filters(doc)
-        record.measurements = self._read_measurements(doc)
-        record.interpretation = self._read_interpretation(doc)
-        record.recording.acquisition.signal = self._read_signal(doc)
+        record.file_format = FileFormatInfo(version=doc_ver)
+        record.raw_metadata["document_type"] = doc_type
+        record.raw_metadata["filepath"] = str(path)
 
-        # ── raw_metadata ────────────────────────────────────────
-        record.raw_metadata["signal_characteristics"] = self._read_signal_characteristics(doc)
-        record.raw_metadata["filepath"] = str(file_path)
+        acquisition = _get(root, "dataacquisition")
+        signal_node = _get(acquisition, "signalcharacteristics")
+        waveforms = _get(root, "waveforms")
+        parsed = _get(waveforms, "parsedwaveforms")
+        if parsed is None:
+            parsed = find_tag(root, "parsedwaveforms")
+        if parsed is None:
+            raise MissingElementError("parsedwaveforms")
+        interp_nodes = _as_list(_get(root, "interpretations", "interpretation"))
+        if not interp_nodes:
+            interp_nodes = _as_list(find_tag(root, "interpretation"))
+        interp_node = interp_nodes[0] if interp_nodes else None
+        meas_node = _get(root, "internalmeasurements") or _get(root, "measurements")
 
-        lead_measurements = self._read_lead_measurements(doc)
-        if lead_measurements is not None:
-            record.raw_metadata["lead_measurements"] = lead_measurements
-            for lead in record.leads:
-                if lead.label in lead_measurements:
-                    lead.annotations = lead_measurements[lead.label]
+        record.recording = self._read_recording(acquisition, parsed, doc)
+        record.patient = self._read_patient(root, record)
+        record.leads = self._read_leads(parsed, signal_node)
+        rhythm = record.leads[0] if record.leads else None
+        record.median_beats = self._read_representative_beats(
+            _get(waveforms, "repbeats"),
+            rhythm.sampling_rate if rhythm else 0,
+            rhythm.adc_resolution if rhythm else 0.0,
+        )
+        record.recording.device = self._read_device(acquisition, signal_node)
+        record.recording.acquisition.filters = self._read_filters(parsed, signal_node)
+        record.recording.acquisition.signal = self._read_signal(parsed, signal_node, rhythm)
+        record.measurements, qtc_extra = self._read_measurements(interp_node, meas_node)
+        record.interpretation, machine_lines = self._read_interpretation(root, interp_node)
+        record.annotations = self._read_annotations(interp_node)
+        record.annotations.update(qtc_extra)
+        if machine_lines and record.interpretation.source != "machine":
+            record.annotations["machine_interpretation"] = "\n".join(machine_lines)
 
-        order_info = self._read_order_info(doc)
-        if order_info is not None:
-            record.raw_metadata["order_info"] = order_info
-            if isinstance(order_info, dict):
-                if not record.recording.referring_physician:
-                    for key in ("referringphysician", "orderingphysician"):
-                        val = order_info.get(key)
-                        if val and isinstance(val, str):
-                            record.recording.referring_physician = val
-                            break
-                if not record.recording.room:
-                    val = order_info.get("room")
-                    if val and isinstance(val, str):
-                        record.recording.room = val
-
-        cross_lead = self._read_cross_lead_measurements(doc)
-        if cross_lead is not None:
-            record.raw_metadata["cross_lead_measurements"] = cross_lead
-
-        group_meas = self._read_group_measurements(doc)
-        if group_meas is not None:
-            record.raw_metadata["group_measurements"] = group_meas
-
-        config = self._read_config_settings(doc)
-        if config:
-            record.raw_metadata["config_settings"] = config
-
-        user_defines = self._read_user_defines(doc)
-        if user_defines:
-            record.raw_metadata["user_defines"] = user_defines
-
-        report_info = self._read_report_info(doc)
-        if report_info:
-            record.raw_metadata["report_info"] = report_info
-
-        doc_info = self._read_document_info(doc)
-        if doc_info:
-            record.raw_metadata["document_info"] = doc_info
-
-        # ── acquirer → recording fields ─────────────────────────
-        for field_name, xml_field in ACQUIRER_FIELDS.items():
-            value = xml_field.get_value(doc)
-            if value is None:
-                continue
-            val_str = str(value).strip()
-            if not val_str:
-                continue
-            if field_name == "operator_id" and not record.recording.technician:
-                record.recording.technician = val_str
-            elif field_name == "room" and not record.recording.room:
-                record.recording.room = val_str
-            elif field_name == "facility_name" and not record.recording.location:
-                record.recording.location = val_str
-
-        if record.leads:
-            record.recording.acquisition.signal.sampling_rate = record.leads[0].sampling_rate
-
+        self._read_raw_metadata(doc, root, record, interp_nodes, signal_node, parsed)
+        fill_signal_summary(record)
         return record
 
-    # ── Patient ──────────────────────────────────────────────────
+    # ── Version ──────────────────────────────────────────────────
 
-    def _read_patient(self, doc: dict) -> PatientInfo:
-        info = PatientInfo()
-        for field_name, xml_field in PATIENT_FIELDS.items():
-            value = xml_field.get_value(doc)
-            if value is None:
-                continue
-            if field_name == "patient_id":
-                info.patient_id = str(value)
-            elif field_name == "first_name":
-                info.first_name = str(value)
-            elif field_name == "last_name":
-                info.last_name = str(value)
-            elif field_name == "age":
-                info.age = int(value)
-            elif field_name == "age_default" and info.age is None:
-                info.age = int(value)
-            elif field_name == "sex":
-                info.sex = str(value)
-            elif field_name == "weight":
-                info.weight = float(value)
-            elif field_name == "weight_lb" and info.weight is None:
-                # Convert lbs to kg
-                info.weight = round(float(value) * 0.453592, 1)
-            elif field_name == "height":
-                info.height = float(value)
-            elif field_name == "height_inch" and info.height is None:
-                # Convert inches to cm
-                info.height = round(float(value) * 2.54, 1)
-            elif field_name == "race":
-                info.race = str(value)
-            elif field_name == "date_of_birth":
-                try:
-                    info.birth_date = datetime.strptime(str(value), "%Y-%m-%d")
-                except ValueError:
-                    pass
-        return info
+    @staticmethod
+    def _check_version(root: dict) -> tuple[str, str]:
+        doc_info = _get(root, "documentinfo")
+        if doc_info is None:
+            raise MissingElementError("documentinfo")
+        doc_type = _text(_get(doc_info, "documenttype"))
+        doc_ver = _text(_get(doc_info, "documentversion"))
+        if not doc_type:
+            raise MissingElementError("documenttype")
+        if not doc_ver:
+            raise MissingElementError("documentversion")
+        if doc_type not in _SUPPORTED_TYPES or doc_ver not in _SUPPORTED_VERSIONS:
+            raise UnsupportedFormatError(f"Files of type {doc_type} {doc_ver} are unsupported")
+        return doc_type, doc_ver
 
     # ── Recording ────────────────────────────────────────────────
 
-    def _read_recording(self, doc: dict) -> RecordingInfo:
+    def _read_recording(self, acquisition: object, parsed: object, doc: dict) -> RecordingInfo:
         info = RecordingInfo()
-        start_date = RECORDING_FIELDS["start_date"].get_value(doc)
-        start_time = RECORDING_FIELDS["start_time"].get_value(doc)
-        duration_ms = RECORDING_FIELDS["duration"].get_value(doc)
+        info.date = _parse_datetime(_attr(acquisition, "date"), _attr(acquisition, "time"))
 
-        if start_date and start_time:
-            try:
-                info.date = datetime.strptime(f"{start_date} {start_time}", "%Y-%m-%d %H:%M:%S")
-            except ValueError:
-                pass
+        duration_ms = _to_float(_attr(parsed, "durationperchannel"))
+        if duration_ms is not None and duration_ms > 0:
+            info.duration = timedelta(milliseconds=duration_ms)
 
-        if duration_ms is not None:
-            duration_s = int(duration_ms) // 1000
-            info.duration = timedelta(seconds=duration_s)
-            if info.date:
-                info.end_date = info.date + info.duration
-
+        acquirer = _get(acquisition, "acquirer")
+        operator = _get(acquirer, "operator")
+        info.technician = (
+            _value(_attr(operator, "id")) or _value(operator) or _value(_get(acquirer, "operatorid"))
+        )
+        for key in ("referringclinician", "orderingclinician"):
+            name = _value(_get(acquirer, key))
+            if name.strip(" ,.;"):
+                info.referring_physician = name
+                break
+        if not info.referring_physician:
+            order = _get(doc.get("restingecgdata"), "orderinfo")
+            for key in ("referringphysician", "orderingphysician"):
+                name = _value(_get(order, key))
+                if name.strip(" ,.;"):
+                    info.referring_physician = name
+                    break
+        info.room = _value(_get(acquirer, "room"))
+        info.location = _value(_get(acquirer, "facilityname")) or _value(
+            _get(acquirer, "institutionlocationid")
+        )
         return info
 
-    # ── Leads (with resolution & units for auto_scale) ───────────
+    # ── Patient ──────────────────────────────────────────────────
 
-    def _read_leads(self, filepath: Path, doc: dict) -> list[Lead]:
-        labels, waveform_data, sampling_freq, duration_ms, resolution_uv = (
-            _read_sierra_leads(filepath)
-        )
-        leads: list[Lead] = []
-        for i, label in enumerate(labels):
-            if i < len(waveform_data):
-                samples = waveform_data[i].astype(np.float64)
-                res = float(resolution_uv)
-                raw = res != 1.0
-                leads.append(Lead(
-                    label=label,
-                    samples=samples,
-                    sampling_rate=sampling_freq,
-                    resolution=res,
-                    resolution_unit="uV",
-                    units="" if raw else "uV",
-                    is_raw=raw,
-                ))
-        return leads
+    def _read_patient(self, root: dict, record: ECGRecord) -> PatientInfo:
+        info = PatientInfo()
+        data = _get(root, "patient", "generalpatientdata")
+        if data is None:
+            return info
+        name = _get(data, "name")
+        info.patient_id = _value(_get(data, "patientid")) or _value(_get(data, "MRN"))
+        info.first_name = _value(_get(name, "firstname")) or _value(_get(data, "firstname"))
+        info.last_name = _value(_get(name, "lastname")) or _value(_get(data, "lastname"))
 
-    # ── Representative / median beats ────────────────────────────
+        age = _get(data, "age")
+        dob_text = _value(_get(age, "dateofbirth")) or _value(_get(data, "dateofbirth"))
+        info.birth_date = _parse_date(dob_text) if dob_text else None
+        years = _to_int(_value(_get(age, "years")))
+        acquired = record.recording.date
+        if years is not None:
+            info.age = years
+        elif info.birth_date is not None and acquired is not None:
+            info.age = _age_at(info.birth_date.date(), acquired.date())
+        # @defaultage is a device setting, never the patient's age
+        default_age = _attr(age, "defaultage")
+        if default_age:
+            record.raw_metadata["default_age"] = default_age
 
-    def _read_representative_beats(self, filepath: Path) -> list[Lead]:
-        """Parse representative beats from ``<repbeats>`` element."""
-        try:
-            xdom = minidom.parse(str(filepath))
-            root = _get_node(xdom, "restingecgdata")
-        except Exception:
-            return []
+        sex = _value(_get(data, "sex"))
+        if sex:
+            info.sex = _SEX_MAP.get(sex.lower(), "U")
+        info.race = _value(_get(data, "race"))
 
-        repbeats_node = _get_opt_node(root, "repbeats")
-        if repbeats_node is None:
-            return []
+        height = _get(data, "height")
+        cm = _to_float(_value(_get(height, "cm")))
+        inch = _to_float(_value(_get(height, "inch")))
+        info.height = cm if cm is not None else (round(inch * 2.54, 1) if inch is not None else None)
+        weight = _get(data, "weight")
+        kg = _to_float(_value(_get(weight, "kg")))
+        lb = _to_float(_value(_get(weight, "lb")))
+        info.weight = kg if kg is not None else (round(lb * 0.45359237, 1) if lb is not None else None)
 
-        try:
-            signal_details = _get_node(
-                _get_node(root, "dataacquisition"), "signalcharacteristics"
+        pace = _value(_get(data, "pacestatus"))
+        if pace:
+            record.raw_metadata["pace_status"] = pace
+            key = pace.lower()
+            if key in _PACED:
+                info.has_pacemaker = True
+            elif key in _NOT_PACED:
+                info.has_pacemaker = False
+
+        for key in ("MRN", "uniquepatientid"):
+            value = _value(_get(data, key))
+            if value:
+                record.raw_metadata[key.lower()] = value
+        middle = _value(_get(name, "middlename"))
+        if middle:
+            record.raw_metadata["middle_name"] = middle
+        medical = _get(root, "patient", "patientmedicaldata")
+        if medical:
+            record.raw_metadata["patient_medical_data"] = medical
+        return info
+
+    # ── Rhythm leads ─────────────────────────────────────────────
+
+    @staticmethod
+    def _resolution(parsed: object, signal_node: object) -> float | None:
+        for text in (
+            _attr(parsed, "resolution"),
+            _text(_get(signal_node, "resolution")),
+            _text(_get(signal_node, "signalresolution")),
+        ):
+            value = _to_float(text)
+            if value is not None and value > 0:
+                return value
+        return None
+
+    @staticmethod
+    def _rhythm_labels(parsed: object, signal_node: object) -> list[str]:
+        names = _attr(parsed, "leadlabels").split()
+        if names:
+            count = _to_int(_attr(parsed, "numberofleads"))
+            if count is not None and 0 < count < len(names):
+                names = names[:count]
+        else:
+            count = _to_int(_text(_get(signal_node, "numberchannelsallocated")))
+            if count is None:
+                count = _to_int(_text(_get(signal_node, "numberchannelsvalid")))
+            if count is None or count <= 0:
+                raise MissingElementError("numberchannelsallocated")
+            lead_set = _text(_get(signal_node, "acquisitiontype")) or _text(
+                _get(signal_node, "leadset")
             )
-            resolution_uv = int(_get_text(_get_node(signal_details, "resolution")))
-        except Exception:
+            names = [_lead_name(lead_set, k + 1) for k in range(count)]
+        return unique_labels([normalize_lead_label(n) for n in names])
+
+    def _read_leads(self, parsed: object, signal_node: object) -> list[Lead]:
+        rate = _to_int(_attr(parsed, "samplespersecond")) or _to_int(
+            _text(_get(signal_node, "samplingrate"))
+        )
+        if not rate or rate <= 0:
+            raise CorruptedFileError("Missing or invalid sampling rate")
+        duration = _to_float(_attr(parsed, "durationperchannel"))
+        if duration is None or duration <= 0:
+            raise CorruptedFileError("Missing or invalid parsedwaveforms@durationperchannel")
+        n_samples = int(round(duration * rate / 1000))
+        labels = self._rhythm_labels(parsed, signal_node)
+        n_leads = len(labels)
+
+        signed_text = _attr(parsed, "signalsigned") or _text(_get(signal_node, "signalsigned"))
+        signed = _to_bool(signed_text) is not False
+        encoding = _attr(parsed, "dataencoding")
+        compression = _compression(parsed)
+        text = _text(parsed)
+
+        if compression:
+            if compression.upper() != "XLI":
+                raise UnsupportedFormatError(f"Compression unsupported: {compression}")
+            if encoding != "Base64":
+                raise UnsupportedFormatError(f"XLI data with encoding {encoding!r} is unsupported")
+            chunks = xli_decode(_decode_base64(text, "parsedwaveforms"))
+            if len(chunks) < n_leads:
+                raise CorruptedFileError(
+                    f"XLI data holds {len(chunks)} leads, {n_leads} expected"
+                )
+            arrays = []
+            for label, chunk in zip(labels, chunks):
+                if len(chunk) < n_samples:
+                    raise CorruptedFileError(
+                        f"Lead {label}: {len(chunk)} samples, {n_samples} expected"
+                    )
+                arrays.append(chunk[:n_samples].astype(np.int32))
+            if labels[:6] == _LIMB_LEADS:
+                _rebuild_limb_leads(arrays)
+        else:
+            if encoding == "Base64":
+                raw = _decode_base64(text, "parsedwaveforms")
+                if len(raw) < n_leads * n_samples * 2:
+                    raise CorruptedFileError(
+                        f"parsedwaveforms holds {len(raw)} bytes, "
+                        f"{n_leads * n_samples * 2} expected"
+                    )
+                dtype = "<i2" if signed else "<u2"
+                values = np.frombuffer(raw, dtype=dtype, count=n_leads * n_samples)
+            elif encoding == "Plain":
+                values = _decode_plain(text, "parsedwaveforms")
+                if values.size < n_leads * n_samples:
+                    raise CorruptedFileError(
+                        f"parsedwaveforms holds {values.size} samples, "
+                        f"{n_leads * n_samples} expected"
+                    )
+            else:
+                raise UnsupportedFormatError(f"Waveform data encoding unsupported: {encoding}")
+            values = values[: n_leads * n_samples].astype(np.int32)
+            arrays = [values[k * n_samples:(k + 1) * n_samples] for k in range(n_leads)]
+
+        resolution = self._resolution(parsed, signal_node)
+        if resolution is None:
+            warnings.warn(
+                "Sierra XML: no signal resolution, leads are left as raw ADC counts",
+                stacklevel=3,
+            )
+        # signaloffset is the ADC count that stands for 0 V
+        zero = _to_int(_attr(parsed, "signaloffset") or _text(_get(signal_node, "signaloffset"))) or 0
+        return [self._make_lead(label, arr, rate, resolution, zero) for label, arr in zip(labels, arrays)]
+
+    @staticmethod
+    def _make_lead(
+        label: str,
+        samples: npt.NDArray,
+        rate: int,
+        resolution: float | None,
+        zero: int = 0,
+    ) -> Lead:
+        if resolution is None:
+            return Lead(label=label, samples=samples.astype(np.float64), sampling_rate=rate)
+        offset = -zero * resolution
+        raw = derive_is_raw(resolution, offset, "uV")
+        return Lead(
+            label=label,
+            samples=samples.astype(np.float64),
+            sampling_rate=rate,
+            resolution=resolution,
+            resolution_unit="uV",
+            offset=offset,
+            units="" if raw else "uV",
+            is_raw=raw,
+            adc_resolution=resolution,
+            adc_resolution_unit="uV",
+        )
+
+    # ── Representative beats ─────────────────────────────────────
+
+    def _read_representative_beats(
+        self, repbeats: object, rhythm_rate: int, rhythm_resolution: float
+    ) -> list[Lead]:
+        """Decode ``<repbeats>``: one ``<repbeat leadname=...>`` per lead.
+
+        1.04+ stores the samples in a ``<waveform duration=...>`` child,
+        1.03 directly in ``<repbeat duration=...>``.
+        """
+        if repbeats is None:
             return []
-
-        # Sample rate: prefer repbeats attribute, fallback to rhythm
-        rep_sr_str = _get_attr(repbeats_node, "samplespersecond", "0")
-        rep_sr = int(rep_sr_str) if rep_sr_str != "0" else 0
-        if rep_sr == 0:
-            try:
-                rep_sr = int(_get_text(_get_node(signal_details, "samplingrate")))
-            except Exception:
-                rep_sr = 500  # safe fallback
-
-        # Labels
-        try:
-            labels = _get_or_create_labels(signal_details, repbeats_node)
-        except Exception:
+        repbeats = _first(repbeats)
+        compression = _attr(repbeats, "compression")
+        if compression:
+            warnings.warn(
+                f"Sierra XML: representative beats compressed with {compression!r} "
+                "are not supported and were skipped",
+                stacklevel=3,
+            )
             return []
+        encoding = _attr(repbeats, "dataencoding")
+        if encoding not in ("Base64", "Plain"):
+            raise UnsupportedFormatError(
+                f"Representative beat encoding unsupported: {encoding or 'missing'}"
+            )
+        rate = _to_int(_attr(repbeats, "samplespersec")) or _to_int(
+            _attr(repbeats, "samplespersecond")
+        ) or rhythm_rate
+        if not rate or rate <= 0:
+            raise CorruptedFileError("Missing or invalid representative beat sampling rate")
+        resolution = _to_float(_attr(repbeats, "resolution"))
+        if resolution is None or resolution <= 0:
+            resolution = rhythm_resolution or None
 
-        # Decode waveform data
-        try:
-            waveform_data = _get_waveform_data(signal_details, repbeats_node, labels)
-        except Exception:
-            return []
-
+        items = _as_list(_get(repbeats, "repbeat"))
+        names = unique_labels([normalize_lead_label(_attr(i, "leadname")) for i in items])
         beats: list[Lead] = []
-        for i, label in enumerate(labels):
-            if i < len(waveform_data):
-                samples = waveform_data[i].astype(np.float64)
-                res = float(resolution_uv)
-                raw = res != 1.0
-                beats.append(Lead(
-                    label=label,
-                    samples=samples,
-                    sampling_rate=rep_sr,
-                    resolution=res,
-                    resolution_unit="uV",
-                    units="" if raw else "uV",
-                    is_raw=raw,
-                ))
+        for label, item in zip(names, items):
+            waveform = _get(item, "waveform")
+            holder = waveform if waveform is not None else item
+            what = f"repbeat {label}"
+            if encoding == "Base64":
+                raw = _decode_base64(_text(holder), what)
+                if len(raw) % 2:
+                    raise CorruptedFileError(f"{what}: odd byte count {len(raw)}")
+                samples = np.frombuffer(raw, dtype="<i2").astype(np.int32)
+            else:
+                samples = _decode_plain(_text(holder), what)
+            duration = _to_float(_attr(holder, "duration") or _attr(item, "duration"))
+            if duration is not None and duration > 0:
+                expected = int(round(duration * rate / 1000))
+                if len(samples) < expected:
+                    raise CorruptedFileError(
+                        f"{what}: {len(samples)} samples, {expected} expected"
+                    )
+                samples = samples[:expected]
+            beat = self._make_lead(label, samples, rate, resolution)
+            beat.annotations = _flatten(item, skip=("leadname", "waveform"))
+            beats.append(beat)
+
+        method = _attr(repbeats, "repbeatmethod")
+        if method:
+            for beat in beats:
+                beat.annotations.setdefault("repbeatmethod", method)
         return beats
-
-    # ── Annotations ──────────────────────────────────────────────
-
-    def _read_annotations(self, doc: dict) -> dict[str, str]:
-        annotations: dict[str, str] = {}
-        for field_name, xml_field in ANNOTATION_FIELDS.items():
-            value = xml_field.get_value(doc)
-            if value is not None:
-                annotations[field_name] = str(value)
-
-        statements = find_tag(doc, "statement")
-        if isinstance(statements, list):
-            for stmt in statements:
-                if isinstance(stmt, dict):
-                    code = stmt.get("statementcode", "")
-                    annotations[f"statement_{code}_left"] = stmt.get("leftstatement", "")
-                    annotations[f"statement_{code}_right"] = stmt.get("rightstatement", "")
-        elif isinstance(statements, dict):
-            code = statements.get("statementcode", "")
-            annotations[f"statement_{code}_left"] = statements.get("leftstatement", "")
-            annotations[f"statement_{code}_right"] = statements.get("rightstatement", "")
-
-        return annotations
 
     # ── Device ───────────────────────────────────────────────────
 
-    def _read_device(self, doc: dict) -> DeviceInfo:
+    def _read_device(self, acquisition: object, signal_node: object) -> DeviceInfo:
         info = DeviceInfo()
+        machine = _get(acquisition, "machine")
+        info.model = _value(machine)
+        info.name = _value(_attr(machine, "machineid"))
+        # detaildescription: "Manufacturer:product number:software version"
+        parts = [p.strip() for p in _attr(machine, "detaildescription").split(":")]
+        if parts and parts[0]:
+            info.manufacturer = parts[0]
+        if len(parts) >= 3 and parts[2]:
+            info.software_version = ":".join(parts[2:])
+        if not info.model and len(parts) >= 2:
+            info.model = parts[1]
 
-        # Model name (text content of <machine>)
-        machine_field = XMLField("dataacquisition", "machine/#text", "str")
-        model = machine_field.get_value(doc)
-        if model is not None:
-            info.model = str(model)
-
-        # Device name / machine ID
-        machine_id_field = XMLField("dataacquisition", "machine/@machineid", "str")
-        machine_id = machine_id_field.get_value(doc)
-        if machine_id is not None:
-            info.name = str(machine_id)
-
-        # Serial/detail description
-        detail_field = XMLField("dataacquisition", "machine/@detaildescription", "str")
-        detail = detail_field.get_value(doc)
-        if detail is not None:
-            info.serial_number = str(detail)
-            # Extract manufacturer from detail (format: "Manufacturer:Serial:Version")
-            parts = str(detail).split(":")
-            if parts and not info.manufacturer:
-                info.manufacturer = parts[0].strip()
-
-        # Software version from document version
-        doc_ver_field = XMLField("documentinfo", "documentversion", "str")
-        software_version = doc_ver_field.get_value(doc)
-        if software_version is not None:
-            info.software_version = str(software_version)
-
-        # Manufacturer fallback
-        machine_data = find_tag(doc, "machine")
-        if isinstance(machine_data, dict) and not info.manufacturer:
-            for key in ("manufacturer", "manufacturercode"):
-                val = machine_data.get(key)
-                if val and isinstance(val, str):
-                    info.manufacturer = val
-                    break
-
-        # Acquisition type
-        acq_type_field = XMLField("signalcharacteristics", "acquisitiontype", "str")
-        acq_type = acq_type_field.get_value(doc)
-        if acq_type is not None:
-            info.acquisition_type = str(acq_type)
-
-        # Institution & department from acquirer
-        for field_name, xml_field in ACQUIRER_FIELDS.items():
-            value = xml_field.get_value(doc)
-            if value is None:
-                continue
-            val_str = str(value).strip()
-            if not val_str:
-                continue
-            if field_name == "institution_name" and not info.institution:
-                info.institution = val_str
-            elif field_name == "department_name" and not info.department:
-                info.department = val_str
-
+        acquirer = _get(acquisition, "acquirer")
+        info.institution = _value(_get(acquirer, "institutionname"))
+        info.department = _value(_get(acquirer, "departmentname"))
+        info.acquisition_type = _text(_get(signal_node, "acquisitiontype"))
         return info
 
     # ── Filters ──────────────────────────────────────────────────
 
-    def _read_filters(self, doc: dict) -> FilterSettings:
+    def _read_filters(self, parsed: object, signal_node: object) -> FilterSettings:
+        """Filters applied to the stored waveform.
+
+        ``<parsedwaveforms>`` attributes describe the stored data (they differ
+        from ``<signalcharacteristics>`` when the waveform was re-filtered).
+        """
         settings = FilterSettings()
 
-        for fields_entry in SIGNAL_CHARACTERISTICS_FIELDS:
-            for field_name, field_def in fields_entry.items():
-                if not isinstance(field_def, XMLField):
-                    continue
-                value = field_def.get_value(doc)
-                if value is None:
-                    continue
-                if field_name == "hipass" and settings.highpass is None:
-                    settings.highpass = float(value)
-                elif field_name == "lowpass" and settings.lowpass is None:
-                    settings.lowpass = float(value)
-                elif field_name == "notch_filter_freqs" and settings.notch is None:
-                    settings.notch = float(int(value))
-                elif field_name == "notch_filtered" and settings.notch_active is None:
-                    settings.notch_active = bool(value)
-                elif field_name == "artifact_filtered" and settings.artifact_filter is None:
-                    settings.artifact_filter = bool(value)
+        def pick(name: str) -> str:
+            return _attr(parsed, name) or _text(_get(signal_node, name))
 
-        # Also check reportbandwidth for filter settings
-        rpt_hp = XMLField("reportbandwidth", "highpassfiltersetting", "float")
-        rpt_lp = XMLField("reportbandwidth", "lowpassfiltersetting", "float")
-        rpt_notch = XMLField("reportbandwidth", "notchfiltersetting", "float")
-        rpt_art = XMLField("reportbandwidth", "artifactfilterflag", "bool")
-        if settings.highpass is None:
-            v = rpt_hp.get_value(doc)
-            if v is not None:
-                settings.highpass = float(v)
-        if settings.lowpass is None:
-            v = rpt_lp.get_value(doc)
-            if v is not None:
-                settings.lowpass = float(v)
-        if settings.notch is None:
-            v = rpt_notch.get_value(doc)
-            if v is not None:
-                settings.notch = float(v)
-        if settings.artifact_filter is None:
-            v = rpt_art.get_value(doc)
-            if v is not None:
-                settings.artifact_filter = bool(v)
+        settings.highpass = _to_float(pick("hipass"))
+        settings.lowpass = _to_float(pick("lowpass"))
+        if settings.highpass is None and settings.lowpass is None:
+            # 1.03: <signalbandwidth>0.05-150</signalbandwidth>
+            band = _text(_get(signal_node, "signalbandwidth")).split("-")
+            if len(band) == 2:
+                settings.highpass = _to_float(band[0])
+                settings.lowpass = _to_float(band[1])
+        if settings.highpass == 0:
+            settings.highpass = None
+        if settings.lowpass == 0:
+            settings.lowpass = None
 
+        settings.notch_active = _to_bool(pick("notchfiltered"))
+        notch = _to_float(pick("notchfilterfreqs"))
+        settings.notch = notch if notch else None  # acsetting is the mains setting, not the notch
+        settings.artifact_filter = _to_bool(_attr(parsed, "artfiltered"))
         return settings
+
+    # ── Signal characteristics ───────────────────────────────────
+
+    def _read_signal(
+        self, parsed: object, signal_node: object, rhythm: Lead | None
+    ) -> SignalCharacteristics:
+        sig = SignalCharacteristics()
+        if rhythm is not None:
+            sig.sampling_rate = rhythm.sampling_rate
+            if rhythm.resolution_unit:
+                sig.resolution = rhythm.resolution
+
+        def pick(name: str) -> str:
+            return _attr(parsed, name) or _text(_get(signal_node, name))
+
+        sig.bits_per_sample = _to_int(pick("bitspersample")) or _to_int(
+            _attr(parsed, "nbitspersample")
+        )
+        sig.signal_offset = _to_int(pick("signaloffset"))
+        sig.signal_signed = _to_bool(pick("signalsigned"))
+        sig.number_channels_allocated = _to_int(_text(_get(signal_node, "numberchannelsallocated")))
+        sig.number_channels_valid = _to_int(_text(_get(signal_node, "numberchannelsvalid")))
+        sig.electrode_placement = _text(_get(signal_node, "electrodeplacement"))
+        sig.acsetting = _to_int(_text(_get(signal_node, "acsetting")))
+        sig.compression = _compression(parsed)
+        sig.data_encoding = _attr(parsed, "dataencoding")
+        sig.filtered = _to_bool(_attr(parsed, "filterflag"))
+        sig.upsampled = _to_bool(_attr(parsed, "upsampled"))
+        sig.upsampling_method = _attr(parsed, "upsamplemethod")
+        sig.downsampled = _to_bool(_attr(parsed, "downsampled"))
+        sig.downsampling_method = _attr(parsed, "downsamplemethod")
+        sig.waveform_modified = _to_bool(_attr(parsed, "waveformmodified"))
+        return sig
 
     # ── Global measurements ──────────────────────────────────────
 
-    def _read_measurements(self, doc: dict) -> GlobalMeasurements:
-        measurements = GlobalMeasurements()
+    def _read_measurements(
+        self, interp_node: object, meas_node: object,
+    ) -> tuple[GlobalMeasurements, dict[str, str]]:
+        """Global measurements in ms, bpm and degrees.
 
-        def _safe_int(key: str) -> int | None:
-            f = ANNOTATION_FIELDS.get(key)
-            if f is None:
-                return None
-            val = f.get_value(doc)
-            if val is None:
-                return None
-            try:
-                return int(val)
-            except (ValueError, TypeError):
-                return None
+        1.04 keeps them in ``interpretation/globalmeasurements`` and
+        ``internalmeasurements/crossleadmeasurements``; 1.03 in
+        ``interpretation/interpretationmeasurements`` and
+        ``measurements/globalmeasurements`` (``mean*`` names).
+        """
+        sources = [
+            _get(interp_node, "globalmeasurements"),
+            _get(interp_node, "interpretationmeasurements"),
+            _get(meas_node, "crossleadmeasurements"),
+            _get(meas_node, "globalmeasurements"),
+        ]
 
-        measurements.heart_rate = _safe_int("heartrate")
-        measurements.rr_interval = _safe_int("rrint")
-        measurements.pr_interval = _safe_int("print")
-        measurements.qrs_duration = _safe_int("qrsdur")
-        measurements.qt_interval = _safe_int("qtint")
-        measurements.qtc_bazett = _safe_int("qtcb")
-        measurements.qtc_fridericia = _safe_int("qtcf")
-        measurements.p_axis = _safe_int("pfrontaxis")
-        measurements.qrs_axis = _safe_int("qrsfrontaxis")
-        measurements.t_axis = _safe_int("tfrontaxis")
+        def pick(*keys: str) -> int | None:
+            for node in sources:
+                for key in keys:
+                    value = _to_int(_text(_get(node, key)))
+                    if value is not None:
+                        return value
+            return None
 
-        # QRS count from crossleadmeasurements
-        nqrs_field = XMLField("crossleadmeasurements", "numberofcomplexes", "int")
-        nqrs = nqrs_field.get_value(doc)
-        if nqrs is not None:
-            measurements.qrs_count = int(nqrs)
+        m = GlobalMeasurements()
+        m.heart_rate = pick("heartrate", "meanventrate")
+        m.rr_interval = pick("rrint")
+        m.pr_interval = pick("print", "meanprint")
+        m.qrs_duration = pick("qrsdur", "meanqrsdur")
+        m.qt_interval = pick("qtint", "meanqtint")
+        m.qtc_bazett = pick("qtcb")
+        m.qtc_fridericia = pick("qtcf")
+        m.p_axis = pick("pfrontaxis")
+        m.qrs_axis = pick("qrsfrontaxis")
+        m.t_axis = pick("tfrontaxis")
+        m.qrs_count = pick("numberofcomplexes")
+        extra = {}
+        mean_qtc = pick("meanqtc")
+        if mean_qtc is not None:
+            # 1.03 files do not state the QTc formula
+            extra["qtc"] = f"{mean_qtc} ms (formula not stated)"
+        return m, extra
 
-        return measurements
+    # ── Interpretation ───────────────────────────────────────────
 
-    # ── Interpretation (statements as tuples, severity, clinician) ─
+    @staticmethod
+    def _render_component(component: object) -> tuple[str, str]:
+        """Render a coded statement template with its variables."""
+        unparsed = _get(component, "unparsedstatement")
+        if unparsed is None:
+            return _text(component), ""
+        variables = _get(component, "variables")
+        numbers = [_text(v) for v in _as_list(_get(variables, "numericvalue"))]
+        leads = " ".join(_text(v) for v in _as_list(_get(variables, "listofECGlead")))
 
-    def _read_interpretation(self, doc: dict) -> Interpretation:
+        def fill(template: str) -> str:
+            if leads:
+                template = template.replace("*LEAD*", leads)
+            values = iter(numbers)
+
+            def sub(match: re.Match) -> str:
+                value = next(values, None)
+                return match.group(0) if value is None else value
+
+            return " ".join(_PLACEHOLDER.sub(sub, template).split())
+
+        modifiers = " ".join(
+            _text(m) for m in _as_list(_get(component, "modifiers", "modifier")) if _text(m)
+        )
+        left = fill(_text(_get(unparsed, "lhsstatement")))
+        right = fill(_text(_get(unparsed, "rhsstatement")))
+        if modifiers:
+            left = f"{modifiers} {left}".strip()
+        return left, right
+
+    def _read_interpretation(
+        self, root: dict, interp_node: object
+    ) -> tuple[Interpretation, list[str]]:
+        """Final statements plus the device statements as text lines.
+
+        ``status="Confirmed"`` or a ``<confirmingclinician>`` marks a
+        confirmed ECG; edited but unconfirmed statements are an overread.
+        """
         interp = Interpretation()
+        if interp_node is None:
+            return interp, []
 
-        # ── Statements as (left, right) tuples ───────────────────
-        statements_data = find_tag(doc, "statement")
-        stmt_tuples: list[tuple[str, str]] = []
-
-        def _extract_stmt(stmt: dict) -> None:
-            left = str(stmt.get("leftstatement", "")).strip()
-            right = str(stmt.get("rightstatement", "")).strip()
+        final: list[tuple[str, str]] = []
+        edited = False
+        for stmt in _as_list(_get(interp_node, "statement")):
+            left = _text(_get(stmt, "leftstatement"))
+            right = _text(_get(stmt, "rightstatement"))
+            if _to_bool(_attr(stmt, "editedflag")):
+                edited = True
             if left or right:
-                stmt_tuples.append((left, right))
+                final.append((left, right))
 
-        if isinstance(statements_data, list):
-            for stmt in statements_data:
-                if isinstance(stmt, dict):
-                    _extract_stmt(stmt)
-        elif isinstance(statements_data, dict):
-            _extract_stmt(statements_data)
-        interp.statements = stmt_tuples
+        machine: list[tuple[str, str]] = []
+        components = _first(_get(interp_node, "interpretationdatastructure", "statementcomponents"))
+        if isinstance(components, dict):
+            for key, value in components.items():
+                if key.startswith(("@", "#")):
+                    continue
+                for comp in _as_list(value):
+                    source = _attr(comp, "source").lower()
+                    if source == "editor" or _to_bool(_attr(comp, "deleted")):
+                        edited = True
+                    if source != "editor":
+                        left, right = self._render_component(comp)
+                        if left or right:
+                            machine.append((left, right))
+        if not machine and not edited:
+            machine = list(final)
 
-        # ── Severity ─────────────────────────────────────────────
-        # <severity code="AB" id="4">- ABNORMAL ECG -</severity>
-        sev_code = ANNOTATION_FIELDS["severity_code"].get_value(doc)
-        if sev_code is not None:
-            code = str(sev_code).strip().upper()
-            interp.severity = _SEVERITY_MAP.get(code, code)
-        if not interp.severity:
-            sev_text = ANNOTATION_FIELDS["severity_text"].get_value(doc)
-            if sev_text is not None:
-                interp.severity = str(sev_text).strip().strip("-").strip()
+        severity = _get(interp_node, "severity")
+        code = _attr(severity, "code").upper()
+        interp.severity = _SEVERITY_MAP.get(code, "") or _text(severity).strip("- ").strip()
 
-        # ── Interpretation date ──────────────────────────────────
-        date_str = ANNOTATION_FIELDS["interpretation_date"].get_value(doc)
-        time_str = ANNOTATION_FIELDS["interpretation_time"].get_value(doc)
-        if date_str and time_str:
-            try:
-                interp.interpretation_date = datetime.strptime(
-                    f"{date_str} {time_str}", "%Y-%m-%d %H:%M:%S"
-                )
-            except ValueError:
-                pass
-
-        # ── Source ────────────────────────────────────────────────
-        # Determine from document status and presence of clinician
-        root_data = find_tag(doc, "restingecgdata")
-        doc_status = ""
-        if isinstance(root_data, dict):
-            doc_status = str(root_data.get("@status", "")).strip().lower()
-
-        confirming = find_tag(doc, "confirmingclinician")
-        if confirming is not None and isinstance(confirming, dict):
+        status = _attr(root, "status").lower()
+        confirmer = _get(interp_node, "confirmingclinician")
+        signature = _text(_get(interp_node, "mdsignatureline"))
+        if status == "confirmed" or _value(confirmer):
             interp.source = "confirmed"
-        elif doc_status == "confirmed":
-            interp.source = "confirmed"
+            interp.interpreter = _value(confirmer)
+            interp.interpretation_date = _parse_datetime(
+                _attr(confirmer, "date"), _attr(confirmer, "time")
+            )
+            if signature and (not interp.interpreter or interp.interpretation_date is None):
+                name, signed_at = self._parse_signature(signature)
+                interp.interpreter = interp.interpreter or name
+                interp.interpretation_date = interp.interpretation_date or signed_at
+        elif edited:
+            interp.source = "overread"
+            editor = _get(root, "documentinfo", "editor")
+            interp.interpreter = _value(editor)
+            interp.interpretation_date = _parse_datetime(_attr(editor, "date"), _attr(editor, "time"))
         else:
             interp.source = "machine"
+            interp.interpretation_date = _parse_datetime(
+                _attr(interp_node, "date"), _attr(interp_node, "time")
+            )
 
-        # ── Interpreter ──────────────────────────────────────────
-        # MD signature line
-        md_sig = ANNOTATION_FIELDS["md_signature_line"].get_value(doc)
-        if md_sig is not None:
-            interp.interpreter = str(md_sig).strip()
+        interp.statements = final
+        lines = [f"{left} | {right}" if right else left for left, right in machine]
+        return interp, lines
 
-        # Fallback: confirming clinician name
-        if not interp.interpreter and confirming is not None:
-            if isinstance(confirming, dict):
-                name = confirming.get("#text", "")
-                if name:
-                    interp.interpreter = str(name).strip()
+    @staticmethod
+    def _parse_signature(signature: str) -> tuple[str, datetime | None]:
+        """Split ``"Confirmed by: NAME 24-Dec-2008 07:15:13"`` into name and date."""
+        text = signature
+        prefix, sep, rest = signature.partition(":")
+        # Drop a leading "Confirmed by:" style prefix (no digits in it)
+        if sep and not any(c.isdigit() for c in prefix):
+            text = rest.strip()
+        signed_at = None
+        match = _SIGNATURE_DATE.search(text)
+        if match:
+            stamp = " ".join(match.group(1).split())
+            for fmt in ("%d-%b-%Y %H:%M:%S", "%d-%b-%Y %H:%M", "%m/%d/%Y %H:%M:%S", "%m/%d/%Y %H:%M"):
+                try:
+                    signed_at = datetime.strptime(stamp, fmt)
+                    break
+                except ValueError:
+                    continue
+            text = text[: match.start()].strip()
+        return text, signed_at
 
-        return interp
+    # ── Annotations ──────────────────────────────────────────────
 
-    # ── Lead measurements (per-lead morphology) ──────────────────
+    def _read_annotations(self, interp_node: object) -> dict[str, str]:
+        annotations: dict[str, str] = {}
+        if interp_node is None:
+            return annotations
+        for key in ("criteriaversion", "criteriaversiondate", "customcriteriaversion"):
+            value = _attr(interp_node, key)
+            if value:
+                annotations[key] = value
+        for node in (
+            _get(interp_node, "globalmeasurements"),
+            _get(interp_node, "interpretationmeasurements"),
+        ):
+            for key, value in _flatten(node).items():
+                if key not in ("editedflag", "arrhyflag"):
+                    annotations.setdefault(key, value)
+        code = _attr(_get(interp_node, "severity"), "code")
+        if code:
+            annotations["severity_code"] = code
+        return annotations
+
+    # ── raw_metadata ─────────────────────────────────────────────
+
+    def _read_raw_metadata(
+        self,
+        doc: dict,
+        root: dict,
+        record: ECGRecord,
+        interp_nodes: list,
+        signal_node: object,
+        parsed: object,
+    ) -> None:
+        meta = record.raw_metadata
+        acquisition = _get(root, "dataacquisition")
+        if _attr(acquisition, "date") and record.recording.date is None:
+            meta["acquisition_date"] = _attr(acquisition, "date")
+        stat = _to_bool(_attr(acquisition, "statflag"))
+        if stat is not None:
+            meta["stat_flag"] = stat
+        meta["signal_characteristics"] = _flatten(signal_node)
+        meta["parsed_waveforms"] = _flatten(parsed)
+        machine = _get(acquisition, "machine")
+        parts = _attr(machine, "detaildescription").split(":")
+        if len(parts) >= 2 and parts[1].strip():
+            meta["device_product_number"] = parts[1].strip()
+        acquirer = _get(acquisition, "acquirer")
+        if acquirer:
+            meta["acquirer"] = acquirer
+        if root.get("@status"):
+            meta["status"] = str(root["@status"])
+
+        statements = []
+        for interp_node in interp_nodes:
+            for stmt in _as_list(_get(interp_node, "statement")):
+                statements.append({
+                    "code": _text(_get(stmt, "statementcode")),
+                    "left": _text(_get(stmt, "leftstatement")),
+                    "right": _text(_get(stmt, "rightstatement")),
+                    "edited": _to_bool(_attr(stmt, "editedflag")),
+                })
+        if statements:
+            meta["statements"] = statements
+        signature = _text(_get(interp_nodes[0], "mdsignatureline")) if interp_nodes else ""
+        if signature:
+            meta["md_signature_line"] = signature
+        if len(interp_nodes) > 1:
+            meta["other_interpretations"] = interp_nodes[1:]
+
+        lead_measurements = self._read_lead_measurements(doc)
+        if lead_measurements:
+            meta["lead_measurements"] = lead_measurements
+            for lead in record.leads:
+                if lead.label in lead_measurements:
+                    lead.annotations = lead_measurements[lead.label]
+        for key, value in (
+            ("order_info", find_tag(doc, "orderinfo")),
+            ("cross_lead_measurements", self._read_cross_lead_measurements(doc)),
+            ("group_measurements", self._read_group_measurements(doc)),
+            ("config_settings", self._read_config_settings(doc)),
+            ("user_defines", self._read_user_defines(doc)),
+            ("report_info", self._read_report_info(doc)),
+            ("document_info", self._read_document_info(doc)),
+        ):
+            if value:
+                meta[key] = value
 
     def _read_lead_measurements(self, doc: dict) -> dict[str, dict[str, str]] | None:
         """Parse ``<leadmeasurements>`` into ``{lead_name: {field: value}}``."""
-        raw = find_tag(doc, "leadmeasurement")
-        if raw is None:
-            return None
-        items = raw if isinstance(raw, list) else [raw]
         result: dict[str, dict[str, str]] = {}
-        for item in items:
-            if not isinstance(item, dict):
-                continue
-            lead_name = item.get("@leadname", "")
-            if not lead_name:
-                continue
-            fields: dict[str, str] = {}
-            # Collect attributes (flags like pmeasflag, qrsmeasflag, etc.)
-            for k, v in item.items():
-                if k.startswith("@") and k != "@leadname":
-                    fields[k[1:]] = str(v)
-            # Collect child elements (pamp, pdur, ramp, rdur, etc.)
-            for k, v in item.items():
-                if k.startswith("@") or k.startswith("#"):
-                    continue
-                if k in ("pacepulses", "leadqualitystates"):
-                    continue  # complex sub-structures, skip
-                if isinstance(v, dict):
-                    text = v.get("#text", "")
-                elif isinstance(v, str):
-                    text = v
-                else:
-                    continue
-                text = str(text).strip()
-                if text:
-                    fields[k] = text
-            result[lead_name] = fields
+        for item in _as_list(find_tag(doc, "leadmeasurement")):
+            name = _attr(item, "leadname")
+            if name:
+                label = normalize_lead_label(name)
+                result[label] = _flatten(item, skip=("leadname", "pacepulses", "leadqualitystates"))
         return result or None
-
-    # ── Cross-lead measurements (VCG, axes, rhythm) ──────────────
 
     def _read_cross_lead_measurements(self, doc: dict) -> dict[str, str] | None:
         """Parse ``<crossleadmeasurements>`` into ``{field: value}``."""
-        raw = find_tag(doc, "crossleadmeasurements")
-        if not isinstance(raw, dict):
-            return None
-        result: dict[str, str] = {}
-        # Collect attributes
-        for k, v in raw.items():
-            if k.startswith("@"):
-                result[k[1:]] = str(v)
-        # Collect child elements
-        for k, v in raw.items():
-            if k.startswith("@") or k.startswith("#"):
-                continue
-            if k in ("pacepulses", "qamessagecodes"):
-                continue  # complex sub-structures
-            if isinstance(v, dict):
-                text = v.get("#text", "")
-            elif isinstance(v, str):
-                text = v
-            else:
-                continue
-            text = str(text).strip()
-            if text and text.lower() != "none":
-                result[k] = text
-        return result or None
-
-    # ── Group measurements ───────────────────────────────────────
+        result = _flatten(find_tag(doc, "crossleadmeasurements"), skip=("pacepulses", "qamessagecodes"))
+        return {k: v for k, v in result.items() if v.lower() != "none"} or None
 
     def _read_group_measurements(self, doc: dict) -> list[dict[str, str]] | None:
-        """Parse ``<groupmeasurements>`` into list of group dicts."""
-        raw = find_tag(doc, "groupmeasurement")
-        if raw is None:
-            return None
-        items = raw if isinstance(raw, list) else [raw]
-        groups: list[dict[str, str]] = []
-        for item in items:
-            if not isinstance(item, dict):
-                continue
-            fields: dict[str, str] = {}
-            for k, v in item.items():
-                if k.startswith("@"):
-                    fields[k[1:]] = str(v)
-                elif k.startswith("#"):
-                    continue
-                elif isinstance(v, dict):
-                    text = v.get("#text", "")
-                    if text and str(text).strip():
-                        fields[k] = str(text).strip()
-                elif isinstance(v, str) and v.strip():
-                    fields[k] = v.strip()
-            if fields:
-                groups.append(fields)
-        return groups or None
+        """Parse ``<groupmeasurements>`` into a list of group dicts."""
+        groups = [_flatten(item) for item in _as_list(find_tag(doc, "groupmeasurement"))]
+        return [g for g in groups if g] or None
 
-    # ── Order info ───────────────────────────────────────────────
-
-    def _read_order_info(self, doc: dict) -> dict | list | None:
-        """Extract ``<orderinfo>`` section as raw data."""
-        return find_tag(doc, "orderinfo")
-
-    # ── Config settings ──────────────────────────────────────────
-
-    def _read_config_settings(self, doc: dict) -> dict | None:
-        """Extract ``<configsettings>`` as a name→value dict."""
-        data = find_tag(doc, "configsetting")
-        if data is None:
-            return None
+    def _read_config_settings(self, doc: dict) -> dict[str, str] | None:
+        """Extract ``<configsettings>`` as a name to value dict."""
         settings: dict[str, str] = {}
-        items = data if isinstance(data, list) else [data]
-        for item in items:
-            if isinstance(item, dict):
-                name = str(item.get("name", "")).strip()
-                value = str(item.get("value", "")).strip()
-                if name and name.lower() != "none":
-                    settings[name] = value
+        for item in _as_list(find_tag(doc, "configsetting")):
+            name = _text(_get(item, "name"))
+            if name and name.lower() != "none":
+                settings[name] = _text(_get(item, "value"))
         return settings or None
 
-    # ── User defines ─────────────────────────────────────────────
-
-    def _read_user_defines(self, doc: dict) -> dict | None:
-        """Extract ``<userdefine>`` entries as a label→value dict."""
-        data = find_tag(doc, "userdefine")
-        if data is None:
-            return None
+    def _read_user_defines(self, doc: dict) -> dict[str, str] | None:
+        """Extract ``<userdefine>`` entries as a label to value dict."""
         defines: dict[str, str] = {}
-        items = data if isinstance(data, list) else [data]
-        for item in items:
-            if isinstance(item, dict):
-                label = str(item.get("label", "")).strip()
-                value = str(item.get("value", "")).strip()
-                if label and value and label.lower() != "none" and value.lower() != "none":
-                    defines[label] = value
+        for item in _as_list(find_tag(doc, "userdefine")):
+            label = _text(_get(item, "label"))
+            value = _text(_get(item, "value"))
+            if label and value and label.lower() != "none" and value.lower() != "none":
+                defines[label] = value
         return defines or None
 
-    # ── Report info (gains, bandwidth) ───────────────────────────
-
     def _read_report_info(self, doc: dict) -> dict | None:
-        """Extract ``<reportinfo>`` including gains and bandwidth."""
+        """Extract ``<reportinfo>`` including gains and display bandwidth."""
+        info = find_tag(doc, "reportinfo")
         result: dict[str, object] = {}
+        for key, name in (("reportlabel", "report_label"), ("reportdescription", "report_description"),
+                          ("reporttype", "report_type")):
+            value = _text(_get(info, key))
+            if value:
+                result[name] = value
 
-        # Report label & description
-        rpt_label = XMLField("reportinfo", "reportlabel", "str")
-        rpt_desc = XMLField("reportinfo", "reportdescription", "str")
-        v = rpt_label.get_value(doc)
-        if v is not None:
-            result["report_label"] = str(v).strip()
-        v = rpt_desc.get_value(doc)
-        if v is not None:
-            result["report_description"] = str(v).strip()
-
-        # Amplitude gain
-        gain_data = find_tag(doc, "amplitudegain")
-        if isinstance(gain_data, dict):
+        gain = find_tag(doc, "amplitudegain")
+        if isinstance(gain, dict):
             gain_info: dict[str, object] = {}
-            unit = gain_data.get("@unit", "")
-            if unit:
-                gain_info["unit"] = str(unit)
-            overall = gain_data.get("overallgain")
-            if overall is not None:
-                try:
-                    gain_info["overall"] = float(str(overall).strip())
-                except (ValueError, TypeError):
-                    gain_info["overall"] = str(overall).strip()
-            # Group gains (per-lead-group overrides)
-            group = gain_data.get("groupgain")
-            if group is not None:
-                groups = group if isinstance(group, list) else [group]
-                group_gains: list[dict[str, object]] = []
-                for g in groups:
-                    if isinstance(g, dict):
-                        entry: dict[str, object] = {}
-                        name = g.get("@leadgroupname", "")
-                        if name:
-                            entry["leads"] = str(name)
-                        text = g.get("#text", "")
-                        if text:
-                            try:
-                                entry["gain"] = float(str(text).strip())
-                            except (ValueError, TypeError):
-                                entry["gain"] = str(text).strip()
-                        group_gains.append(entry)
-                if group_gains:
-                    gain_info["group_gains"] = group_gains
+            if _attr(gain, "unit"):
+                gain_info["unit"] = _attr(gain, "unit")
+            overall = _text(gain.get("overallgain"))
+            if overall:
+                gain_info["overall"] = _to_float(overall) if _to_float(overall) is not None else overall
+            group_gains = []
+            for g in _as_list(gain.get("groupgain")):
+                entry: dict[str, object] = {}
+                if _attr(g, "leadgroupname"):
+                    entry["leads"] = _attr(g, "leadgroupname")
+                text = _text(g)
+                if text:
+                    entry["gain"] = _to_float(text) if _to_float(text) is not None else text
+                group_gains.append(entry)
+            if group_gains:
+                gain_info["group_gains"] = group_gains
             if gain_info:
                 result["amplitude_gain"] = gain_info
 
-        # Time gain
-        time_gain_data = find_tag(doc, "timegain")
-        if time_gain_data is not None:
-            tg_info: dict[str, object] = {}
-            if isinstance(time_gain_data, dict):
-                unit = time_gain_data.get("@unit", "")
-                if unit:
-                    tg_info["unit"] = str(unit)
-                text = time_gain_data.get("#text", "")
-                if text:
-                    try:
-                        tg_info["value"] = float(str(text).strip())
-                    except (ValueError, TypeError):
-                        tg_info["value"] = str(text).strip()
-            else:
-                try:
-                    tg_info["value"] = float(str(time_gain_data).strip())
-                except (ValueError, TypeError):
-                    tg_info["value"] = str(time_gain_data).strip()
-            if tg_info:
-                result["time_gain"] = tg_info
+        time_gain = find_tag(doc, "timegain")
+        if time_gain is not None and not isinstance(time_gain, list):
+            tg: dict[str, object] = {}
+            if _attr(time_gain, "unit"):
+                tg["unit"] = _attr(time_gain, "unit")
+            text = _text(time_gain)
+            if text:
+                tg["value"] = _to_float(text) if _to_float(text) is not None else text
+            if tg:
+                result["time_gain"] = tg
 
-        # Report bandwidth
-        bw: dict[str, object] = {}
+        bandwidth: dict[str, object] = {}
+        bw_node = find_tag(doc, "reportbandwidth")
         for tag, key in [
             ("highpassfiltersetting", "highpass"),
             ("lowpassfiltersetting", "lowpass"),
@@ -1080,110 +1078,43 @@ class SierraXMLParser(Parser):
             ("artifactfilterflag", "artifact_filter"),
             ("hysteresisfilterflag", "hysteresis_filter"),
         ]:
-            f = XMLField("reportbandwidth", tag, "str")
-            v = f.get_value(doc)
-            if v is not None:
-                bw[key] = str(v).strip()
-        if bw:
-            result["bandwidth"] = bw
+            value = _text(_get(bw_node, tag))
+            if value:
+                bandwidth[key] = value
+        if bandwidth:
+            result["bandwidth"] = bandwidth
 
-        # Waveform format
         wf_fmt = find_tag(doc, "waveformformat")
         if isinstance(wf_fmt, dict):
             fmt: dict[str, object] = {}
-            for attr in ("@leadsequence", "@timesequence"):
-                val = wf_fmt.get(attr)
-                if val:
-                    fmt[attr.lstrip("@")] = str(val)
+            for name in ("leadsequence", "timesequence"):
+                if _attr(wf_fmt, name):
+                    fmt[name] = _attr(wf_fmt, name)
             main_wf = wf_fmt.get("mainwaveformformat")
-            if isinstance(main_wf, dict):
-                fmt["nrow"] = main_wf.get("@nrow", "")
-                fmt["ncolumn"] = main_wf.get("@ncolumn", "")
-                fmt["lead_layout"] = str(main_wf.get("#text", "")).strip()
+            if main_wf is not None:
+                fmt["nrow"] = _attr(main_wf, "nrow")
+                fmt["ncolumn"] = _attr(main_wf, "ncolumn")
+                fmt["lead_layout"] = _text(main_wf)
             rhythm = wf_fmt.get("rhythmwaveformformat")
-            if isinstance(rhythm, dict):
-                fmt["rhythm_leads"] = str(rhythm.get("#text", "")).strip()
-                fmt["nrhythm"] = rhythm.get("@nrhythm", "")
+            if rhythm is not None:
+                fmt["rhythm_leads"] = _text(rhythm)
+                fmt["nrhythm"] = _attr(rhythm, "nrhythm")
             if fmt:
                 result["waveform_format"] = fmt
-
         return result or None
 
-    # ── Document info ────────────────────────────────────────────
-
-    def _read_document_info(self, doc: dict) -> dict | None:
+    def _read_document_info(self, doc: dict) -> dict[str, str] | None:
         """Extract ``<documentinfo>`` metadata."""
+        info = find_tag(doc, "documentinfo")
         result: dict[str, str] = {}
-        for tag in ("documentname", "filename", "documenttype",
-                     "documentversion", "comments"):
-            f = XMLField("documentinfo", tag, "str")
-            v = f.get_value(doc)
-            if v is not None:
-                result[tag] = str(v).strip()
-
-        editor = find_tag(doc, "editor")
-        if isinstance(editor, dict):
-            for attr in ("@date", "@time", "@id"):
-                val = editor.get(attr)
-                if val:
-                    result[f"editor_{attr.lstrip('@')}"] = str(val)
-
+        for tag in ("documentname", "filename", "documenttype", "documentversion", "comments"):
+            value = _text(read_path(info, tag) if isinstance(info, dict) else None)
+            if value:
+                result[tag] = value
+        editor = _get(info, "editor")
+        for name in ("date", "time", "id"):
+            if _attr(editor, name):
+                result[f"editor_{name}"] = _attr(editor, name)
+        if _value(editor):
+            result["editor"] = _value(editor)
         return result or None
-
-    # ── Signal characteristics ───────────────────────────────────
-
-    def _read_signal(self, doc: dict) -> SignalCharacteristics:
-        sig = SignalCharacteristics()
-        for fields_entry in SIGNAL_CHARACTERISTICS_FIELDS:
-            for field_name, field_def in fields_entry.items():
-                if not isinstance(field_def, XMLField):
-                    continue
-                value = field_def.get_value(doc)
-                if value is None:
-                    continue
-                if field_name == "sampling_rate" and sig.sampling_rate == 0:
-                    sig.sampling_rate = int(value)
-                elif field_name == "resolution" and sig.resolution == 0.0:
-                    sig.resolution = float(value)
-                elif field_name == "bits_per_sample" and sig.bits_per_sample is None:
-                    sig.bits_per_sample = int(value)
-                elif field_name == "signal_offset" and sig.signal_offset is None:
-                    sig.signal_offset = int(value)
-                elif field_name == "signal_signed" and sig.signal_signed is None:
-                    sig.signal_signed = bool(value)
-                elif field_name == "number_channels_allocated" and sig.number_channels_allocated is None:
-                    sig.number_channels_allocated = int(value)
-                elif field_name == "number_channels_valid" and sig.number_channels_valid is None:
-                    sig.number_channels_valid = int(value)
-                elif field_name == "electrode_placement" and not sig.electrode_placement:
-                    sig.electrode_placement = str(value)
-                elif field_name == "acsetting" and sig.acsetting is None:
-                    sig.acsetting = int(value)
-                elif field_name == "compression" and not sig.compression:
-                    sig.compression = str(value)
-                elif field_name == "data_encoding" and not sig.data_encoding:
-                    sig.data_encoding = str(value)
-                elif field_name == "upsampled" and sig.upsampled is None:
-                    sig.upsampled = bool(value)
-                elif field_name == "upsampling_method" and not sig.upsampling_method:
-                    sig.upsampling_method = str(value)
-                elif field_name == "downsampled" and sig.downsampled is None:
-                    sig.downsampled = bool(value)
-                elif field_name == "waveform_modified" and sig.waveform_modified is None:
-                    sig.waveform_modified = bool(value)
-                elif field_name == "artifact_filtered" and sig.filtered is None:
-                    sig.filtered = bool(value)
-        return sig
-
-    def _read_signal_characteristics(self, doc: dict) -> list[dict]:
-        result: list[dict] = []
-        for fields_entry in SIGNAL_CHARACTERISTICS_FIELDS:
-            entry: dict = {}
-            for field_name, field in fields_entry.items():
-                if isinstance(field, XMLField):
-                    entry[field_name] = field.get_value(doc)
-                else:
-                    entry[field_name] = field
-            if entry.get("origin") is not None:
-                result.append(entry)
-        return result

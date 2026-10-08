@@ -92,18 +92,39 @@ def _section_lines(obj: object) -> list[str]:
 
 _UNIT_ALIASES: dict[str, str] = {
     "uV": "uV", "uv": "uV", "\u00b5V": "uV", "\u00b5v": "uV",
+    "\u03bcV": "uV", "\u03bcv": "uV",
     "microvolt": "uV", "microvolts": "uV",
     "mV": "mV", "mv": "mV", "millivolt": "mV", "millivolts": "mV",
     "V": "V", "v": "V", "volt": "V", "volts": "V",
+    "nV": "nV", "nv": "nV", "nanovolt": "nV", "nanovolts": "nV",
 }
 """Map of recognized voltage unit strings to their canonical form."""
 
 _TO_UV: dict[str, float] = {
+    "nV": 0.001,
     "uV": 1.0,
     "mV": 1_000.0,
     "V": 1_000_000.0,
 }
 """Conversion factors: multiply a value in the given unit to get microvolts."""
+
+
+def _normalize_unit(unit: str) -> str | None:
+    """Return the canonical voltage unit for *unit*, or ``None`` if unknown."""
+    return _UNIT_ALIASES.get(unit) or _UNIT_ALIASES.get(unit.strip().lower())
+
+
+def _json_default(value: object) -> object:
+    """Convert numpy scalars and dates for :func:`json.dumps`."""
+    if isinstance(value, np.bool_):
+        return bool(value)
+    if isinstance(value, np.integer):
+        return int(value)
+    if isinstance(value, np.floating):
+        return None if not np.isfinite(value) else float(value)
+    if isinstance(value, (date, datetime)):
+        return value.isoformat()
+    raise TypeError(f"Object of type {type(value).__name__} is not JSON serializable")
 
 
 def derive_is_raw(resolution: float, offset: float, resolution_unit: str) -> bool:
@@ -256,9 +277,13 @@ class Interpretation:
     severity: str = ""
     """Severity (``"NORMAL"``, ``"ABNORMAL"``, ``"BORDERLINE"``)."""
     source: str = ""
-    """Source (``"machine"``, ``"overread"``, ``"confirmed"``)."""
+    """Who produced the statements: ``"machine"`` for the device's automatic
+    analysis (not a diagnosis), ``"overread"`` or ``"confirmed"`` for a
+    physician. When a file holds both, the physician statements are kept here
+    and the device statements go to
+    ``ECGRecord.annotations["machine_interpretation"]``."""
     interpreter: str = ""
-    """Physician name (if overread)."""
+    """Physician name (if overread or confirmed)."""
     interpretation_date: datetime | None = None
     """When interpretation was made."""
 
@@ -646,13 +671,13 @@ class Lead:
                 f"Lead '{self.label}': cannot convert units on raw ADC "
                 "samples. Call to_physical() first."
             )
-        target_norm = _UNIT_ALIASES.get(target)
+        target_norm = _normalize_unit(target)
         if target_norm is None:
             raise ValueError(
                 f"Unknown target unit '{target}'. "
                 "Accepted units: uV, mV, V (and aliases)."
             )
-        current_norm = _UNIT_ALIASES.get(self.units)
+        current_norm = _normalize_unit(self.units)
         if current_norm is None:
             raise ValueError(
                 f"Lead '{self.label}': current unit '{self.units}' is not "
@@ -693,7 +718,11 @@ class Lead:
             "annotations": dict(self.annotations),
         }
         if include_samples:
-            d["samples"] = self.samples.tolist()
+            samples = self.samples
+            if not np.isfinite(samples).all():
+                # JSON has no NaN/Inf, write them as null
+                samples = np.where(np.isfinite(samples), samples, None)
+            d["samples"] = samples.tolist()
         return d
 
 
@@ -936,4 +965,8 @@ class ECGRecord:
         indent : int | None
             JSON indentation level.  ``None`` for compact output.
         """
-        return json.dumps(self.to_dict(include_samples=include_samples), indent=indent)
+        return json.dumps(
+            self.to_dict(include_samples=include_samples),
+            indent=indent,
+            default=_json_default,
+        )

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import base64
+import binascii
 import os
 import struct
 import textwrap
@@ -39,43 +40,214 @@ FIXTURES_DIR = Path(__file__).parent / "fixtures"
 
 
 # ---------------------------------------------------------------------------
-# Minimal HL7 aECG XML fixture
+# HL7 aECG XML fixture (structure per ANSI/HL7 V3 ECG R1-2004, PORT_MT020001)
 # ---------------------------------------------------------------------------
 
 HL7_AECG_XML = textwrap.dedent("""\
 <?xml version="1.0" encoding="UTF-8"?>
-<AnnotatedECG>
+<AnnotatedECG xmlns="urn:hl7-org:v3" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
   <id root="test-uuid-1234"/>
+  <code code="93000" codeSystem="2.16.840.1.113883.6.12"/>
   <effectiveTime>
     <low value="20230615103000"/>
     <high value="20230615103010"/>
   </effectiveTime>
-  <subject>
-    <administrativeGenderCode code="M"/>
-    <birthTime value="19800101"/>
-  </subject>
+  <componentOf>
+    <timepointEvent>
+      <code code="VISIT_1" codeSystem="1.2.3"/>
+      <componentOf>
+        <subjectAssignment>
+          <subject>
+            <trialSubject>
+              <id root="1.2.3" extension="SUBJ-001"/>
+              <subjectDemographicPerson>
+                <name><given>Ann</given><given>Marie</given><family>Doe</family></name>
+                <administrativeGenderCode code="M" codeSystem="2.16.840.1.113883.5.1"/>
+                <birthTime value="19800101"/>
+                <raceCode code="2106-3" codeSystem="2.16.840.1.113883.5.104" displayName="White"/>
+              </subjectDemographicPerson>
+            </trialSubject>
+          </subject>
+          <componentOf>
+            <clinicalTrial>
+              <id root="1.2.3" extension="TRIAL-1"/>
+              <location>
+                <trialSite>
+                  <id root="1.2.3" extension="SITE-9"/>
+                  <location><name>Test Clinic</name></location>
+                </trialSite>
+              </location>
+            </clinicalTrial>
+          </componentOf>
+        </subjectAssignment>
+      </componentOf>
+    </timepointEvent>
+  </componentOf>
   <component>
     <series>
+      <code code="RHYTHM" codeSystem="2.16.840.1.113883.5.4"/>
+      <effectiveTime>
+        <low value="20230615103000"/>
+        <high value="20230615103010"/>
+      </effectiveTime>
+      <author>
+        <seriesAuthor>
+          <manufacturedSeriesDevice>
+            <id extension="SN-42"/>
+            <manufacturerModelName>ELI250</manufacturerModelName>
+            <softwareName>5.3</softwareName>
+          </manufacturedSeriesDevice>
+          <manufacturerOrganization><name>Acme Medical</name></manufacturerOrganization>
+        </seriesAuthor>
+      </author>
+      <secondaryPerformer>
+        <seriesPerformer><assignedPerson><name>KAB</name></assignedPerson></seriesPerformer>
+      </secondaryPerformer>
+      <controlVariable>
+        <controlVariable>
+          <code code="MDC_ECG_CTL_VBL_ATTR_FILTER_LOW_PASS" codeSystem="2.16.840.1.113883.6.24"/>
+          <component>
+            <controlVariable>
+              <code code="MDC_ECG_CTL_VBL_ATTR_FILTER_CUTOFF_FREQ" codeSystem="2.16.840.1.113883.6.24"/>
+              <value xsi:type="PQ" value="150" unit="Hz"/>
+            </controlVariable>
+          </component>
+        </controlVariable>
+      </controlVariable>
+      <controlVariable>
+        <controlVariable>
+          <code code="MDC_ECG_CTL_VBL_ATTR_FILTER_HIGH_PASS" codeSystem="2.16.840.1.113883.6.24"/>
+          <component>
+            <controlVariable>
+              <code code="MDC_ECG_CTL_VBL_ATTR_FILTER_CUTOFF_FREQ" codeSystem="2.16.840.1.113883.6.24"/>
+              <value xsi:type="PQ" value="0.05" unit="Hz"/>
+            </controlVariable>
+          </component>
+        </controlVariable>
+      </controlVariable>
+      <controlVariable>
+        <controlVariable>
+          <code code="MDC_ECG_CTL_VBL_ATTR_FILTER_NOTCH" codeSystem="2.16.840.1.113883.6.24"/>
+          <component>
+            <controlVariable>
+              <code code="MDC_ECG_CTL_VBL_ATTR_FILTER_NOTCH_FREQ" codeSystem="2.16.840.1.113883.6.24"/>
+              <value xsi:type="PQ" value="50" unit="Hz"/>
+            </controlVariable>
+          </component>
+        </controlVariable>
+      </controlVariable>
       <component>
         <sequenceSet>
           <component>
             <sequence>
-              <code code="MDC_ECG_LEAD_I"/>
-              <value>
+              <code code="TIME_ABSOLUTE" codeSystem="2.16.840.1.113883.5.4"/>
+              <value xsi:type="GLIST_TS">
+                <head value="20230615103000.000"/>
+                <increment value="0.002" unit="s"/>
+              </value>
+            </sequence>
+          </component>
+          <component>
+            <sequence>
+              <code code="MDC_ECG_LEAD_I" codeSystem="2.16.840.1.113883.6.24"/>
+              <value xsi:type="SLIST_PQ">
+                <origin value="0" unit="uV"/>
+                <scale value="5" unit="uV"/>
                 <digits>100 200 300 400 500</digits>
               </value>
             </sequence>
           </component>
           <component>
             <sequence>
-              <code code="MDC_ECG_LEAD_II"/>
-              <value>
-                <digits>110 210 310 410 510</digits>
+              <code code="MDC_ECG_LEAD_II" codeSystem="2.16.840.1.113883.6.24"/>
+              <value xsi:type="SLIST_PQ">
+                <origin value="0" unit="uV"/>
+                <scale value="5" unit="uV"/>
+                <digits>110 210
+                  310	410 510</digits>
               </value>
             </sequence>
           </component>
         </sequenceSet>
       </component>
+      <derivation>
+        <derivedSeries>
+          <code code="REPRESENTATIVE_BEAT" codeSystem="2.16.840.1.113883.5.4"/>
+          <component>
+            <sequenceSet>
+              <component>
+                <sequence>
+                  <code code="TIME_RELATIVE" codeSystem="2.16.840.1.113883.5.4"/>
+                  <value xsi:type="GLIST_PQ">
+                    <head value="0" unit="ms"/>
+                    <increment value="2" unit="ms"/>
+                  </value>
+                </sequence>
+              </component>
+              <component>
+                <sequence>
+                  <code code="MDC_ECG_LEAD_I" codeSystem="2.16.840.1.113883.6.24"/>
+                  <value xsi:type="SLIST_PQ">
+                    <origin value="0" unit="uV"/>
+                    <scale value="5" unit="uV"/>
+                    <digits>1 2 3</digits>
+                  </value>
+                </sequence>
+              </component>
+              <component>
+                <sequence>
+                  <code code="MDC_ECG_LEAD_II" codeSystem="2.16.840.1.113883.6.24"/>
+                  <value xsi:type="SLIST_PQ">
+                    <origin value="0" unit="uV"/>
+                    <scale value="5" unit="uV"/>
+                    <digits>4 5 6</digits>
+                  </value>
+                </sequence>
+              </component>
+            </sequenceSet>
+          </component>
+        </derivedSeries>
+      </derivation>
+      <subjectOf>
+        <annotationSet>
+          <activityTime value="20230615103010"/>
+          <component>
+            <annotation>
+              <code code="MDC_ECG_HEART_RATE" codeSystem="2.16.840.1.113883.6.24"/>
+              <value xsi:type="PQ" value="72" unit="bpm"/>
+            </annotation>
+          </component>
+          <component>
+            <annotation>
+              <code code="MDC_ECG_TIME_PD_PR" codeSystem="2.16.840.1.113883.6.24"/>
+              <value xsi:type="PQ" value="160" unit="ms"/>
+            </annotation>
+          </component>
+          <component>
+            <annotation>
+              <code code="MDC_ECG_TIME_PD_QT" codeSystem="2.16.840.1.113883.6.24"/>
+              <value xsi:type="PQ" value="0.412" unit="s"/>
+            </annotation>
+          </component>
+          <component>
+            <annotation>
+              <code code="MDC_ECG_INTERPRETATION" codeSystem="2.16.840.1.113883.6.24"/>
+              <component>
+                <annotation>
+                  <code code="MDC_ECG_INTERPRETATION_STATEMENT" codeSystem="2.16.840.1.113883.6.24"/>
+                  <value xsi:type="ST">Sinus rhythm</value>
+                </annotation>
+              </component>
+              <component>
+                <annotation>
+                  <code code="MDC_ECG_INTERPRETATION_SEVERITY" codeSystem="2.16.840.1.113883.6.24"/>
+                  <value xsi:type="CE" code="NORMAL" displayName="Normal ECG"/>
+                </annotation>
+              </component>
+            </annotation>
+          </component>
+        </annotationSet>
+      </subjectOf>
     </series>
   </component>
 </AnnotatedECG>
@@ -83,32 +255,65 @@ HL7_AECG_XML = textwrap.dedent("""\
 
 
 # ---------------------------------------------------------------------------
-# Minimal Mortara EL250 XML fixture
+# Mortara ELI XML fixture (layout of real ELI 250/280 exports, synthetic data)
 # ---------------------------------------------------------------------------
 
-MORTARA_XML = textwrap.dedent("""\
-<?xml version="1.0" encoding="UTF-8"?>
-<ECG ACQUISITION_TIME="20231201120000" ACQUISITION_TIME_XML="2023-12-01T12:00:00"
-     NUM_QRS="75" VENT_RATE="75">
-  <SOURCE MODEL="EL250" MANUFACTURER="MORTARA" TYPE="STD-12"
-          ACQUIRING_DEVICE_SERIAL_NUMBER="SN123" LOW_PASS_FILTER="150"/>
-  <DEMOGRAPHIC_FIELDS>
-    <DEMOGRAPHIC_FIELD LABEL="First:" VALUE="John"/>
-    <DEMOGRAPHIC_FIELD LABEL="Last:" VALUE="Doe"/>
-    <DEMOGRAPHIC_FIELD LABEL="ID:" VALUE="PAT001"/>
-    <DEMOGRAPHIC_FIELD LABEL="DOB:" VALUE="19900515"/>
-    <DEMOGRAPHIC_FIELD LABEL="Sex:" VALUE="M"/>
-    <DEMOGRAPHIC_FIELD LABEL="Age:" VALUE="33"/>
-  </DEMOGRAPHIC_FIELDS>
-  <CHANNEL NAME="I" DURATION="5000" SAMPLE_FREQ="500" DATA="ZAAyAA=="/>
-  <CHANNEL NAME="II" DURATION="5000" SAMPLE_FREQ="500" DATA="ZAAyAA=="/>
-  <TYPICAL_CYCLE BITS="16" FORMAT="signed" UNITS_PER_MV="200"
-                 DURATION="400" SAMPLE_FREQ="500" ENCODING="base64"
-                 PR_INTERVAL="160" QRS_DURATION="90">
-    <TYPICAL_CYCLE_CHANNEL NAME="I" DATA="ZAAyAA=="/>
-  </TYPICAL_CYCLE>
-</ECG>
-""")
+def mortara_counts(lead_index: int, n: int) -> np.ndarray:
+    """Synthetic int16 counts for Mortara lead *lead_index*."""
+    return ((np.arange(n) % 50) - 25 + 10 * lead_index).astype("<i2")
+
+
+def _mortara_b64(lead_index: int, n: int) -> str:
+    return base64.b64encode(mortara_counts(lead_index, n).tobytes()).decode()
+
+
+MORTARA_RHYTHM_N = 500     # 1 s at 500 Hz
+MORTARA_MEDIAN_N = 300
+
+MORTARA_XML = (
+    '<?xml version="1.0" encoding="UTF-8"?>\n'
+    '<!-- Generated by ELI Link 4.5.0.2 -->\n'
+    '<ECG ACQUISITION_TIME="20231201120000" ACQUISITION_TIME_XML="2023-12-01T12:00:00" '
+    'ROOM="R12" LOCATION="Cardio" COMMENT="Chest pain" AGE="99" AGE_UNITS="Y" '
+    'HEIGHT="70" HEIGHT_UNITS="IN" WEIGHT="80" WEIGHT_UNITS="KG" NUM_QRS="12" '
+    'AVERAGE_RR="800" VENT_RATE="75" TECHNICIAN="TS" SYSTOLIC_BP="120" '
+    'DIASTOLIC_BP="80" SEQUENCE_NUMBER="42">\n'
+    '  <DEMOGRAPHIC_FIELDS>\n'
+    '    <DEMOGRAPHIC_FIELD ID="1" LABEL="Last:" VALUE="Doe" UNITS="" />\n'
+    '    <DEMOGRAPHIC_FIELD ID="7" LABEL="First:" VALUE="John" UNITS="" />\n'
+    '    <DEMOGRAPHIC_FIELD ID="2" LABEL="ID:" VALUE="PAT001" UNITS="" />\n'
+    '  </DEMOGRAPHIC_FIELDS>\n'
+    '  <SITE ID="3" />\n'
+    '  <SUBJECT LAST_NAME="Doe" FIRST_NAME="Jos\u00e9 O\'Neil" GENDER="Male" ID="PAT001" '
+    'DOB="19900515" DOB_XML="1990-05-15" />\n'
+    '  <MEDICATION CLASS_CODE="2" DRUG_CODE="7" NAME="Bisoprolol" />\n'
+    '  <MEDICATION CLASS_CODE="0" DRUG_CODE="0" NAME="" />\n'
+    '  <SOURCE TYPE="RESTING" MANUFACTURER="Mortara Instrument, Inc." MODEL="ELI250c" '
+    'TRANSMISSION_TIME="20231202080000" TRANSMISSION_TIME_XML="2023-12-02T08:00:00" '
+    'BASELINE_ROLL_FILTER="5" LOW_PASS_FILTER="150" PRINT_FILTER="150" FILTER_BITMAP="2" '
+    'ACQUIRING_DEVICE_SW_VERSION="V2.0.4.0" ACQUIRING_DEVICE_INTERPRETATION_SW_VERSION="7.2.3" '
+    'ACQUIRING_DEVICE_SERIAL_NUMBER="SN123" ACQUIRING_DEVICE_SITE_NAME="Main Hospital" />\n'
+    '  <AUTOMATIC_INTERPRETATION>\n'
+    '    <STATEMENT STATEMENT_NUMBER="1" TEXT="SINUS RHYTHM" REASON="" />\n'
+    '    <STATEMENT STATEMENT_NUMBER="2" TEXT="LEFT AXIS DEVIATION " REASON="QRS AXIS &lt; -30" />\n'
+    '    <STATEMENT STATEMENT_NUMBER="3" TEXT="" REASON="" />\n'
+    '    <STATEMENT STATEMENT_NUMBER="4" TEXT="UNCONFIRMED REPORT" REASON="" />\n'
+    '  </AUTOMATIC_INTERPRETATION>\n'
+    '  <TYPICAL_CYCLE R_PEAK="150" P_ONSET="-208" P_OFFSET="-97" Q_ONSET="-45" Q_OFFSET="48" '
+    'T_OFFSET="411" P_DURATION="111" PR_DURATION="163" QRS_DURATION="93" QT="456" QTC="463" '
+    'QTB="469" QTF="464" P_AXIS="57" QRS_AXIS="-35" T_AXIS="40" BITS="16" FORMAT="SIGNED" '
+    f'UNITS_PER_MV="200" DURATION="{MORTARA_MEDIAN_N}" SAMPLE_FREQ="250" ENCODING="BASE64">\n'
+    f'    <TYPICAL_CYCLE_CHANNEL NAME="I" DATA="{_mortara_b64(0, MORTARA_MEDIAN_N)}" />\n'
+    f'    <TYPICAL_CYCLE_CHANNEL NAME="II" DATA="{_mortara_b64(1, MORTARA_MEDIAN_N)}" />\n'
+    '  </TYPICAL_CYCLE>\n'
+    + "".join(
+        f'  <CHANNEL OFFSET="0" BITS="16" FORMAT="SIGNED" UNITS_PER_MV="400" '
+        f'DURATION="{MORTARA_RHYTHM_N}" SAMPLE_FREQ="500" NAME="{name}" ENCODING="BASE64" '
+        f'DATA="{_mortara_b64(i, MORTARA_RHYTHM_N)}" />\n'
+        for i, name in enumerate(("I", "II", "V1"))
+    )
+    + '</ECG>\n'
+)
 
 
 # ---------------------------------------------------------------------------
@@ -260,7 +465,7 @@ def create_edf_binary(
     hdr[252:256] = f"{num_signals:<4}".encode("ascii")
 
     # Signal sub-headers
-    labels = [f"{'EDF ECG I':<16}", f"{'EDF ECG II':<16}"][:num_signals]
+    labels = [f"{'ECG I':<16}", f"{'ECG II':<16}"][:num_signals]
     transducer = [f"{'AgAgCl':<80}"] * num_signals
     phys_dim = [f"{'mV':<8}"] * num_signals
     phys_min = [f"{-3.2:<8}"] * num_signals
@@ -297,129 +502,146 @@ def edf_file(tmp_path: Path) -> Path:
 
 
 # ---------------------------------------------------------------------------
-# Minimal SCP-ECG fixture
+# SCP-ECG fixture (EN 1064 / ISO 11073-91064 layout, real CRCs)
 # ---------------------------------------------------------------------------
+
+def scp_crc(data: bytes) -> int:
+    """CRC-CCITT (polynomial 0x1021, initial value 0xFFFF) used by SCP-ECG."""
+    return binascii.crc_hqx(data, 0xFFFF)
+
+
+def scp_section(sec_id: int, body: bytes, protocol: int = 20, reserved: bytes = b"\x00" * 6) -> bytes:
+    """Build one section: CRC, ID, length, version, protocol, reserved, body."""
+    body = bytes(body)
+    if len(body) % 2:
+        body += b"\x00"  # sections have an even length
+    rest = struct.pack("<HIBB", sec_id, 16 + len(body), protocol, protocol) + reserved + body
+    return struct.pack("<H", scp_crc(rest)) + rest
+
+
+def scp_tag(tag: int, value: bytes) -> bytes:
+    """Section 1 tagged field."""
+    return bytes([tag]) + struct.pack("<H", len(value)) + value
+
+
+def scp_huffman_encode(values) -> bytes:
+    """Encode integers with the SCP default Huffman table."""
+    bits = []
+    for v in values:
+        v = int(v)
+        if v == 0:
+            bits.append("0")
+        elif -8 <= v <= 8:
+            bits.append("1" * abs(v) + "0" + ("0" if v > 0 else "1"))
+        elif -128 <= v <= 127:
+            bits.append("1111111110" + format(v & 0xFF, "08b"))
+        else:
+            bits.append("1111111111" + format(v & 0xFFFF, "016b"))
+    stream = "".join(bits)
+    stream += "0" * (-len(stream) % 8)
+    return bytes(int(stream[i:i + 8], 2) for i in range(0, len(stream), 8))
+
+
+def scp_encode_differences(values, diff: int) -> list[int]:
+    """Apply SCP first (1) or second (2) difference encoding (16-bit arithmetic)."""
+    x = [int(v) for v in values]
+    if diff == 1:
+        x = x[:1] + [x[i] - x[i - 1] for i in range(1, len(x))]
+    elif diff == 2:
+        x = x[:2] + [x[i] - 2 * x[i - 1] + x[i - 2] for i in range(2, len(x))]
+    return [(v + 0x8000) % 0x10000 - 0x8000 for v in x]
+
+
+def scp_signal_data(avm: int, interval: int, diff: int, signals, huffman: bool, flag: int = 0) -> bytes:
+    """Body of Section 5 or 6: header, per-lead byte counts, encoded leads."""
+    blocks = []
+    for sig in signals:
+        enc = scp_encode_differences(sig, diff)
+        blocks.append(scp_huffman_encode(enc) if huffman else struct.pack(f"<{len(enc)}h", *enc))
+    head = struct.pack("<HHBB", avm, interval, diff, flag)
+    return head + b"".join(struct.pack("<H", len(b)) for b in blocks) + b"".join(blocks)
+
+
+def scp_default_section1() -> bytes:
+    return (
+        scp_tag(0, b"TestSCP\x00")
+        + scp_tag(1, b"Jos\xe9\x00")  # Latin-1 text
+        + scp_tag(2, b"SCP001\x00")
+        + scp_tag(4, struct.pack("<HB", 43, 1))  # 43 years
+        + scp_tag(5, struct.pack("<HBB", 1980, 6, 15))
+        + scp_tag(6, struct.pack("<HB", 180, 1))  # cm
+        + scp_tag(7, struct.pack("<HB", 75, 1))  # kg
+        + scp_tag(8, bytes([1]))  # male
+        + scp_tag(9, bytes([1]))  # caucasian
+        + scp_tag(25, struct.pack("<HBB", 2024, 3, 9))
+        + scp_tag(26, bytes([14, 30, 5]))
+        + scp_tag(27, struct.pack("<H", 5))  # 0.05 Hz
+        + scp_tag(28, struct.pack("<H", 150))  # 150 Hz
+        + scp_tag(29, bytes([0x02]))  # 50 Hz notch
+        + scp_tag(255, b"")
+    )
+
+
+def scp_test_signal(lead_index: int, samples: int) -> np.ndarray:
+    return np.array([(lead_index + 1) * 100 + (s % 50) for s in range(samples)], dtype=np.int64)
+
 
 def create_scp_ecg_binary(
     num_leads: int = 2,
     samples_per_lead: int = 500,
     sampling_rate: int = 500,
+    *,
+    lead_codes: list[int] | None = None,
+    section1: bytes | None = None,
+    avm: int = 1000,
+    diff: int = 0,
+    huffman: bool = False,
+    signals: list | None = None,
+    lead_flags: int = 0x04,
+    sections: dict[int, bytes] | None = None,
+    protocol: int = 20,
 ) -> bytes:
-    """Build a minimal valid SCP-ECG binary file in memory."""
-    # We'll build sections 0, 1, 3, 6
+    """Build an SCP-ECG record following EN 1064.
 
-    # Section 1: Patient demographics
-    sec1_data = bytearray()
-    # Tag 0: Last name
-    name = b"TestSCP\x00"
-    sec1_data.append(0)
-    sec1_data.extend(struct.pack("<H", len(name)))
-    sec1_data.extend(name)
-    # Tag 2: Patient ID
-    pid = b"SCP001\x00"
-    sec1_data.append(2)
-    sec1_data.extend(struct.pack("<H", len(pid)))
-    sec1_data.extend(pid)
-    # Tag 8: Birth date (YYYY, MM, DD)
-    sec1_data.append(8)
-    sec1_data.extend(struct.pack("<H", 4))
-    sec1_data.extend(struct.pack("<H", 1980))
-    sec1_data.extend(bytes([6, 15]))
-    # Tag 9: Sex (1=M)
-    sec1_data.append(9)
-    sec1_data.extend(struct.pack("<H", 1))
-    sec1_data.append(1)
-    # Tag 255: Terminator
-    sec1_data.append(255)
-    sec1_data.extend(struct.pack("<H", 0))
+    Defaults: leads I and II (codes 1, 2), uncompressed amplitudes, AVM
+    1000 nV, Sections 0, 1, 3 and 6. *sections* adds or replaces section
+    bodies by ID (e.g. 4, 5, 7, 8).
+    """
+    codes = lead_codes if lead_codes is not None else list(range(1, num_leads + 1))
+    if signals is None:
+        signals = [scp_test_signal(i, samples_per_lead) for i in range(len(codes))]
+    interval = round(1_000_000 / sampling_rate)
 
-    # Section 3: Lead definition
-    sec3_data = bytearray()
-    sec3_data.append(num_leads)  # number of leads
-    sec3_data.append(0)          # flags
-    for i in range(num_leads):
-        sec3_data.extend(struct.pack("<I", 1))                # start sample
-        sec3_data.extend(struct.pack("<I", samples_per_lead)) # end sample
-        sec3_data.append(i)                                    # lead ID
+    sec3 = bytes([len(codes), lead_flags]) + b"".join(
+        struct.pack("<IIB", 1, len(sig), code) for code, sig in zip(codes, signals)
+    )
+    bodies = {
+        1: scp_default_section1() if section1 is None else section1,
+        3: sec3,
+        6: scp_signal_data(avm, interval, diff, signals, huffman),
+    }
+    if huffman:
+        bodies[2] = struct.pack("<H", 19999)
+    bodies.update(sections or {})
+    built = {sid: scp_section(sid, body, protocol) for sid, body in bodies.items()}
 
-    # Section 6: Rhythm data (raw int16, no Huffman)
-    sec6_data = bytearray()
-    avm = 1000   # nV per unit
-    sample_time = int(1_000_000 / sampling_rate)  # µs
-    sec6_data.extend(struct.pack("<H", avm))
-    sec6_data.extend(struct.pack("<H", sample_time))
-    sec6_data.append(0)   # encoding: first difference
-    sec6_data.append(1)   # compression: none (non-bimodal = raw)
-
-    # Per-lead byte lengths
-    lead_bytes = samples_per_lead * 2
-    for i in range(num_leads):
-        sec6_data.extend(struct.pack("<H", lead_bytes))
-
-    # Lead data as raw int16 (first-difference encoded)
-    for lead_idx in range(num_leads):
-        prev = 0
-        for s in range(samples_per_lead):
-            val = (lead_idx + 1) * 100 + (s % 50)
-            diff = val - prev
-            sec6_data.extend(struct.pack("<h", diff))
-            prev = val
-
-    def build_section(sec_id: int, data: bytes) -> bytes:
-        """Build a section with 16-byte header."""
-        sec = bytearray(16)
-        sec[0] = sec_id
-        sec[1:3] = struct.pack("<H", 0)  # CRC
-        sec[3] = 0  # reserved
-        struct.pack_into("<I", sec, 4, len(data) + 16)  # section length
-        sec[8:10] = struct.pack("<H", 20)  # version
-        sec[10:12] = struct.pack("<H", 20)  # protocol version
-        sec[12:16] = b"\x00" * 4  # reserved
-        return bytes(sec) + data
-
-    sec1_bytes = build_section(1, bytes(sec1_data))
-    sec3_bytes = build_section(3, bytes(sec3_data))
-    sec6_bytes = build_section(6, bytes(sec6_data))
-
-    # Section 0: Pointer table (after 6-byte file preamble)
-    # We'll place sections sequentially:
-    # [preamble 6] [sec0] [sec1] [sec3] [sec6]
-    preamble_size = 6
-    sec0_header_size = 16
-
-    # Estimate sec0 size: header + entries (3 entries * 10 bytes each)
-    num_entries = 3
-    sec0_data_size = num_entries * 10
-    sec0_total = sec0_header_size + sec0_data_size
-
-    sec1_offset = preamble_size + sec0_total + 1  # 1-indexed
-    sec3_offset = sec1_offset + len(sec1_bytes)
-    sec6_offset = sec3_offset + len(sec3_bytes)
-
-    sec0_data = bytearray()
-    # Entry for section 1
-    sec0_data.extend(struct.pack("<H", 1))
-    sec0_data.extend(struct.pack("<I", len(sec1_bytes)))
-    sec0_data.extend(struct.pack("<I", sec1_offset))
-    # Entry for section 3
-    sec0_data.extend(struct.pack("<H", 3))
-    sec0_data.extend(struct.pack("<I", len(sec3_bytes)))
-    sec0_data.extend(struct.pack("<I", sec3_offset))
-    # Entry for section 6
-    sec0_data.extend(struct.pack("<H", 6))
-    sec0_data.extend(struct.pack("<I", len(sec6_bytes)))
-    sec0_data.extend(struct.pack("<I", sec6_offset))
-
-    sec0_bytes = build_section(0, bytes(sec0_data))
-
-    file_size = preamble_size + len(sec0_bytes) + len(sec1_bytes) + len(sec3_bytes) + len(sec6_bytes)
-
-    # File preamble: CRC (2) + file size (4)
-    preamble = bytearray(6)
-    struct.pack_into("<H", preamble, 0, 0)  # CRC placeholder
-    struct.pack_into("<I", preamble, 2, file_size)
-
-    return bytes(preamble) + sec0_bytes + sec1_bytes + sec3_bytes + sec6_bytes
+    # Section 0 holds one pointer per section 0 to 11 (empty ones are zero)
+    sec0_len = 16 + 10 * 12
+    pos = 6 + sec0_len + 1  # 1-based byte index
+    pointers = struct.pack("<HII", 0, sec0_len, 7)
+    offsets = {}
+    for sid in sorted(built):
+        offsets[sid] = pos
+        pos += len(built[sid])
+    for sid in range(1, 12):
+        if sid in built:
+            pointers += struct.pack("<HII", sid, len(built[sid]), offsets[sid])
+        else:
+            pointers += struct.pack("<HII", sid, 0, 0)
+    sec0 = scp_section(0, pointers, protocol, reserved=b"SCPECG")
+    body = sec0 + b"".join(built[sid] for sid in sorted(built))
+    rest = struct.pack("<I", 6 + len(body)) + body
+    return struct.pack("<H", scp_crc(rest)) + rest
 
 
 @pytest.fixture
@@ -431,208 +653,372 @@ def scp_ecg_file(tmp_path: Path) -> Path:
 
 
 # ---------------------------------------------------------------------------
-# Minimal GE MUSE XML fixture
+# GE MUSE XML fixture (element names and order per MUSE restecg.dtd)
 # ---------------------------------------------------------------------------
 
-GE_MUSE_XML = textwrap.dedent("""\
-<?xml version="1.0" encoding="UTF-8"?>
-<RestingECG>
-  <MuseInfo>
-    <MuseVersion>9.0</MuseVersion>
-  </MuseInfo>
-  <PatientDemographics>
-    <PatientID>MUSE001</PatientID>
-    <PatientFirstName>Jane</PatientFirstName>
-    <PatientLastName>Smith</PatientLastName>
-    <Gender>FEMALE</Gender>
-    <DateofBirth>03/15/1985</DateofBirth>
-    <PatientAge>38</PatientAge>
-  </PatientDemographics>
-  <TestDemographics>
-    <AcquisitionDate>12/01/2023</AcquisitionDate>
-    <AcquisitionTime>14:30:00</AcquisitionTime>
-    <AcquisitionDevice>MAC5500</AcquisitionDevice>
-  </TestDemographics>
-  <Waveform>
-    <WaveformType>Rhythm</WaveformType>
-    <SampleBase>500</SampleBase>
-    <LeadData>
-      <LeadID>I</LeadID>
-      <WaveFormData>ZAAyAA==</WaveFormData>
-    </LeadData>
-    <LeadData>
-      <LeadID>II</LeadID>
-      <WaveFormData>ZAAyAA==</WaveFormData>
-    </LeadData>
-  </Waveform>
-  <Diagnosis>
-    <DiagnosisStatement>
-      <StmtText>Normal sinus rhythm</StmtText>
-    </DiagnosisStatement>
-  </Diagnosis>
-  <OriginalRestingECGMeasurements>
-    <VentricularRate>72</VentricularRate>
-    <QRSDuration>88</QRSDuration>
-  </OriginalRestingECGMeasurements>
-</RestingECG>
-""")
+
+def _muse_lead(lead_id: str, samples: list[int]) -> str:
+    """Build a LeadData element: Base64 little-endian int16 with CRC32."""
+    import zlib
+
+    payload = np.asarray(samples, dtype="<i2").tobytes()
+    return (
+        "    <LeadData>\n"
+        f"      <LeadByteCountTotal>{len(payload)}</LeadByteCountTotal>\n"
+        "      <LeadTimeOffset>0</LeadTimeOffset>\n"
+        f"      <LeadSampleCountTotal>{len(samples)}</LeadSampleCountTotal>\n"
+        "      <LeadAmplitudeUnitsPerBit>4.88</LeadAmplitudeUnitsPerBit>\n"
+        "      <LeadAmplitudeUnits>MICROVOLTS</LeadAmplitudeUnits>\n"
+        "      <LeadHighLimit>32767</LeadHighLimit>\n"
+        "      <LeadLowLimit>-32768</LeadLowLimit>\n"
+        f"      <LeadID>{lead_id}</LeadID>\n"
+        "      <LeadOffsetFirstSample>0</LeadOffsetFirstSample>\n"
+        "      <FirstSampleBaseline>0</FirstSampleBaseline>\n"
+        "      <LeadSampleSize>2</LeadSampleSize>\n"
+        "      <LeadOff>FALSE</LeadOff>\n"
+        "      <BaselineSway>FALSE</BaselineSway>\n"
+        f"      <LeadDataCRC32>{zlib.crc32(payload)}</LeadDataCRC32>\n"
+        f"      <WaveFormData>{base64.b64encode(payload).decode()}</WaveFormData>\n"
+        "    </LeadData>\n"
+    )
+
+
+MUSE_RHYTHM_I = [100, 50, -20, 0]
+MUSE_RHYTHM_II = [60, 80, 10, -4]
+
+
+def _muse_waveform(kind: str, leads: dict[str, list[int]]) -> str:
+    return (
+        "  <Waveform>\n"
+        f"    <WaveformType>{kind}</WaveformType>\n"
+        "    <WaveformStartTime>0</WaveformStartTime>\n"
+        f"    <NumberofLeads>{len(leads)}</NumberofLeads>\n"
+        "    <SampleType>CONTINUOUS_SAMPLES</SampleType>\n"
+        "    <SampleBase>500</SampleBase>\n"
+        "    <SampleExponent>0</SampleExponent>\n"
+        "    <HighPassFilter>16</HighPassFilter>\n"
+        "    <LowPassFilter>150</LowPassFilter>\n"
+        "    <ACFilter>60</ACFilter>\n"
+        + "".join(_muse_lead(k, v) for k, v in leads.items())
+        + "  </Waveform>\n"
+    )
+
+
+GE_MUSE_XML = (
+    '<?xml version="1.0" encoding="ISO-8859-1"?>\n'
+    '<!DOCTYPE RestingECG SYSTEM "restecg.dtd">\n'
+    "<RestingECG>\n"
+    "  <MuseInfo>\n"
+    "    <MuseVersion>9.0.7.17363</MuseVersion>\n"
+    "  </MuseInfo>\n"
+    "  <PatientDemographics>\n"
+    "    <PatientID>MUSE001</PatientID>\n"
+    "    <PatientAge>38</PatientAge>\n"
+    "    <AgeUnits>YEARS</AgeUnits>\n"
+    "    <DateofBirth>03-15-1985</DateofBirth>\n"
+    "    <Gender>FEMALE</Gender>\n"
+    "    <Race>CAUCASIAN</Race>\n"
+    "    <HeightCM>165</HeightCM>\n"
+    "    <WeightKG>60</WeightKG>\n"
+    "    <PatientLastName>Smith</PatientLastName>\n"
+    "    <PatientFirstName>Jane</PatientFirstName>\n"
+    "  </PatientDemographics>\n"
+    "  <TestDemographics>\n"
+    "    <DataType>RESTING</DataType>\n"
+    "    <Site>1</Site>\n"
+    "    <SiteName>Main Hospital</SiteName>\n"
+    "    <AcquisitionDevice>MAC5500</AcquisitionDevice>\n"
+    "    <Status>UNCONFIRMED</Status>\n"
+    "    <Location>12</Location>\n"
+    "    <LocationName>Cardiology</LocationName>\n"
+    "    <RoomID>4B</RoomID>\n"
+    "    <AcquisitionTime>14:30:00</AcquisitionTime>\n"
+    "    <AcquisitionDate>12-01-2023</AcquisitionDate>\n"
+    "    <CartNumber>7</CartNumber>\n"
+    "    <AcquisitionSoftwareVersion>010A</AcquisitionSoftwareVersion>\n"
+    "    <ReferringMDLastName>House</ReferringMDLastName>\n"
+    "    <ReferringMDFirstName>Greg</ReferringMDFirstName>\n"
+    "    <AcquisitionTechLastName>Tech</AcquisitionTechLastName>\n"
+    "    <AcquisitionTechFirstName>Alex</AcquisitionTechFirstName>\n"
+    "  </TestDemographics>\n"
+    "  <RestingECGMeasurements>\n"
+    "    <VentricularRate>72</VentricularRate>\n"
+    "    <AtrialRate>72</AtrialRate>\n"
+    "    <PRInterval>160</PRInterval>\n"
+    "    <QRSDuration>88</QRSDuration>\n"
+    "    <QTInterval>380</QTInterval>\n"
+    "    <QTCorrected>416</QTCorrected>\n"
+    "    <PAxis>51</PAxis>\n"
+    "    <RAxis>20</RAxis>\n"
+    "    <TAxis>40</TAxis>\n"
+    "    <QRSCount>12</QRSCount>\n"
+    "    <ECGSampleBase>500</ECGSampleBase>\n"
+    "    <ECGSampleExponent>0</ECGSampleExponent>\n"
+    "    <QTcFrederica>404</QTcFrederica>\n"
+    "  </RestingECGMeasurements>\n"
+    "  <Diagnosis>\n"
+    "    <Modality>RESTING</Modality>\n"
+    "    <DiagnosisStatement>\n"
+    "      <StmtFlag>ENDSLINE</StmtFlag>\n"
+    "      <StmtText>Normal sinus rhythm</StmtText>\n"
+    "    </DiagnosisStatement>\n"
+    "    <DiagnosisStatement>\n"
+    "      <StmtFlag>ENDSLINE</StmtFlag>\n"
+    "      <StmtText>Normal ECG</StmtText>\n"
+    "    </DiagnosisStatement>\n"
+    "  </Diagnosis>\n"
+    "  <QRSTimesTypes>\n"
+    "    <QRS><Number>1</Number><Type>0</Type><Time>614</Time></QRS>\n"
+    "    <GlobalRR>833</GlobalRR>\n"
+    "  </QRSTimesTypes>\n"
+    + _muse_waveform("Median", {"I": [1, 2, 3], "II": [3, 2, 1]})
+    + _muse_waveform("Rhythm", {"I": MUSE_RHYTHM_I, "II": MUSE_RHYTHM_II})
+    + "</RestingECG>\n"
+)
 
 
 @pytest.fixture
 def ge_muse_xml_file(tmp_path: Path) -> Path:
     """Write a minimal GE MUSE XML file and return its path."""
     p = tmp_path / "test_muse.xml"
-    p.write_text(GE_MUSE_XML, encoding="utf-8")
+    p.write_text(GE_MUSE_XML, encoding="iso-8859-1")
     return p
 
 
 # ---------------------------------------------------------------------------
-# Minimal DICOM Waveform fixture
+# DICOM Waveform fixtures (PS3.3 C.10.9, 12-lead ECG IOD)
 # ---------------------------------------------------------------------------
 
-def create_dicom_binary() -> bytes:
-    """Build a minimal DICOM file with waveform data.
+DICOM_12LEAD_SOP_CLASS = "1.2.840.10008.5.1.4.1.1.9.1.1"
 
-    This creates the bare minimum structure pydicom can read.
-    """
-    # 128-byte preamble + DICM magic
-    preamble = b"\x00" * 128 + b"DICM"
-    # For actual testing with pydicom, we build a real DICOM dataset
-    # Here we just return the magic; the test will use pydicom to create a proper file
-    return preamble
+# MDC codes and meanings from PS3.16 CID 3001
+DICOM_LEAD_SOURCES = [
+    ("2:1", "Lead I"), ("2:2", "Lead II"), ("2:61", "Lead III"),
+    ("2:62", "aVR, augmented voltage, right"),
+    ("2:63", "aVL, augmented voltage, left"),
+    ("2:64", "aVF, augmented voltage, foot"),
+    ("2:3", "Lead V1"), ("2:4", "Lead V2"), ("2:5", "Lead V3"),
+    ("2:6", "Lead V4"), ("2:7", "Lead V5"), ("2:8", "Lead V6"),
+]
+
+
+def dicom_code(value: str, scheme: str, meaning: str):
+    """Return a single code sequence item."""
+    from pydicom.dataset import Dataset
+
+    item = Dataset()
+    item.CodeValue = value
+    item.CodingSchemeDesignator = scheme
+    item.CodeMeaning = meaning
+    return item
+
+
+def dicom_channel(
+    source: tuple[str, str] | None,
+    sensitivity: str | None = "2.5",
+    unit: tuple[str, str] | None = ("uV", "microvolt"),
+    baseline: str | None = "0",
+    correction: str | None = "1",
+    filters: tuple[str, str, str] | None = ("0.05", "150", "50"),
+):
+    """Build one Channel Definition Sequence item."""
+    from pydicom.dataset import Dataset
+    from pydicom.sequence import Sequence
+
+    ch = Dataset()
+    if source is not None:
+        ch.ChannelSourceSequence = Sequence([dicom_code(source[0], "MDC", source[1])])
+    if sensitivity is not None:
+        ch.ChannelSensitivity = sensitivity
+    if unit is not None:
+        ch.ChannelSensitivityUnitsSequence = Sequence([dicom_code(unit[0], "UCUM", unit[1])])
+    if correction is not None:
+        ch.ChannelSensitivityCorrectionFactor = correction
+    if baseline is not None:
+        ch.ChannelBaseline = baseline
+    ch.WaveformBitsStored = 16
+    if filters is not None:
+        ch.FilterLowFrequency, ch.FilterHighFrequency, ch.NotchFilterFrequency = filters
+    return ch
+
+
+def dicom_group(
+    samples: np.ndarray,
+    channels: list,
+    sampling_rate: str = "500",
+    interpretation: str = "SS",
+    bits: int = 16,
+    label: str = "RHYTHM",
+    data: bytes | None = None,
+    padding: bytes | None = None,
+):
+    """Build one multiplex group; *samples* has shape (samples, channels)."""
+    from pydicom.dataset import Dataset
+    from pydicom.sequence import Sequence
+
+    wf = Dataset()
+    wf.MultiplexGroupLabel = label
+    wf.WaveformOriginality = "ORIGINAL"
+    wf.NumberOfWaveformChannels = samples.shape[1]
+    wf.NumberOfWaveformSamples = samples.shape[0]
+    wf.SamplingFrequency = sampling_rate
+    wf.ChannelDefinitionSequence = Sequence(channels)
+    wf.WaveformBitsAllocated = bits
+    wf.WaveformSampleInterpretation = interpretation
+    if padding is not None:
+        wf.WaveformPaddingValue = padding
+    # Interleaved by channel then by sample (C.10.9.1.5)
+    wf.WaveformData = data if data is not None else samples.tobytes()
+    return wf
+
+
+def write_dicom_ecg(
+    path: Path,
+    groups: list,
+    annotations: list | None = None,
+    little_endian: bool = True,
+    **attrs,
+) -> Path:
+    """Write a 12-lead ECG Waveform Storage file with the given groups."""
+    pytest.importorskip("pydicom")
+    import pydicom
+    from pydicom.dataset import Dataset, FileMetaDataset
+    from pydicom.sequence import Sequence
+    from pydicom.uid import ExplicitVRBigEndian, ExplicitVRLittleEndian
+
+    file_meta = FileMetaDataset()
+    file_meta.MediaStorageSOPClassUID = DICOM_12LEAD_SOP_CLASS
+    file_meta.MediaStorageSOPInstanceUID = pydicom.uid.generate_uid()
+    file_meta.TransferSyntaxUID = ExplicitVRLittleEndian if little_endian else ExplicitVRBigEndian
+
+    ds = Dataset()
+    ds.file_meta = file_meta
+    ds.SOPClassUID = DICOM_12LEAD_SOP_CLASS
+    ds.SOPInstanceUID = file_meta.MediaStorageSOPInstanceUID
+    ds.Modality = "ECG"
+    for key, value in attrs.items():
+        setattr(ds, key, value)
+    ds.WaveformSequence = Sequence(groups)
+    if annotations:
+        ds.WaveformAnnotationSequence = Sequence(annotations)
+    ds.save_as(str(path), enforce_file_format=True, little_endian=little_endian, implicit_vr=False)
+    return path
+
+
+def dicom_12lead_samples(num_samples: int = 1000) -> np.ndarray:
+    """Deterministic int16 test signal of shape (samples, 12)."""
+    s = np.arange(num_samples)[:, None]
+    ch = np.arange(12)[None, :]
+    return ((ch + 1) * 100 + (s % 50) - 25 * (ch % 2)).astype("<i2")
 
 
 @pytest.fixture
 def dicom_file(tmp_path: Path) -> Path:
-    """Write a minimal DICOM waveform file using pydicom and return its path."""
-    pytest.importorskip("pydicom")
-    import pydicom
-    from pydicom.dataset import Dataset, FileDataset
-    from pydicom.sequence import Sequence
-    from pydicom.uid import ExplicitVRLittleEndian
-
-    p = tmp_path / "test.dcm"
-
-    file_meta = Dataset()
-    file_meta.MediaStorageSOPClassUID = "1.2.840.10008.5.1.4.1.1.9.1.1"
-    file_meta.MediaStorageSOPInstanceUID = pydicom.uid.generate_uid()
-    file_meta.TransferSyntaxUID = ExplicitVRLittleEndian
-
-    ds = FileDataset(str(p), {}, file_meta=file_meta, preamble=b"\x00" * 128)
-    ds.is_little_endian = True
-    ds.is_implicit_VR = False
-
-    ds.PatientName = "Doe^John"
-    ds.PatientID = "DCM001"
-    ds.PatientSex = "M"
-    ds.PatientBirthDate = "19900101"
-    ds.StudyDate = "20231201"
-    ds.StudyTime = "103000"
-    ds.Modality = "ECG"
-    ds.SOPClassUID = "1.2.840.10008.5.1.4.1.1.9.1.1"
-    ds.SOPInstanceUID = pydicom.uid.generate_uid()
-
-    # Create waveform data — 2 channels, 100 samples each
-    num_channels = 2
+    """Minimal DICOM waveform: 2 channels, 100 samples, no units."""
     num_samples = 100
-    sampling_rate = 500.0
-
-    wf = Dataset()
-    wf.NumberOfWaveformChannels = num_channels
-    wf.NumberOfWaveformSamples = num_samples
-    wf.SamplingFrequency = sampling_rate
-    wf.WaveformBitsAllocated = 16
-
-    # Channel definitions
-    ch1 = Dataset()
-    ch1_source = Dataset()
-    ch1_source.CodeMeaning = "I"
-    ch1.ChannelSourceSequence = Sequence([ch1_source])
-    ch1.ChannelSensitivity = "1.0"
-    ch1.ChannelBaseline = "0"
-    ch1.ChannelSensitivityCorrectionFactor = "1.0"
-
-    ch2 = Dataset()
-    ch2_source = Dataset()
-    ch2_source.CodeMeaning = "II"
-    ch2.ChannelSourceSequence = Sequence([ch2_source])
-    ch2.ChannelSensitivity = "1.0"
-    ch2.ChannelBaseline = "0"
-    ch2.ChannelSensitivityCorrectionFactor = "1.0"
-
-    wf.ChannelDefinitionSequence = Sequence([ch1, ch2])
-
-    # Build multiplexed waveform data
-    samples = np.zeros(num_samples * num_channels, dtype=np.int16)
-    for s in range(num_samples):
-        samples[s * num_channels + 0] = np.int16(100 + (s % 50))
-        samples[s * num_channels + 1] = np.int16(200 + (s % 50))
-    wf.WaveformData = samples.tobytes()
-
-    ds.WaveformSequence = Sequence([wf])
-
-    ds.save_as(str(p))
-    return p
+    samples = np.zeros((num_samples, 2), dtype="<i2")
+    samples[:, 0] = 100 + np.arange(num_samples) % 50
+    samples[:, 1] = 200 + np.arange(num_samples) % 50
+    channels = [
+        dicom_channel(("2:1", "Lead I"), sensitivity="1.0", unit=None, filters=None),
+        dicom_channel(("2:2", "Lead II"), sensitivity="1.0", unit=None, filters=None),
+    ]
+    return write_dicom_ecg(
+        tmp_path / "test.dcm",
+        [dicom_group(samples, channels)],
+        PatientName="Doe^John",
+        PatientID="DCM001",
+        PatientSex="M",
+        PatientBirthDate="19900101",
+        StudyDate="20231201",
+        StudyTime="103000",
+    )
 
 
 @pytest.fixture
 def dicom_file_baseline(tmp_path: Path) -> Path:
-    """DICOM waveform with a non-zero Channel Baseline and sensitivity != 1.
+    """One channel, sensitivity 2.5 uV, baseline 5 uV, constant sample 100."""
+    samples = np.full((10, 1), 100, dtype="<i2")
+    channels = [dicom_channel(("2:1", "Lead I"), sensitivity="2.5", baseline="5", filters=None)]
+    return write_dicom_ecg(
+        tmp_path / "test_baseline.dcm", [dicom_group(samples, channels)], PatientID="DCMBL",
+    )
 
-    Used to verify the physical conversion ``sample * sensitivity + baseline``
-    where Channel Baseline (003A,0213) is expressed in physical (sensitivity)
-    units and added directly.  ch1: sensitivity=2.5 uV/LSB, baseline=5 uV.
-    """
-    pytest.importorskip("pydicom")
-    import pydicom
-    from pydicom.dataset import Dataset, FileDataset
+
+@pytest.fixture
+def dicom_12lead_file(tmp_path: Path) -> Path:
+    """12-lead ECG with a rhythm group, a median group and annotations."""
+    from pydicom.dataset import Dataset
     from pydicom.sequence import Sequence
-    from pydicom.uid import ExplicitVRLittleEndian
 
-    p = tmp_path / "test_baseline.dcm"
+    rhythm = dicom_group(
+        dicom_12lead_samples(1000),
+        [dicom_channel(src, sensitivity="2.5", correction="1.02") for src in DICOM_LEAD_SOURCES],
+        label="RHYTHM",
+    )
+    median = dicom_group(
+        dicom_12lead_samples(600),
+        [dicom_channel(src, sensitivity="2.5") for src in DICOM_LEAD_SOURCES],
+        sampling_rate="1000",
+        label="MEDIAN BEAT",
+    )
 
-    file_meta = Dataset()
-    file_meta.MediaStorageSOPClassUID = "1.2.840.10008.5.1.4.1.1.9.1.1"
-    file_meta.MediaStorageSOPInstanceUID = pydicom.uid.generate_uid()
-    file_meta.TransferSyntaxUID = ExplicitVRLittleEndian
+    def measurement(code, meaning, value, unit):
+        a = Dataset()
+        a.ConceptNameCodeSequence = Sequence([dicom_code(code, "MDC", meaning)])
+        a.NumericValue = value
+        a.MeasurementUnitsCodeSequence = Sequence([dicom_code(unit, "UCUM", unit)])
+        a.AnnotationGroupNumber = 1
+        return a
 
-    ds = FileDataset(str(p), {}, file_meta=file_meta, preamble=b"\x00" * 128)
-    ds.is_little_endian = True
-    ds.is_implicit_VR = False
-    ds.PatientID = "DCMBL"
-    ds.Modality = "ECG"
-    ds.SOPClassUID = "1.2.840.10008.5.1.4.1.1.9.1.1"
-    ds.SOPInstanceUID = pydicom.uid.generate_uid()
+    def text(value):
+        a = Dataset()
+        a.UnformattedTextValue = value
+        a.AnnotationGroupNumber = 2
+        return a
 
-    num_channels = 1
-    num_samples = 10
+    fiducial = Dataset()
+    fiducial.ConceptNameCodeSequence = Sequence([dicom_code("2:15844", "MDC", "QRS onset")])
+    fiducial.ReferencedWaveformChannels = [1, 0]
+    fiducial.TemporalRangeType = "POINT"
+    fiducial.ReferencedSamplePositions = [120]
 
-    wf = Dataset()
-    wf.NumberOfWaveformChannels = num_channels
-    wf.NumberOfWaveformSamples = num_samples
-    wf.SamplingFrequency = 500.0
-    wf.WaveformBitsAllocated = 16
-
-    ch1 = Dataset()
-    ch1_source = Dataset()
-    ch1_source.CodeMeaning = "I"
-    ch1.ChannelSourceSequence = Sequence([ch1_source])
-    ch1.ChannelSensitivity = "2.5"
-    ch1.ChannelBaseline = "5"
-    ch1.ChannelSensitivityCorrectionFactor = "1.0"
-    units_ds = Dataset()
-    units_ds.CodeMeaning = "microvolt"
-    ch1.ChannelSensitivityUnitsSequence = Sequence([units_ds])
-
-    wf.ChannelDefinitionSequence = Sequence([ch1])
-
-    # Constant raw ADC value of 100 in every sample -> physical 100*2.5 + 5 = 255
-    samples = np.full(num_samples * num_channels, 100, dtype="<i2")
-    wf.WaveformData = samples.tobytes()
-
-    ds.WaveformSequence = Sequence([wf])
-    ds.save_as(str(p))
-    return p
+    annotations = [
+        measurement("2:16770", "ECG Heart Rate", "72", "/min"),
+        measurement("2:15872", "PR interval global", "0.1604", "s"),
+        measurement("2:16156", "QRS duration global", "98", "ms"),
+        measurement("2:16160", "QT interval global", "398", "ms"),
+        measurement("2:15880", "QTc global using Bazett formula", "421.6", "ms"),
+        measurement("2:16132", "QRS axis", "45", "deg"),
+        text("Sinus rhythm"),
+        text("Normal ECG"),
+        fiducial,
+    ]
+    return write_dicom_ecg(
+        tmp_path / "ecg12.dcm",
+        [rhythm, median],
+        annotations,
+        PatientName="Doe^Jane^Q",
+        PatientID="DCM12",
+        PatientSex="F",
+        PatientBirthDate="19800615",
+        PatientAge="099Y",
+        PatientWeight="61.5",
+        PatientSize="1.68",
+        AcquisitionDateTime="20240102030405.250000+0100",
+        StudyDate="20240101",
+        StudyTime="000000",
+        InstanceCreationDate="20240103",
+        Manufacturer="ACME",
+        ManufacturerModelName="ECG-1",
+        StationName="CART7",
+        DeviceSerialNumber="SN42",
+        SoftwareVersions=["1.2", "3.4"],
+        InstitutionName="General Hospital",
+        InstitutionalDepartmentName="Cardiology",
+        OperatorsName="Tech^Terry",
+        ReferringPhysicianName="Ref^Rita",
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -655,11 +1041,15 @@ def create_wfdb_files(directory: Path) -> Path:
     dat_path = directory / "test_wfdb.dat"
     dat_path.write_bytes(dat.tobytes())
 
-    # Build .hea file
+    # Build .hea file; checksum is the 16-bit signed sum of each signal
+    def checksum(ch: int) -> int:
+        total = int(dat[ch::num_signals].astype(np.int64).sum()) & 0xFFFF
+        return total - 0x10000 if total >= 0x8000 else total
+
     hea_lines = [
         f"test_wfdb {num_signals} {sampling_rate} {num_samples} 10:30:00 01/12/2023",
-        f"test_wfdb.dat 16 {gain}(0)/mV 12 0 0 0 0 I",
-        f"test_wfdb.dat 16 {gain}(0)/mV 12 0 0 0 0 II",
+        f"test_wfdb.dat 16 {gain}(0)/mV 12 0 {dat[0]} {checksum(0)} 0 I",
+        f"test_wfdb.dat 16 {gain}(0)/mV 12 0 {dat[1]} {checksum(1)} 0 II",
         "# Age: 43",
         "# Sex: M",
     ]
@@ -676,92 +1066,106 @@ def wfdb_file(tmp_path: Path) -> Path:
 
 
 # ---------------------------------------------------------------------------
-# Minimal MFER fixture
+# MFER fixtures (MFER Part 1 v1.05 / ISO 22077-1)
 # ---------------------------------------------------------------------------
+
+def mfer_tlv(tag: int, value: bytes = b"") -> bytes:
+    """Encode one MFER definition (tag, BER length, value)."""
+    length = len(value)
+    if length < 0x80:
+        return bytes([tag, length]) + value
+    len_bytes = length.to_bytes((length.bit_length() + 7) // 8, "big")
+    return bytes([tag, 0x80 | len(len_bytes)]) + len_bytes + value
+
+
+def mfer_att(channel: int, *definitions: bytes, indefinite: bool = False) -> bytes:
+    """Encode MWF_ATT (0x3F) channel attributes for a 0-based channel <= 127."""
+    body = b"".join(definitions)
+    if indefinite:
+        return bytes([0x3F, channel, 0x80]) + body + b"\x00\x00"
+    return bytes([0x3F, channel]) + mfer_tlv(0, body)[1:]
+
+
+def mfer_scaled(unit: int, exponent: int, mantissa: int, size: int = 2, big: bool = True) -> bytes:
+    """MWF_IVL / MWF_SEN value: unit code, signed exponent, signed mantissa."""
+    order = "big" if big else "little"
+    return bytes([unit, exponent & 0xFF]) + mantissa.to_bytes(size, order, signed=True)
+
+
+def mfer_frame_data(channels: list[np.ndarray], block: int, dtype: str = ">i2") -> bytes:
+    """Lay out samples as sequence x channel x block (Part 1 Fig. 5-16)."""
+    n = len(channels[0])
+    out = bytearray()
+    for start in range(0, n, block):
+        for ch in channels:
+            out += np.asarray(ch[start:start + block], dtype=dtype).tobytes()
+    return bytes(out)
+
+
+def mfer_test_signal(num_channels: int, num_samples: int) -> list[np.ndarray]:
+    """Deterministic int16 test signal per channel."""
+    s = np.arange(num_samples)
+    return [((ch + 1) * 100 + (s % 50) - 20 * ch).astype(np.int16) for ch in range(num_channels)]
+
 
 def create_mfer_binary(
     num_channels: int = 2,
     num_samples: int = 500,
     sampling_rate: int = 500,
+    block: int = 50,
 ) -> bytes:
-    """Build a minimal valid MFER binary file in memory."""
-    data = bytearray()
-
-    def add_tlv(tag: int, value: bytes) -> None:
-        data.append(tag)
-        length = len(value)
-        if length < 0x80:
-            data.append(length)
-        else:
-            # Long form BER length
-            len_bytes = length.to_bytes((length.bit_length() + 7) // 8, "big")
-            data.append(0x80 | len(len_bytes))
-            data.extend(len_bytes)
-        data.extend(value)
-
-    # Byte order: big endian (0x00)
-    add_tlv(0x01, b"\x00")
-
-    # Data type: int16 (0x00)
-    add_tlv(0x02, b"\x00")
-
-    # Waveform type: ECG (0x00)
-    add_tlv(0x03, b"\x00")
-
-    # Sampling interval in µs
-    interval_us = int(1_000_000 / sampling_rate)
-    add_tlv(0x04, struct.pack(">h", interval_us))
-
-    # Number of channels
-    add_tlv(0x05, struct.pack(">B", num_channels))
-
-    # Number of samples per channel
-    add_tlv(0x06, struct.pack(">H", num_samples))
-
-    # Resolution
-    add_tlv(0x0B, struct.pack(">h", 1))
-
-    # Channel labels
-    add_tlv(0x0A, b"I\x00")
-    add_tlv(0x0A, b"II\x00")
-
-    # Patient ID
-    add_tlv(0x31, b"MFER001\x00")
-
-    # Patient name
-    add_tlv(0x32, b"MferTest\x00")
-
-    # Sex: male (1)
-    add_tlv(0x34, b"\x01")
-
-    # Birth date: 1980-06-15
-    add_tlv(0x33, struct.pack(">HBB", 1980, 6, 15))
-
-    # Recording time: 2023-12-01 10:30:00
-    add_tlv(0x41, struct.pack(">HBBBBB", 2023, 12, 1, 10, 30, 0))
-
-    # Data block: interleaved int16 samples (big-endian)
-    waveform = bytearray()
-    for s in range(num_samples):
-        for ch in range(num_channels):
-            val = (ch + 1) * 100 + (s % 50)
-            waveform.extend(struct.pack(">h", val))
-    add_tlv(0x09, bytes(waveform))
-
-    return bytes(data)
+    """Build an MFER standard 12-lead style file following Part 1 Annex A."""
+    interval_ms = 1000 // sampling_rate
+    lead_codes = [1, 2, 61, 62, 63, 64, 3, 4, 5, 6, 7, 8]
+    parts = [
+        mfer_tlv(0x40, b"MFR " + b"Standard 12 leads ECG".ljust(28, b" ")),  # MWF_PRE
+        mfer_tlv(0x01, b"\x00"),                                # MWF_BLE big endian
+        mfer_tlv(0x02, bytes([1, 5, 0])),                       # MWF_VER 1.5.0
+        mfer_tlv(0x03, b"UTF-8"),                               # MWF_TXC
+        mfer_tlv(0x17, b"ACME^ECG-2003^1.02.33^SN-77"),         # MWF_MAN
+        mfer_tlv(0x08, struct.pack(">H", 1)),                   # MWF_WFM standard 12-lead
+        mfer_tlv(0x0B, mfer_scaled(1, -3, interval_ms)),        # MWF_IVL interval in ms
+        mfer_tlv(0x0C, mfer_scaled(0, -6, 5)),                  # MWF_SEN 5 uV
+        mfer_tlv(0x0A, b"\x00"),                                # MWF_DTP int16
+        mfer_tlv(0x04, struct.pack(">I", block)),               # MWF_BLK
+        mfer_tlv(0x05, struct.pack(">I", num_channels)),        # MWF_CHN
+        mfer_tlv(0x06, struct.pack(">I", num_samples // block)),  # MWF_SEQ
+    ]
+    for ch in range(num_channels):
+        parts.append(mfer_att(ch, mfer_tlv(0x09, bytes([lead_codes[ch]]))))  # MWF_LDN
+    parts += [
+        mfer_tlv(0x11, b"HPF=0.05"),                            # MWF_FLT
+        mfer_tlv(0x11, b"LPF=150^2nd order Butterworth"),
+        mfer_tlv(0x11, b"BEF=50^Hum filter"),
+        mfer_tlv(0x16, "Comment é".encode("utf-8")),            # MWF_NTE
+        mfer_tlv(0x81, b"Doe^DOE^John^JOHN"),                   # MWF_PNM
+        mfer_tlv(0x82, b"MFER001^EXAM9"),                       # MWF_PID
+        mfer_tlv(0x83, bytes([99]) + struct.pack(">HHBB", 0, 1980, 6, 15)),  # MWF_AGE
+        mfer_tlv(0x84, b"\x01"),                                # MWF_SEX male
+        mfer_tlv(0x85, struct.pack(">HBBBBBHH", 2023, 12, 1, 10, 30, 0, 250, 0)),  # MWF_TIM
+        mfer_tlv(0x41, struct.pack(">HII", 7, 100, 20) + b"Calibration"),  # MWF_EVT
+        mfer_tlv(0x1E, mfer_frame_data(mfer_test_signal(num_channels, num_samples), block)),
+        b"\x80\x00",                                            # MWF_END
+    ]
+    return b"".join(parts)
 
 
 @pytest.fixture
 def mfer_file(tmp_path: Path) -> Path:
-    """Write a minimal MFER binary file and return its path."""
+    """Write a spec-compliant MFER file (2 channels, 500 Hz, 1 s)."""
     p = tmp_path / "test.mwf"
     p.write_bytes(create_mfer_binary())
     return p
 
 
 # ---------------------------------------------------------------------------
-# Minimal BeneHeart R12 XML fixture
+# BeneHeart R12 XML fixture (no public spec: inferred layout, synthetic data)
 # ---------------------------------------------------------------------------
+
+def int16_b64(values) -> str:
+    """Base64 of little-endian int16 *values*."""
+    return base64.b64encode(np.asarray(values, dtype="<i2").tobytes()).decode()
+
 
 BENEHEART_R12_XML = textwrap.dedent("""\
 <?xml version="1.0" encoding="UTF-8"?>
@@ -773,17 +1177,35 @@ BENEHEART_R12_XML = textwrap.dedent("""\
     <Sex>F</Sex>
     <DateOfBirth>1992-03-20</DateOfBirth>
     <Age>31</Age>
+    <Height Unit="cm">165</Height>
+    <Weight Unit="kg">60</Weight>
   </PatientInfo>
   <AcquisitionInfo>
     <AcquisitionDate>2023-12-01</AcquisitionDate>
     <AcquisitionTime>09:15:00</AcquisitionTime>
     <SampleRate>500</SampleRate>
     <Device>BeneHeart R12</Device>
+    <SerialNumber>R12-0001</SerialNumber>
+    <SoftwareVersion>01.02</SoftwareVersion>
   </AcquisitionInfo>
+  <FilterSettings>
+    <HighPass>0.05</HighPass>
+    <LowPass>150</LowPass>
+    <Notch>0</Notch>
+  </FilterSettings>
   <Leads>
     <Lead Name="I" Data="ZAAyAA=="/>
     <Lead Name="II" Data="ZAAyAA=="/>
   </Leads>
+  <Measurements>
+    <HeartRate>72.6</HeartRate>
+    <PRInterval>150</PRInterval>
+    <QTcBazett>410</QTcBazett>
+  </Measurements>
+  <Diagnosis>
+    <Statement>Sinus rhythm</Statement>
+    <Statement>Normal ECG</Statement>
+  </Diagnosis>
 </BeneHeartR12>
 """)
 
@@ -797,10 +1219,13 @@ def beneheart_r12_file(tmp_path: Path) -> Path:
 
 
 # ---------------------------------------------------------------------------
-# Minimal GE MAC 2000 XML fixture
+# GE MAC 2000 XML fixture (GE MUSE element conventions, synthetic data)
 # ---------------------------------------------------------------------------
 
-GE_MAC2000_XML = textwrap.dedent("""\
+GE_MAC2000_RHYTHM = [np.arange(5000) % 100 - 50, np.arange(5000) % 80 - 40]
+GE_MAC2000_MEDIAN = np.arange(600) % 60 - 30
+
+GE_MAC2000_XML = textwrap.dedent(f"""\
 <?xml version="1.0" encoding="UTF-8"?>
 <MAC2000>
   <PatientDemographics>
@@ -808,35 +1233,81 @@ GE_MAC2000_XML = textwrap.dedent("""\
     <PatientFirstName>Bob</PatientFirstName>
     <PatientLastName>Builder</PatientLastName>
     <Gender>MALE</Gender>
-    <DateofBirth>07/22/1978</DateofBirth>
-    <PatientAge>45</PatientAge>
+    <DateofBirth>07-22-1978</DateofBirth>
+    <PatientAge>99</PatientAge>
+    <AgeUnits>YEARS</AgeUnits>
+    <PatientHeightCM>180</PatientHeightCM>
+    <PatientWeightKG>82</PatientWeightKG>
   </PatientDemographics>
   <TestDemographics>
-    <AcquisitionDate>12/01/2023</AcquisitionDate>
+    <AcquisitionDevice>MAC2000</AcquisitionDevice>
+    <AcquisitionSoftwareVersion>010A</AcquisitionSoftwareVersion>
+    <AcquisitionDate>12-01-2023</AcquisitionDate>
     <AcquisitionTime>11:00:00</AcquisitionTime>
-    <SampleRate>500</SampleRate>
+    <SiteName>General Hospital</SiteName>
+    <LocationName>Cardiology</LocationName>
+    <RoomID>4B</RoomID>
+    <AcquisitionTechID>TK</AcquisitionTechID>
+    <ReferringMDLastName>House</ReferringMDLastName>
+    <EditorFirstName>Ann</EditorFirstName>
+    <EditorLastName>Smith</EditorLastName>
+    <EditDate>12-02-2023</EditDate>
+    <EditTime>08:30:00</EditTime>
   </TestDemographics>
   <Waveform>
+    <WaveformType>Median</WaveformType>
+    <SampleBase>500</SampleBase>
     <LeadData>
+      <LeadAmplitudeUnitsPerBit>4.88</LeadAmplitudeUnitsPerBit>
+      <LeadAmplitudeUnits>MICROVOLTS</LeadAmplitudeUnits>
       <LeadID>I</LeadID>
-      <WaveFormData>ZAAyAA==</WaveFormData>
-    </LeadData>
-    <LeadData>
-      <LeadID>II</LeadID>
-      <WaveFormData>ZAAyAA==</WaveFormData>
+      <WaveFormData>{int16_b64(GE_MAC2000_MEDIAN)}</WaveFormData>
     </LeadData>
   </Waveform>
-  <Measurements>
+  <Waveform>
+    <WaveformType>Rhythm</WaveformType>
+    <SampleBase>500</SampleBase>
+    <HighPassFilter>0.16</HighPassFilter>
+    <LowPassFilter>150</LowPassFilter>
+    <ACFilter>60</ACFilter>
+    <LeadData>
+      <LeadAmplitudeUnitsPerBit>4.88</LeadAmplitudeUnitsPerBit>
+      <LeadAmplitudeUnits>MICROVOLTS</LeadAmplitudeUnits>
+      <LeadID>I</LeadID>
+      <WaveFormData>{int16_b64(GE_MAC2000_RHYTHM[0])}</WaveFormData>
+    </LeadData>
+    <LeadData>
+      <LeadAmplitudeUnitsPerBit>4.88</LeadAmplitudeUnitsPerBit>
+      <LeadAmplitudeUnits>MICROVOLTS</LeadAmplitudeUnits>
+      <LeadID>II</LeadID>
+      <WaveFormData>{int16_b64(GE_MAC2000_RHYTHM[1])}</WaveFormData>
+    </LeadData>
+  </Waveform>
+  <RestingECGMeasurements>
     <VentricularRate>68</VentricularRate>
+    <PRInterval>160</PRInterval>
     <QRSDuration>92</QRSDuration>
-  </Measurements>
+    <QTInterval>380</QTInterval>
+    <QTCorrected>404.6</QTCorrected>
+    <PAxis>50</PAxis>
+    <RAxis>-10</RAxis>
+    <TAxis>30</TAxis>
+  </RestingECGMeasurements>
+  <OriginalDiagnosis>
+    <DiagnosisStatement><StmtFlag>ENDSLINE</StmtFlag><StmtText>Sinus rhythm</StmtText></DiagnosisStatement>
+    <DiagnosisStatement><StmtText>Borderline ECG</StmtText></DiagnosisStatement>
+  </OriginalDiagnosis>
+  <Diagnosis>
+    <DiagnosisStatement><StmtFlag>ENDSLINE</StmtFlag><StmtText>Sinus rhythm</StmtText></DiagnosisStatement>
+    <DiagnosisStatement><StmtText>Normal ECG</StmtText></DiagnosisStatement>
+  </Diagnosis>
 </MAC2000>
 """)
 
 
 @pytest.fixture
 def ge_mac2000_file(tmp_path: Path) -> Path:
-    """Write a minimal GE MAC 2000 XML file and return its path."""
+    """Write a GE MAC 2000 XML file and return its path."""
     p = tmp_path / "test_mac2000.xml"
     p.write_text(GE_MAC2000_XML, encoding="utf-8")
     return p
@@ -847,17 +1318,17 @@ def ge_mac2000_file(tmp_path: Path) -> Path:
 # ---------------------------------------------------------------------------
 
 # Header layout follows https://paulbourke.net/dataformats/edan/
-# Patient header file is ~3 kB with fields at fixed offsets.  Build a 4-kB
-# buffer to comfortably cover every documented field.
-_EDAN_HEA_SIZE = 4096
+# The patient header is 3672 bytes with fields at fixed offsets.
+_EDAN_HEA_SIZE = 3672
 
 
 def create_edan_arc_hea(
     channel_count: int = 3,
     sampling_rate: int = 200,
-    start_epoch: int = 1_701_421_800,   # 2023-12-01 10:30:00 UTC
-    end_epoch: int = 1_701_421_810,     # +10 seconds
+    start_epoch: int = 1_701_421_800,   # 2023-12-01 09:10:00 UTC
+    end_epoch: int = 1_701_421_805,     # +5 seconds (1000 samples at 200 Hz)
     lead_labels: tuple[str, ...] = ("I", "II", "III"),
+    patient_name: bytes = b"Edan TestPatient",
 ) -> bytes:
     """Build a minimal EDAN patient.hea buffer in memory."""
     buf = bytearray(_EDAN_HEA_SIZE)
@@ -893,27 +1364,35 @@ def create_edan_arc_hea(
     struct.pack_into("<h", buf, 2596, 75)
     # DFT filter at 2628
     buf[2628:2628 + 4] = b"50Hz"
-    # Patient name at 2637
-    buf[2637:2637 + 13] = b"Edan TestPatient"[:13]
+    # Patient name at 2637 (up to the physician field at 2700)
+    buf[2637:2637 + len(patient_name)] = patient_name
     # Physician name at 2700
     buf[2700:2700 + 6] = b"Dr Liu"
     # Technician at 2764
     buf[2764:2764 + 5] = b"TechA"
+    # Medical history at 2892
+    buf[2892:2892 + 12] = b"Hypertension"
     return bytes(buf)
 
 
 def create_edan_arc_dat(
     channel_count: int = 3,
     samples_per_channel: int = 1000,
+    stored_channels: int | None = None,
+    pad_value: int = 0,
 ) -> bytes:
-    """Build a minimal EDAN ecgraw.dat buffer (interleaved uint16, ADC zero 16384)."""
-    raw = np.zeros(samples_per_channel * channel_count, dtype="<u2")
-    for s in range(samples_per_channel):
-        for ch in range(channel_count):
-            # Centre on 16384 so the decoded signed value is small.
-            raw[s * channel_count + ch] = np.uint16(
-                16384 + (ch + 1) * 10 + (s % 50)
-            )
+    """Build a minimal EDAN ecgraw.dat buffer (interleaved uint16, ADC zero 16384).
+
+    *stored_channels* (default: *channel_count*) is the number of channels
+    interleaved in the file; the reference states that the recorder always
+    writes 12. Channels past *channel_count* are filled with *pad_value*.
+    """
+    stored = stored_channels or channel_count
+    raw = np.full((samples_per_channel, stored), pad_value, dtype="<u2")
+    s = np.arange(samples_per_channel)
+    for ch in range(channel_count):
+        # Centre on 16384 so the decoded signed value is small.
+        raw[:, ch] = 16384 + (ch + 1) * 10 + (s % 50)
     return raw.tobytes()
 
 

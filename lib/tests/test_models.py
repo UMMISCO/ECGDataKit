@@ -432,10 +432,19 @@ class TestLeadConversion:
     def test_convert_units_unknown_current_raises(self):
         lead = Lead(
             label="I", samples=np.array([1.0]),
-            sampling_rate=500, is_raw=False, units="nV",
+            sampling_rate=500, is_raw=False, units="mmHg",
         )
         with pytest.raises(ValueError, match="not a recognized voltage unit"):
             lead.convert_units("mV")
+
+    @pytest.mark.parametrize("unit", ["nV", "\u03bcV", "Microvolt"])
+    def test_convert_units_extra_aliases(self, unit):
+        lead = Lead(
+            label="I", samples=np.array([1000.0]),
+            sampling_rate=500, is_raw=False, units=unit,
+        )
+        expected = 0.001 if unit == "nV" else 1.0
+        assert lead.convert_units("uV").samples[0] == pytest.approx(expected * 1000)
 
     def test_chaining_to_physical_then_convert(self):
         lead = Lead(

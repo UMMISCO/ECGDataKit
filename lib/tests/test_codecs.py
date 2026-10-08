@@ -51,4 +51,4 @@ class TestXliDecodeDeltasShape:
         buffer = [0] * 20
         result = xli_decode_deltas(buffer, first=0)
         assert len(result) == 10
-        assert result.dtype == np.int16
+        assert result.dtype == np.int32

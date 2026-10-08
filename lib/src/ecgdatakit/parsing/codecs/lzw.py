@@ -8,6 +8,8 @@ a string table on the fly, producing the original uncompressed byte sequence.
 from array import array
 from typing import MutableSequence
 
+from ecgdatakit.exceptions import CorruptedFileError
+
 
 class LzwDecoder:
     """Decodes LZW-compressed byte streams.
@@ -55,11 +57,26 @@ class LzwDecoder:
         """Read ``count`` decompressed bytes."""
         return array("B", [self.read() for _ in range(count)])
 
+    def read_all(self) -> bytes:
+        """Decompress the remaining stream and return it as bytes."""
+        out = bytearray()
+        if self.current is not None:
+            out.extend(self.current[self.position:])
+            self.position = len(self.current)
+        while len(data := self._read_next_string()) > 0:
+            out.extend(data)
+        self.current = array("B", [])
+        self.position = 0
+        return bytes(out)
+
     def _read_next_string(self) -> MutableSequence[int]:
         code = self._read_codepoint()
         if 0 <= code <= self.max_code:
             data: MutableSequence[int]
             if code not in self.strings:
+                # KwKwK case: only valid once a previous string exists
+                if len(self.previous) == 0:
+                    raise CorruptedFileError(f"LZW stream starts with undefined code {code}")
                 data = self.previous[:]
                 data.append(self.previous[0])
                 self.strings[code] = data

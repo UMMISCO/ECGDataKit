@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import binascii
 import json
 import struct
 import warnings
@@ -35,6 +36,10 @@ class TestISHNEHolterParser:
     def test_patient_sex(self, ishne_file: Path):
         record = ISHNEHolterParser().parse(ishne_file)
         assert record.patient.sex == "M"
+
+    def test_patient_age_from_birth_date(self, ishne_file: Path):
+        # fixture: born 1980-06-15, recorded 2023-12-01
+        assert ISHNEHolterParser().parse(ishne_file).patient.age == 43
 
     def test_patient_birth_date(self, ishne_file: Path):
         record = ISHNEHolterParser().parse(ishne_file)
@@ -120,9 +125,8 @@ class TestISHNEHolterParser:
 
 def _crc(data: bytearray) -> None:
     """Recompute the checksum over byte 10 up to the ECG block."""
-    from crccheck.crc import Crc16CcittFalse
     var_size = struct.unpack_from("<i", data, 10)[0]
-    crc = Crc16CcittFalse.calc(bytes(data[10:522 + var_size]))
+    crc = binascii.crc_hqx(bytes(data[10:522 + var_size]), 0xFFFF)
     struct.pack_into("<H", data, 8, crc)
 
 

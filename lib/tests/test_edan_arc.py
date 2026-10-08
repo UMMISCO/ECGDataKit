@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import json
+import struct
 import warnings
+from datetime import datetime, timedelta
 from pathlib import Path
 
 import numpy as np
@@ -13,6 +15,7 @@ from ecgdatakit.exceptions import CorruptedFileError
 from ecgdatakit.models import ECGRecord
 from ecgdatakit.parsing.parser import FileParser
 from ecgdatakit.parsing.parsers.edan_arc import EDANARCHolterParser
+from tests.conftest import create_edan_arc_dat, create_edan_arc_hea
 
 
 class TestEDANARCDocumentedLayout:
@@ -53,7 +56,8 @@ class TestEDANARCDocumentedLayout:
     def test_recording_duration_from_timestamps(self, edan_arc_dir: Path):
         record = EDANARCHolterParser().parse(edan_arc_dir)
         assert record.recording.duration is not None
-        assert record.recording.duration.total_seconds() == pytest.approx(10.0)
+        assert record.recording.duration.total_seconds() == pytest.approx(5.0)
+        assert record.recording.end_date - record.recording.date == record.recording.duration
 
     def test_lead_count(self, edan_arc_dir: Path):
         record = EDANARCHolterParser().parse(edan_arc_dir)
@@ -91,7 +95,10 @@ class TestEDANARCDocumentedLayout:
     def test_device_manufacturer(self, edan_arc_dir: Path):
         record = EDANARCHolterParser().parse(edan_arc_dir)
         assert record.recording.device.manufacturer == "EDAN"
-        assert record.recording.device.model == "SE2012"
+        # Offset 2304 is documented as the recorder ID
+        assert record.recording.device.serial_number == "SE2012"
+        assert record.recording.device.software_version == "1.0a"
+        assert record.recording.device.department == "Cardiology"
 
     def test_lowpass_filter(self, edan_arc_dir: Path):
         record = EDANARCHolterParser().parse(edan_arc_dir)
@@ -278,3 +285,224 @@ class TestNeutralHolterArc:
             warnings.simplefilter("ignore", UserWarning)
             record = FileParser().parse(edan_arc_archive)
         assert record.source_format == "edan_arc_archive"
+
+def _write_pair(directory: Path, hea: bytes, dat: bytes) -> Path:
+    directory.mkdir(parents=True, exist_ok=True)
+    (directory / "patient.hea").write_bytes(hea)
+    (directory / "ecgraw.dat").write_bytes(dat)
+    return directory / "patient.hea"
+
+
+def _parse_quiet(path: Path) -> ECGRecord:
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", UserWarning)
+        return EDANARCHolterParser().parse(path)
+
+
+def _expected_channel(ch: int, n: int) -> np.ndarray:
+    """Signed samples written by create_edan_arc_dat for channel *ch*."""
+    return (ch + 1) * 10 + (np.arange(n) % 50).astype(np.float64)
+
+
+class TestEDANChannelLayout:
+    """ecgraw.dat stride: header channel count vs 12 always stored."""
+
+    def test_compact_layout_exact_values(self, edan_arc_dir: Path):
+        record = EDANARCHolterParser().parse(edan_arc_dir)
+        for ch, lead in enumerate(record.leads):
+            np.testing.assert_array_equal(lead.samples, _expected_channel(ch, 1000))
+        assert record.raw_metadata["stored_channel_count"] == 3
+
+    def test_twelve_stored_zero_padding(self, tmp_path: Path):
+        dat = create_edan_arc_dat(3, 1000, stored_channels=12, pad_value=0)
+        hea_path = _write_pair(tmp_path, create_edan_arc_hea(), dat)
+        record = EDANARCHolterParser().parse(hea_path)
+        assert [l.label for l in record.leads] == ["I", "II", "III"]
+        for ch, lead in enumerate(record.leads):
+            np.testing.assert_array_equal(lead.samples, _expected_channel(ch, 1000))
+        sig = record.recording.acquisition.signal
+        assert sig.number_channels_allocated == 12
+        assert sig.number_channels_valid == 3
+
+    def test_twelve_stored_adc_zero_padding_by_duration(self, tmp_path: Path):
+        dat = create_edan_arc_dat(3, 1000, stored_channels=12, pad_value=16384)
+        hea_path = _write_pair(tmp_path, create_edan_arc_hea(), dat)
+        record = EDANARCHolterParser().parse(hea_path)
+        assert record.raw_metadata["channel_layout_basis"] == "header duration"
+        np.testing.assert_array_equal(record.leads[2].samples, _expected_channel(2, 1000))
+
+    def test_twelve_stored_without_timestamps(self, tmp_path: Path):
+        hea = create_edan_arc_hea(start_epoch=0, end_epoch=0)
+        dat = create_edan_arc_dat(3, 1000, stored_channels=12, pad_value=16384)
+        record = _parse_quiet(_write_pair(tmp_path, hea, dat))
+        assert record.raw_metadata["stored_channel_count"] == 12
+        np.testing.assert_array_equal(record.leads[1].samples, _expected_channel(1, 1000))
+        assert record.recording.date is None
+
+    def test_compact_layout_without_timestamps(self, tmp_path: Path):
+        hea = create_edan_arc_hea(start_epoch=0, end_epoch=0)
+        record = _parse_quiet(_write_pair(tmp_path, hea, create_edan_arc_dat()))
+        assert record.raw_metadata["stored_channel_count"] == 3
+        np.testing.assert_array_equal(record.leads[0].samples, _expected_channel(0, 1000))
+
+    def test_twelve_channel_header(self, tmp_path: Path):
+        labels = ("I", "II", "III", "AVR", "AVL", "AVF", "V1", "V2", "V3", "V4", "V5", "V6")
+        hea = create_edan_arc_hea(channel_count=12, lead_labels=labels)
+        record = EDANARCHolterParser().parse(_write_pair(tmp_path, hea, create_edan_arc_dat(12, 1000)))
+        assert [l.label for l in record.leads][3:6] == ["aVR", "aVL", "aVF"]
+        np.testing.assert_array_equal(record.leads[11].samples, _expected_channel(11, 1000))
+
+    def test_no_plausible_layout_raises(self, tmp_path: Path):
+        dat = np.zeros(3000, dtype="<u2").tobytes()
+        hea_path = _write_pair(tmp_path, create_edan_arc_hea(), dat)
+        with pytest.raises(CorruptedFileError, match="ADC zero"):
+            EDANARCHolterParser().parse(hea_path)
+
+
+class TestEDANRobustness:
+
+    def test_odd_byte_count(self, tmp_path: Path):
+        hea_path = _write_pair(tmp_path, create_edan_arc_hea(), create_edan_arc_dat() + b"\x01")
+        with pytest.warns(UserWarning, match="odd byte count"):
+            record = EDANARCHolterParser().parse(hea_path)
+        assert len(record.leads[0].samples) == 1000
+
+    def test_partial_trailing_frame(self, tmp_path: Path):
+        dat = create_edan_arc_dat() + struct.pack("<H", 16384)
+        hea_path = _write_pair(tmp_path, create_edan_arc_hea(), dat)
+        with pytest.warns(UserWarning, match="partial frame"):
+            record = EDANARCHolterParser().parse(hea_path)
+        assert len(record.leads[0].samples) == 1000
+
+    def test_header_without_labels_raises(self, tmp_path: Path):
+        hea_path = _write_pair(tmp_path, create_edan_arc_hea()[:100], create_edan_arc_dat())
+        with pytest.raises(CorruptedFileError, match="truncated"):
+            EDANARCHolterParser().parse(hea_path)
+
+    def test_truncated_header_warns(self, tmp_path: Path):
+        hea_path = _write_pair(tmp_path, create_edan_arc_hea()[:2000], create_edan_arc_dat())
+        with pytest.warns(UserWarning, match="truncated"):
+            record = EDANARCHolterParser().parse(hea_path)
+        assert record.patient.last_name == ""
+        assert [l.label for l in record.leads] == ["I", "II", "III"]
+
+    @pytest.mark.parametrize("rate", [0, -5, 20000])
+    def test_bad_sampling_rate(self, tmp_path: Path, rate: int):
+        hea_path = _write_pair(tmp_path, create_edan_arc_hea(sampling_rate=rate), create_edan_arc_dat())
+        with pytest.raises(CorruptedFileError, match="sampling rate"):
+            EDANARCHolterParser().parse(hea_path)
+
+    def test_end_before_start(self, tmp_path: Path):
+        hea = create_edan_arc_hea(end_epoch=1_701_421_800 - 100)
+        with pytest.warns(UserWarning, match="not after the start"):
+            record = EDANARCHolterParser().parse(_write_pair(tmp_path, hea, create_edan_arc_dat()))
+        assert record.recording.end_date is None  # unusable header end is not replaced
+
+    def test_implausible_start_epoch(self, tmp_path: Path):
+        hea = create_edan_arc_hea(start_epoch=0xFFFFFFFF)
+        record = _parse_quiet(_write_pair(tmp_path, hea, create_edan_arc_dat()))
+        assert record.recording.date is None
+        assert record.recording.end_date is None
+        assert record.recording.duration == timedelta(seconds=5)
+
+    def test_duration_mismatch_warns(self, tmp_path: Path):
+        hea = create_edan_arc_hea(end_epoch=1_701_421_800 + 3600)
+        with pytest.warns(UserWarning, match="duration is taken from the signal"):
+            record = EDANARCHolterParser().parse(_write_pair(tmp_path, hea, create_edan_arc_dat()))
+        assert record.recording.duration == timedelta(seconds=5)
+
+    def test_epoch_timezone_flagged(self, edan_arc_dir: Path):
+        record = EDANARCHolterParser().parse(edan_arc_dir)
+        assert record.recording.date == datetime(2023, 12, 1, 9, 10, 0)
+        assert "unverified" in record.raw_metadata["epoch_timezone"]
+
+    def test_duplicate_and_nonstandard_labels(self, tmp_path: Path):
+        hea = create_edan_arc_hea(lead_labels=("II", "II", "avf"))
+        record = EDANARCHolterParser().parse(_write_pair(tmp_path, hea, create_edan_arc_dat()))
+        assert [l.label for l in record.leads] == ["II", "II_2", "aVF"]
+
+    def test_empty_label_falls_back(self, tmp_path: Path):
+        hea = create_edan_arc_hea(lead_labels=("I", "", "III"))
+        record = EDANARCHolterParser().parse(_write_pair(tmp_path, hea, create_edan_arc_dat()))
+        assert [l.label for l in record.leads] == ["I", "Ch2", "III"]
+
+
+class TestEDANText:
+
+    def test_gb18030_name(self, tmp_path: Path):
+        name = "张三"
+        hea = create_edan_arc_hea(patient_name=name.encode("gb18030"))
+        record = EDANARCHolterParser().parse(_write_pair(tmp_path, hea, create_edan_arc_dat()))
+        assert record.patient.last_name == name
+        assert record.patient.first_name == ""
+
+    def test_latin1_fallback_keeps_bytes(self, tmp_path: Path):
+        # 0xFF is invalid in GB18030 and UTF-8: decoded as Latin-1
+        hea = create_edan_arc_hea(patient_name=b"Jos\xe9 \xff")
+        record = EDANARCHolterParser().parse(_write_pair(tmp_path, hea, create_edan_arc_dat()))
+        assert record.raw_metadata["patient_name"] == "Jos\xe9 \xff"
+
+    def test_western_name_split(self, edan_arc_dir: Path):
+        record = EDANARCHolterParser().parse(edan_arc_dir)
+        assert record.patient.first_name == "Edan"
+        assert record.patient.last_name == "TestPatient"
+
+    def test_clinical_fields(self, edan_arc_dir: Path):
+        record = EDANARCHolterParser().parse(edan_arc_dir)
+        assert record.patient.clinical_history == "Sinus rhythm\nHypertension"
+        assert record.recording.referring_physician == "Dr Liu"
+        assert record.recording.technician == "TechA"
+        assert record.raw_metadata["telephone"] == "555-1234567"
+        assert record.raw_metadata["dft_filter"] == "50Hz"
+
+
+class TestEDANEntryPoints:
+
+    def test_directory_input(self, edan_arc_dir: Path):
+        record = FileParser().parse(edan_arc_dir.parent, auto_scale=False)
+        assert record.source_format == "edan_arc"
+        assert record.leads[0].samples[0] == 10.0
+
+    def test_ecgraw_dat_input(self, edan_arc_dir: Path):
+        record = FileParser().parse(edan_arc_dir.parent / "ecgraw.dat", auto_scale=False)
+        assert record.source_format == "edan_arc"
+        assert len(record.leads) == 3
+
+    def test_uppercase_names(self, tmp_path: Path):
+        (tmp_path / "PATIENT.HEA").write_bytes(create_edan_arc_hea())
+        (tmp_path / "ECGRAW.DAT").write_bytes(create_edan_arc_dat())
+        record = EDANARCHolterParser().parse(tmp_path / "PATIENT.HEA")
+        assert len(record.leads[0].samples) == 1000
+
+    def test_orphan_dat_not_claimed(self, tmp_path: Path):
+        p = tmp_path / "ecgraw.dat"
+        p.write_bytes(create_edan_arc_dat())
+        assert EDANARCHolterParser.can_parse(p, p.read_bytes()[:4096]) is False
+
+    def test_arc_without_signature_not_claimed(self, tmp_path: Path):
+        p = tmp_path / "other.arc"
+        p.write_bytes(b"\x01\x02" * 4096)
+        assert EDANARCHolterParser.can_parse(p, p.read_bytes()[:4096]) is False
+
+    def test_raw_counts_without_auto_scale(self, edan_arc_dir: Path):
+        with pytest.warns(UserWarning, match="raw ADC"):
+            record = FileParser().parse(edan_arc_dir, auto_scale=False)
+        lead = record.leads[0]
+        assert lead.is_raw and lead.units == ""
+        np.testing.assert_array_equal(lead.samples, _expected_channel(0, 1000))
+
+
+class TestEDANArcHeuristics:
+
+    def test_arc_without_dat_marker_is_frame_aligned(self, tmp_path: Path):
+        """Without an ecgraw.dat marker the payload follows the 3672-byte header."""
+        p = tmp_path / "nomarker.arc"
+        p.write_bytes(b"patient.hea\x00" + create_edan_arc_hea() + create_edan_arc_dat())
+        record = _parse_quiet(p)
+        for ch, lead in enumerate(record.leads):
+            np.testing.assert_array_equal(lead.samples, _expected_channel(ch, 1000))
+
+    def test_arc_with_markers_exact_values(self, edan_arc_archive: Path):
+        record = _parse_quiet(edan_arc_archive)
+        for ch, lead in enumerate(record.leads):
+            np.testing.assert_array_equal(lead.samples, _expected_channel(ch, 1000))

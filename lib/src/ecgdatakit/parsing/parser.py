@@ -8,7 +8,11 @@ import warnings
 from abc import ABC, abstractmethod
 from pathlib import Path
 
-from ecgdatakit.models import ECGRecord, _UNIT_ALIASES
+from ecgdatakit.exceptions import CorruptedFileError, ECGDataKitError
+from ecgdatakit.models import ECGRecord, _UNIT_ALIASES, _normalize_unit
+from ecgdatakit.parsing.helpers.record import fill_signal_summary
+
+_SNIFF_SIZE = 4096
 
 
 class Parser(ABC):
@@ -17,6 +21,9 @@ class Parser(ABC):
     FORMAT_NAME: str = ""
     FORMAT_DESCRIPTION: str = ""
     FILE_EXTENSIONS: list[str] = []
+    PRIORITY: int = 50
+    """Detection order in :class:`FileParser`, lower runs first. Formats with
+    a reliable magic number use a low value, loose sniffers a high one."""
 
     @staticmethod
     @abstractmethod
@@ -57,6 +64,7 @@ class FileParser:
                     and attr is not Parser
                 ):
                     self._parsers.append(attr)
+        self._parsers.sort(key=lambda cls: (cls.PRIORITY, cls.__name__))
 
     @property
     def parsers(self) -> list[type[Parser]]:
@@ -126,10 +134,12 @@ class FileParser:
         ValueError
             If no parser can handle the file or *units* is not
             recognised.
+        CorruptedFileError
+            If the file is recognised but cannot be decoded.
         """
         # Validate units early
         target = _UNIT_ALIASES.get(units)
-        if target is None:
+        if target not in ("uV", "mV", "V"):
             raise ValueError(
                 f"Unknown unit {units!r}. "
                 "Accepted values: 'uV', 'mV', 'V'."
@@ -138,19 +148,46 @@ class FileParser:
         path = Path(file_path)
         if not path.exists():
             raise FileNotFoundError(f"File not found: {path}")
-        header = path.read_bytes()[:4096]
-        for parser_cls in self._parsers:
-            if parser_cls.can_parse(path, header):
-                record = parser_cls().parse(path)
-                if auto_scale:
-                    return self._auto_scale(record, target)
-                warnings.warn(
-                    "auto_scale=False: leads contain raw ADC samples. "
-                    "Amplitudes are unitless and not in physical units (mV).",
-                    stacklevel=2,
-                )
-                return record
-        raise ValueError(f"No parser found for: {path.name}")
+        header = b""
+        if path.is_file():
+            with open(path, "rb") as f:
+                header = f.read(_SNIFF_SIZE)
+
+        parser_cls = next((p for p in self._parsers if p.can_parse(path, header)), None)
+        if parser_cls is None:
+            raise ValueError(f"No parser found for: {path.name}")
+
+        # Parser warnings are re-emitted here so they point at the caller
+        with warnings.catch_warnings(record=True) as caught:
+            warnings.simplefilter("always")
+            record = self._run_parser(parser_cls, path)
+            fill_signal_summary(record)
+            if auto_scale:
+                record = self._auto_scale(record, target)
+        for w in caught:
+            warnings.warn(w.message, w.category, stacklevel=2)
+
+        if not auto_scale and any(lead.is_raw for lead in record.leads):
+            warnings.warn(
+                "auto_scale=False: leads contain raw ADC samples. "
+                "Amplitudes are unitless and not in physical units (mV).",
+                stacklevel=2,
+            )
+        record.raw_metadata.setdefault("filepath", str(path))
+        return record
+
+    @staticmethod
+    def _run_parser(parser_cls: type[Parser], path: Path) -> ECGRecord:
+        """Run *parser_cls* and report decoding failures as CorruptedFileError."""
+        try:
+            return parser_cls().parse(path)
+        except (ECGDataKitError, OSError):
+            raise
+        except Exception as e:
+            raise CorruptedFileError(
+                f"{parser_cls.FORMAT_NAME or parser_cls.__name__}: "
+                f"cannot decode {path.name}: {type(e).__name__}: {e}"
+            ) from e
 
     @staticmethod
     def _auto_scale(record: ECGRecord, target: str = "mV") -> ECGRecord:
@@ -165,34 +202,37 @@ class FileParser:
         """
         import dataclasses
 
-        new_leads = []
         raw_labels: list[str] = []
-        for lead in record.leads:
-            if lead.resolution == 1.0 and lead.offset == 0.0 and not lead.resolution_unit:
-                raw_labels.append(lead.label)
-                new_leads.append(lead)
-                continue
-            physical = lead.to_physical()
-            norm = _UNIT_ALIASES.get(physical.units)
-            if norm and norm != target:
-                physical = physical.convert_units(target)
-            new_leads.append(physical)
+        other_units: list[str] = []
 
-        new_beats = []
-        for beat in record.median_beats:
-            if beat.resolution == 1.0 and beat.offset == 0.0 and not beat.resolution_unit:
-                new_beats.append(beat)
-                continue
-            physical = beat.to_physical()
-            norm = _UNIT_ALIASES.get(physical.units)
-            if norm and norm != target:
-                physical = physical.convert_units(target)
-            new_beats.append(physical)
+        def scale(lead, report: bool):
+            # A raw lead needs a known voltage unit and a non-zero resolution
+            if lead.is_raw:
+                if not lead.resolution_unit or lead.resolution == 0.0:
+                    if report:
+                        raw_labels.append(lead.label)
+                    return lead
+                lead = lead.to_physical()
+            norm = _normalize_unit(lead.units)
+            if norm is None:
+                if report:
+                    other_units.append(f"{lead.label} ({lead.units or 'no unit'})")
+                return lead
+            return lead.convert_units(target) if norm != target else lead
+
+        new_leads = [scale(lead, True) for lead in record.leads]
+        new_beats = [scale(beat, False) for beat in record.median_beats]
 
         if raw_labels:
             warnings.warn(
-                f"Leads {raw_labels} contain raw ADC samples — no scaling "
+                f"Leads {raw_labels} contain raw ADC samples, no scaling "
                 "metadata available. Pass auto_scale=False to get raw values.",
+                stacklevel=3,
+            )
+        if other_units:
+            warnings.warn(
+                f"Leads {other_units} are not in a voltage unit and were not "
+                f"converted to {target}.",
                 stacklevel=3,
             )
 

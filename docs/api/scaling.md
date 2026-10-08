@@ -32,25 +32,26 @@ These formats provide per-lead scaling information — leads are auto-converted 
 
 | Format | Scaling source | Native unit |
 |--------|---------------|-------------|
-| HL7 aECG | `scale` attribute per sequence | uV |
-| DICOM Waveform | Channel sensitivity and baseline | uV |
+| HL7 aECG | `scale` and `origin` per sequence | unit of `scale` |
+| DICOM Waveform | Channel sensitivity, correction factor and baseline | UCUM unit of the channel |
 | EDF / EDF+ | Physical min/max and digital min/max | per channel |
 | WFDB | Signal gain and baseline | per signal |
-| SCP-ECG | AVM (amplitude value multiplier) | mV |
+| SCP-ECG | AVM (amplitude value multiplier, nV) | uV |
 | ISHNE Holter | Amplitude resolution in nanovolts | uV |
-| MFER | Resolution tag | per channel |
-| GE MUSE XML | Waveform scale factor | uV |
+| MFER | `MWF_SEN` (unit and exponent) and `MWF_OFF` | uV |
+| GE MUSE XML | `LeadAmplitudeUnitsPerBit` and `LeadAmplitudeUnits` | per lead |
+| GE MAC 2000 | `LeadAmplitudeUnitsPerBit` when present | per lead |
+| Mortara ELI | `UNITS_PER_MV` per channel | uV |
+| Philips Sierra XML | `resolution` attribute | uV |
+| BeneHeart R12 | `Resolution` when present in the file | per lead |
 
 ### Formats without scaling metadata
 
-These formats do not include scaling information — samples remain as raw ADC integers with `resolution=1.0`, `offset=0.0`, `units=""`:
-
-| Format |
-|--------|
-| BeneHeart R12 |
-| GE MAC 2000 |
-| Mortara EL250 |
-| Sierra XML |
+When a file does not state its scale, samples stay raw ADC integers with
+`resolution=1.0`, `offset=0.0`, `resolution_unit=""` and `units=""`, and
+`auto_scale=True` leaves them unchanged with a warning. This applies to EDAN
+ARC Holter files (the count to voltage factor is not documented), and to
+BeneHeart R12 or GE MAC 2000 exports that omit a resolution.
 
 ## Manual conversion
 

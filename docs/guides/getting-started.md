@@ -44,7 +44,6 @@ ECGDataKit ships several optional dependency groups. Install only what you need:
 | `processing` | `pip install "ecgdatakit[processing]"` | Signal filtering, peak detection, HRV analysis |
 | `plotting` | `pip install "ecgdatakit[plotting]"` | Static Matplotlib-based plots |
 | `plotting-interactive` | `pip install "ecgdatakit[plotting-interactive]"` | Interactive Plotly-based plots |
-| `holter` | `pip install "ecgdatakit[holter]"` | ISHNE Holter format CRC validation |
 | `dicom` | `pip install "ecgdatakit[dicom]"` | DICOM waveform parsing via pydicom |
 | `cleaning` | `pip install "ecgdatakit[cleaning]"` | BioSPPy + NeuroKit2 ECG cleaning backends |
 | `denoising` | `pip install "ecgdatakit[denoising]"` | DeepFADE denoising autoencoder (torch) |
@@ -254,10 +253,10 @@ from ecgdatakit.parsing import parse_batch
 from pathlib import Path
 
 files = list(Path("data/").glob("*.xml"))
-records = parse_batch(files, max_workers=4)
+records = parse_batch(files, max_workers=4, on_error="warn")
 
 for rec in records:
-    print(rec.patient.first_name, rec.recording.date)
+    print(rec.raw_metadata["filepath"], rec.recording.date)
 ```
 
 ## Adding a new parser

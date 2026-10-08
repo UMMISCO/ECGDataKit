@@ -1,22 +1,30 @@
 """GE MUSE XML format parser.
 
-Parses ECG exports from GE Healthcare MUSE system.
+Parses ``RestingECG`` exports from the GE Healthcare MUSE system (restecg.dtd).
+Waveforms are Base64 little-endian signed integers per lead
+(``LeadSampleSize`` bytes, normally 2), scaled by
+``LeadAmplitudeUnitsPerBit`` in ``LeadAmplitudeUnits``. MUSE usually stores
+8 leads (I, II, V1-V6); only the stored leads are returned.
 """
 
 from __future__ import annotations
 
 import base64
-from datetime import datetime, timedelta
+import binascii
+import re
+import warnings
+import xml.etree.ElementTree as ET
+import zlib
+from datetime import date, datetime
 from pathlib import Path
 
 import numpy as np
-import xmltodict
 
-from ecgdatakit.exceptions import CorruptedFileError
-from ecgdatakit.parsing.helpers.xml import find_tag, read_path
+from ecgdatakit.exceptions import ChecksumWarning, CorruptedFileError
 from ecgdatakit.models import (
     DeviceInfo,
     ECGRecord,
+    FileFormatInfo,
     FilterSettings,
     GlobalMeasurements,
     Interpretation,
@@ -26,14 +34,87 @@ from ecgdatakit.models import (
     SignalCharacteristics,
     derive_is_raw,
 )
+from ecgdatakit.parsing.helpers import (
+    fill_signal_summary,
+    normalize_lead_label,
+    unique_labels,
+)
+from ecgdatakit.parsing.helpers.xml import parse_xml_root
 from ecgdatakit.parsing.parser import Parser
 
+_AMPLITUDE_UNITS = {
+    "MICROVOLTS": "uV", "MICROVOLT": "uV", "UV": "uV",
+    "MILLIVOLTS": "mV", "MILLIVOLT": "mV", "MV": "mV",
+    "VOLTS": "V", "VOLT": "V", "V": "V",
+    "NANOVOLTS": "nV", "NANOVOLT": "nV", "NV": "nV",
+}
 
-def _decode_waveform_data(base64_str: str, dtype: str = "<i2") -> np.ndarray:
-    """Decode Base64-encoded waveform data to float64 array."""
-    raw = base64.b64decode(base64_str)
-    signal = np.frombuffer(raw, dtype=dtype)
-    return signal.astype(np.float64)
+_AGE_UNITS_TO_YEARS = {
+    "YEARS": 1.0, "MONTHS": 1 / 12, "WEEKS": 7 / 365.25, "DAYS": 1 / 365.25,
+    "HOURS": 1 / 8766,
+}
+
+_MEASUREMENT_MAP = {
+    "VentricularRate": "heart_rate",
+    "PRInterval": "pr_interval",
+    "QRSDuration": "qrs_duration",
+    "QTInterval": "qt_interval",
+    "QTCorrected": None,  # formula not stated, kept in annotations only
+    "QTcFrederica": "qtc_fridericia",
+    "PAxis": "p_axis",
+    "RAxis": "qrs_axis",
+    "TAxis": "t_axis",
+    "QRSCount": "qrs_count",
+}
+
+
+
+def _text(el: ET.Element | None) -> str:
+    if el is None:
+        return ""
+    return " ".join("".join(el.itertext()).split())
+
+
+def _get(node: ET.Element | None, tag: str) -> str:
+    """Text of the direct child *tag* of *node* (case-insensitive)."""
+    if node is None:
+        return ""
+    el = node.find(tag)
+    if el is None:
+        low = tag.lower()
+        el = next((c for c in node if c.tag.lower() == low), None)
+    return _text(el)
+
+
+def _num(text: str) -> float | None:
+    try:
+        return float(text.replace(",", "."))
+    except (ValueError, AttributeError):
+        return None
+
+
+def _parse_date(text: str) -> date | None:
+    """Parse MUSE dates (MM-DD-YYYY by default, other common layouts)."""
+    for fmt in ("%m-%d-%Y", "%m/%d/%Y", "%Y-%m-%d", "%Y%m%d", "%d-%b-%Y"):
+        try:
+            return datetime.strptime(text.strip(), fmt).date()
+        except ValueError:
+            continue
+    return None
+
+
+def _parse_datetime(date_text: str, time_text: str) -> datetime | None:
+    """Combine a MUSE date and time; ``None`` when the time is missing."""
+    d = _parse_date(date_text) if date_text else None
+    if d is None or not time_text:
+        return None
+    for fmt in ("%H:%M:%S", "%H:%M"):
+        try:
+            t = datetime.strptime(time_text.strip(), fmt).time()
+            return datetime.combine(d, t)
+        except ValueError:
+            continue
+    return None
 
 
 class GEMuseXMLParser(Parser):
@@ -42,465 +123,386 @@ class GEMuseXMLParser(Parser):
     FORMAT_NAME = "GE MUSE XML"
     FORMAT_DESCRIPTION = "GE MUSE ECG management system XML export"
     FILE_EXTENSIONS = [".xml"]
+    PRIORITY = 50
 
     @staticmethod
     def can_parse(file_path: Path, header: bytes) -> bool:
-        try:
-            text = header.decode("utf-8", errors="ignore")
-            upper = text.upper()
-            if "<RESTINGECG>" in upper or "<RESTINGECG " in upper:
-                if "<RESTINGECGDATA" in upper:
-                    return False
-                return True
-            if "<MUSEINFO" in upper:
-                return True
+        upper = header.decode("utf-8", errors="ignore").upper()
+        if "<RESTINGECGDATA" in upper:  # Philips Sierra
             return False
-        except Exception:
-            return False
+        return re.search(r"<RESTINGECG[\s>]", upper) is not None or "<MUSEINFO" in upper
 
     def parse(self, file_path: Path) -> ECGRecord:
-        with open(file_path, "rb") as f:
-            doc = xmltodict.parse(f.read())
-
-        root = doc.get("RestingECG") or doc.get("restingecg") or doc.get("Restingecg")
-        if root is None:
-            for key in doc:
-                if key.lower() == "restingecg":
-                    root = doc[key]
-                    break
-        if root is None:
+        self._warnings: list[tuple[str, type[Warning]]] = []
+        raw = Path(file_path).read_bytes()
+        try:
+            root = parse_xml_root(raw)
+        except ET.ParseError as e:
+            raise CorruptedFileError(f"Malformed XML in {file_path}: {e}") from e
+        if root.tag.lower() != "restingecg":
             raise CorruptedFileError(f"Missing RestingECG root element in {file_path}")
 
         record = ECGRecord(source_format="ge_muse_xml")
+        meta = record.raw_metadata
+        meta["filepath"] = str(file_path)
+        demo = root.find("PatientDemographics")
+        test = root.find("TestDemographics")
 
-        record.patient = self._read_patient(root)
-        record.recording = self._read_recording(root)
-        record.recording.device = self._read_device(root)
-        record.recording.acquisition.filters = self._read_filters(root)
-        rhythm_leads, median_leads = self._read_leads(root)
-        record.leads = rhythm_leads
-        record.median_beats = median_leads
+        record.recording = self._read_recording(test, root, meta)
+        record.patient = self._read_patient(demo, record.recording.date)
+        record.leads, record.median_beats = self._read_waveforms(root, record, file_path)
+        if not record.leads:
+            raise CorruptedFileError(f"No rhythm waveform in {file_path}")
+        record.measurements = self._read_measurements(root, record)
+        self._read_interpretation(root, test, record)
+        self._read_extras(root, record)
 
-        if record.leads and record.recording.acquisition.signal.sampling_rate == 0:
-            record.recording.acquisition.signal.sampling_rate = record.leads[0].sampling_rate
-
-        annotations, measurements, interpretation = self._read_annotations(root)
-        record.annotations = annotations
-        record.measurements = measurements
-        record.interpretation = interpretation
-
-        order_info = self._read_order_info(root)
-        if order_info:
-            record.raw_metadata["order_info"] = order_info
-            # Promote referring physician to structured field
-            if not record.recording.referring_physician:
-                ref = order_info.get("referring_physician", "")
-                if ref:
-                    record.recording.referring_physician = ref
-
-        # Extract technician from TestDemographics
-        test_demo = find_tag(root, "TestDemographics")
-        if test_demo is not None:
-            if isinstance(test_demo, list):
-                test_demo = test_demo[0]
-            tech = self._get_text(test_demo, "TechnicianID") or self._get_text(test_demo, "OperatorID")
-            if tech:
-                record.recording.technician = tech
-
-        # Count all lead data elements for channels_allocated
-        all_lead_count = 0
-        waveform_nodes = find_tag(root, "Waveform")
-        if waveform_nodes is not None:
-            if isinstance(waveform_nodes, dict):
-                waveform_nodes = [waveform_nodes]
-            for wf_node in waveform_nodes:
-                ld_nodes = find_tag(wf_node, "LeadData")
-                if ld_nodes is not None:
-                    if isinstance(ld_nodes, dict):
-                        all_lead_count += 1
-                    elif isinstance(ld_nodes, list):
-                        all_lead_count += len(ld_nodes)
-
+        rates = {lead.sampling_rate for lead in record.leads}
         record.recording.acquisition.signal = SignalCharacteristics(
-            sampling_rate=record.recording.acquisition.signal.sampling_rate,
-            bits_per_sample=16,
+            sampling_rate=rates.pop() if len(rates) == 1 else 0,
+            bits_per_sample=8 * meta.get("sample_size", 2),
             signal_signed=True,
             number_channels_valid=len(record.leads),
-            number_channels_allocated=all_lead_count or len(record.leads),
-            data_encoding="base64_int16le",
+            number_channels_allocated=meta.get("stored_rhythm_leads", len(record.leads)),
+            data_encoding=f"base64_int{8 * meta.get('sample_size', 2)}le",
             compression="none",
         )
+        fill_signal_summary(record)
 
-        record.raw_metadata["filepath"] = str(file_path)
+        record.file_format = FileFormatInfo(
+            version=_get(root.find("MuseInfo"), "MuseVersion"),
+            creation_date=_parse_date(_get(test, "EditDate")) if _get(test, "EditDate") else None,
+        )
 
+        for message, category in self._warnings:
+            warnings.warn(message, category, stacklevel=2)
         return record
 
-    def _read_patient(self, root: dict) -> PatientInfo:
-        info = PatientInfo()
+    # ------------------------------------------------------------------
+    # Demographics
+    # ------------------------------------------------------------------
 
-        demo = find_tag(root, "PatientDemographics")
+    def _read_patient(self, demo: ET.Element | None, acquired: datetime | None) -> PatientInfo:
+        info = PatientInfo()
         if demo is None:
             return info
+        info.patient_id = _get(demo, "PatientID")
+        info.first_name = _get(demo, "PatientFirstName")
+        info.last_name = _get(demo, "PatientLastName")
 
-        if isinstance(demo, list):
-            demo = demo[0]
-
-        info.patient_id = self._get_text(demo, "PatientID")
-        info.first_name = self._get_text(demo, "PatientFirstName")
-        info.last_name = self._get_text(demo, "PatientLastName")
-
-        gender = self._get_text(demo, "Gender")
+        gender = _get(demo, "Gender").upper()
         if gender:
-            g = gender.upper()
-            info.sex = "M" if g in ("M", "MALE") else "F" if g in ("F", "FEMALE") else "U"
+            info.sex = "M" if gender in ("M", "MALE") else "F" if gender in ("F", "FEMALE") else "U"
+        dob = _get(demo, "DateofBirth")
+        if dob:
+            d = _parse_date(dob)
+            info.birth_date = datetime.combine(d, datetime.min.time()) if d else None
+        info.race = _get(demo, "Race")
 
-        dob_str = self._get_text(demo, "DateofBirth")
-        if dob_str:
-            info.birth_date = self._parse_date(dob_str)
+        age = _num(_get(demo, "PatientAge"))
+        factor = _AGE_UNITS_TO_YEARS.get(_get(demo, "AgeUnits").upper() or "YEARS")
+        if age is not None and factor:
+            info.age = int(age * factor)
+        elif info.birth_date and acquired:
+            a, b = acquired.date(), info.birth_date.date()
+            info.age = a.year - b.year - ((a.month, a.day) < (b.month, b.day))
 
-        age_str = self._get_text(demo, "PatientAge")
-        if age_str and age_str.isdigit():
-            info.age = int(age_str)
-
-        height_str = self._get_text(demo, "PatientHeightCM")
-        if height_str:
-            try:
-                info.height = float(height_str)
-            except ValueError:
-                pass
-
-        weight_str = self._get_text(demo, "PatientWeightKG")
-        if weight_str:
-            try:
-                info.weight = float(weight_str)
-            except ValueError:
-                pass
-
-        race_str = self._get_text(demo, "Race")
-        if race_str:
-            info.race = race_str
-
+        height = _num(_get(demo, "HeightCM"))
+        if height is None and _num(_get(demo, "HeightIN")) is not None:
+            height = round(_num(_get(demo, "HeightIN")) * 2.54, 1)
+        weight = _num(_get(demo, "WeightKG"))
+        if weight is None and _num(_get(demo, "WeightLBS")) is not None:
+            weight = round(_num(_get(demo, "WeightLBS")) * 0.45359237, 1)
+        info.height = height or None
+        info.weight = weight or None
         return info
 
-    def _read_recording(self, root: dict) -> RecordingInfo:
+    def _read_recording(self, test: ET.Element | None, root: ET.Element, meta: dict) -> RecordingInfo:
         info = RecordingInfo()
-
-        test_demo = find_tag(root, "TestDemographics")
-        if test_demo is None:
+        if test is None:
             return info
+        acq_date, acq_time = _get(test, "AcquisitionDate"), _get(test, "AcquisitionTime")
+        info.date = _parse_datetime(acq_date, acq_time)
+        if info.date is None and acq_date:
+            meta["acquisition_date"] = f"{acq_date} {acq_time}".strip()
 
-        if isinstance(test_demo, list):
-            test_demo = test_demo[0]
+        info.location = _get(test, "LocationName")
+        info.room = _get(test, "RoomID")
+        tech = " ".join(p for p in (_get(test, "AcquisitionTechFirstName"),
+                                    _get(test, "AcquisitionTechLastName")) if p)
+        info.technician = tech or _get(test, "AcquisitionTechID")
+        ref = " ".join(p for p in (_get(test, "ReferringMDFirstName"),
+                                   _get(test, "ReferringMDLastName")) if p)
+        info.referring_physician = ref or _get(test, "ReferringMDID")
 
-        date_str = self._get_text(test_demo, "AcquisitionDate")
-        time_str = self._get_text(test_demo, "AcquisitionTime")
-        if date_str:
-            dt = self._parse_date(date_str)
-            if dt and time_str:
-                try:
-                    t = datetime.strptime(time_str, "%H:%M:%S")
-                    dt = dt.replace(hour=t.hour, minute=t.minute, second=t.second)
-                except ValueError:
-                    pass
-            info.date = dt
+        dev: DeviceInfo = info.device
+        dev.model = _get(test, "AcquisitionDevice")
+        dev.software_version = _get(test, "AcquisitionSoftwareVersion")
+        dev.name = _get(test, "CartNumber")
+        dev.serial_number = _get(root.find("PharmaData"), "PharmaCartID")
+        dev.institution = _get(test, "SiteName")
+        dev.acquisition_type = _get(test, "DataType")
 
-        info.location = (
-            self._get_text(test_demo, "Location")
-            or self._get_text(test_demo, "SiteName")
-        )
-        info.room = self._get_text(test_demo, "Room")
-
+        for tag in ("Site", "Location", "Status", "EditListStatus", "Priority",
+                    "AnalysisSoftwareVersion", "TestType", "TestReason", "SecondaryID",
+                    "OrderingMDID", "OrderingMDLastName", "OrderingMDFirstName",
+                    "EditDate", "EditTime", "XMLSourceVersion"):
+            value = _get(test, tag)
+            if value:
+                meta[tag] = value
         return info
 
-    def _read_device(self, root: dict) -> DeviceInfo:
-        dev = DeviceInfo()
+    # ------------------------------------------------------------------
+    # Waveforms
+    # ------------------------------------------------------------------
 
-        test_demo = find_tag(root, "TestDemographics")
-        if test_demo is not None:
-            if isinstance(test_demo, list):
-                test_demo = test_demo[0]
-            dev.model = self._get_text(test_demo, "AcquisitionDevice")
-            dev.software_version = self._get_text(
-                test_demo, "AcquisitionSoftwareVersion"
-            )
-            dev.manufacturer = self._get_text(test_demo, "ManufacturerID")
-
-        return dev
-
-    def _read_leads(self, root: dict) -> tuple[list[Lead], list[Lead]]:
-        """Parse waveform data and return ``(rhythm_leads, median_leads)``."""
-        rhythm_leads: list[Lead] = []
-        median_leads: list[Lead] = []
-
-        waveform_nodes = find_tag(root, "Waveform")
-        if waveform_nodes is None:
-            return rhythm_leads, median_leads
-
-        if isinstance(waveform_nodes, dict):
-            waveform_nodes = [waveform_nodes]
-
-        for wf_node in waveform_nodes:
-            wf_type = self._get_text(wf_node, "WaveformType")
-
-            sampling_rate_str = self._get_text(wf_node, "SampleBase")
-            sampling_rate = (
-                int(sampling_rate_str)
-                if sampling_rate_str and sampling_rate_str.isdigit()
-                else 500
-            )
-
-            lead_data_nodes = find_tag(wf_node, "LeadData")
-            if lead_data_nodes is None:
-                continue
-
-            if isinstance(lead_data_nodes, dict):
-                lead_data_nodes = [lead_data_nodes]
-
-            wf_leads: list[Lead] = []
-            for ld in lead_data_nodes:
-                label = self._get_text(ld, "LeadID")
-                if not label:
-                    continue
-
-                waveform_data = self._get_text(ld, "WaveFormData")
-                if not waveform_data:
-                    continue
-
-                try:
-                    samples = _decode_waveform_data(waveform_data.strip())
-                except Exception:
-                    continue
-
-                scale = 1.0
-                res_unit = ""
-                amp_units = self._get_text(ld, "LeadAmplitudeUnitsPerBit")
-                if amp_units:
-                    try:
-                        scale = float(amp_units)
-                        res_unit = "uV"  # unit is known only when a scale is present
-                    except ValueError:
-                        pass
-
-                raw = derive_is_raw(scale, 0.0, res_unit)
-                wf_leads.append(Lead(
-                    label=label,
-                    samples=samples,
-                    sampling_rate=sampling_rate,
-                    resolution=scale,
-                    resolution_unit=res_unit,
-                    units="" if raw else res_unit,
-                    is_raw=raw,
-                ))
-
-            if wf_type and wf_type.lower() == "rhythm":
-                rhythm_leads = wf_leads
-            elif wf_type and wf_type.lower() == "median":
-                median_leads = wf_leads
-            else:
-                if not rhythm_leads:
-                    rhythm_leads = wf_leads
-
-        return rhythm_leads, median_leads
-
-    def _read_annotations(
-        self, root: dict
-    ) -> tuple[dict[str, str], GlobalMeasurements, Interpretation]:
-        annotations: dict[str, str] = {}
-        interp = Interpretation()
-
-        def _extract_statements(node) -> list[str]:
-            stmts: list[str] = []
-            if node is None:
-                return stmts
-            if isinstance(node, dict):
-                node = [node]
-            if isinstance(node, list):
-                for d in node:
-                    stmt = find_tag(d, "DiagnosisStatement")
-                    if stmt is not None:
-                        if isinstance(stmt, dict):
-                            stmt = [stmt]
-                        if isinstance(stmt, list):
-                            for s in stmt:
-                                text = self._get_text(s, "StmtText")
-                                if text:
-                                    stmts.append((text, ""))
-            return stmts
-
-        overread = find_tag(root, "OverreadDiagnosis")
-        if overread is None:
-            overread = find_tag(root, "OverreadConfirmation")
-
-        if overread is not None:
-            overread_stmts = _extract_statements(overread)
-            if overread_stmts:
-                interp.statements = overread_stmts
-                interp.source = "overread"
-                annotations["diagnosis"] = "; ".join(s[0] for s in overread_stmts)
-                physician = (
-                    self._get_text(
-                        overread if isinstance(overread, dict) else {},
-                        "OverreaderLastName",
-                    )
-                    or self._get_text(
-                        overread if isinstance(overread, dict) else {},
-                        "EditorLastName",
-                    )
+    def _read_waveforms(
+        self, root: ET.Element, record: ECGRecord, file_path: Path
+    ) -> tuple[list[Lead], list[Lead]]:
+        found: dict[str, list[Lead]] = {}
+        meta = record.raw_metadata
+        crc_results: list[bool] = []
+        for wf in root.findall("Waveform"):
+            kind = _get(wf, "WaveformType").lower() or "rhythm"
+            if kind in found:
+                self._warnings.append(
+                    (f"Additional {kind} waveform ignored in {Path(file_path).name}", UserWarning)
                 )
-                if physician:
-                    first = self._get_text(
-                        overread if isinstance(overread, dict) else {},
-                        "OverreaderFirstName",
-                    ) or self._get_text(
-                        overread if isinstance(overread, dict) else {},
-                        "EditorFirstName",
-                    )
-                    interp.interpreter = (
-                        f"{first} {physician}".strip() if first else physician
-                    )
-
-        diag = find_tag(root, "Diagnosis")
-        original_stmts = _extract_statements(diag)
-        if original_stmts:
-            if not interp.statements:
-                interp.statements = original_stmts
-                interp.source = "machine"
-                annotations["diagnosis"] = "; ".join(s[0] for s in original_stmts)
-            else:
-                annotations["original_diagnosis"] = "; ".join(s[0] for s in original_stmts)
-
-        for left, _right in interp.statements:
-            s_up = left.upper()
-            if "NORMAL" in s_up and "ABNORMAL" not in s_up:
-                interp.severity = "NORMAL"
-            elif "ABNORMAL" in s_up:
-                interp.severity = "ABNORMAL"
-            elif "BORDERLINE" in s_up:
-                interp.severity = "BORDERLINE"
-
-        gm = GlobalMeasurements()
-
-        meas_node = find_tag(root, "OriginalRestingECGMeasurements")
-        if meas_node is None:
-            meas_node = find_tag(root, "RestingECGMeasurements")
-
-        if meas_node is not None:
-            if isinstance(meas_node, list):
-                meas_node = meas_node[0]
-
-            mapping = {
-                "VentricularRate": "heart_rate",
-                "PRInterval": "pr_interval",
-                "QRSDuration": "qrs_duration",
-                "QTInterval": "qt_interval",
-                "QTCorrected": "qtc_bazett",
-                "PAxis": "p_axis",
-                "RAxis": "qrs_axis",
-                "TAxis": "t_axis",
-                "QTCFredericia": "qtc_fridericia",
-                "RRInterval": "rr_interval",
-                "QRSCount": "qrs_count",
-            }
-
-            for xml_key, attr in mapping.items():
-                val = self._get_text(meas_node, xml_key)
-                if val:
-                    annotations[xml_key.lower()] = val
-                    try:
-                        setattr(gm, attr, int(val))
-                    except (ValueError, TypeError):
-                        pass
-
-        return annotations, gm, interp
-
-    def _read_filters(self, root: dict) -> FilterSettings:
-        """Extract filter settings from Waveform elements."""
-        fs = FilterSettings()
-
-        waveform_nodes = find_tag(root, "Waveform")
-        if waveform_nodes is None:
-            return fs
-
-        if isinstance(waveform_nodes, dict):
-            waveform_nodes = [waveform_nodes]
-
-        for wf_node in waveform_nodes:
-            hp = self._get_text(wf_node, "HighPassFilter")
-            lp = self._get_text(wf_node, "LowPassFilter")
-            nf = self._get_text(wf_node, "NotchFilterFrequency")
-            gen = self._get_text(wf_node, "FilterSetting")
-
-            if hp or lp or nf or gen:
-                if hp:
-                    try:
-                        fs.highpass = float(hp)
-                    except ValueError:
-                        pass
-                if lp:
-                    try:
-                        fs.lowpass = float(lp)
-                    except ValueError:
-                        pass
-                if nf:
-                    try:
-                        fs.notch = float(nf)
-                        fs.notch_active = True
-                    except ValueError:
-                        pass
-                if gen and gen.lower() in ("on", "true", "yes"):
-                    fs.artifact_filter = True
-                elif gen and gen.lower() in ("off", "false", "no"):
-                    fs.artifact_filter = False
-                break
-
-        return fs
-
-    def _read_order_info(self, root: dict) -> dict:
-        """Extract OrderInfo section into a dict for raw_metadata."""
-        order: dict[str, str] = {}
-
-        order_node = find_tag(root, "OrderInfo")
-        if order_node is None:
-            return order
-
-        if isinstance(order_node, list):
-            order_node = order_node[0]
-        if not isinstance(order_node, dict):
-            return order
-
-        for tag, key in (
-            ("OrderingPhysician", "ordering_physician"),
-            ("OrderNumber", "order_number"),
-            ("Reason", "reason"),
-            ("OrderPriority", "priority"),
-            ("ReferringPhysician", "referring_physician"),
-        ):
-            val = self._get_text(order_node, tag)
-            if val:
-                order[key] = val
-
-        return order
-
-    @staticmethod
-    def _get_text(node: dict | None, tag: str) -> str:
-        """Get text content of a tag from an xmltodict node."""
-        if node is None:
-            return ""
-        val = find_tag(node, tag)
-        if val is None:
-            return ""
-        if isinstance(val, list):
-            val = val[0]
-        if isinstance(val, dict):
-            return val.get("#text", "")
-        return str(val).strip()
-
-    @staticmethod
-    def _parse_date(date_str: str) -> datetime | None:
-        """Parse date strings in common GE MUSE formats."""
-        for fmt in ("%m/%d/%Y", "%Y-%m-%d", "%m-%d-%Y", "%Y%m%d", "%d-%b-%Y"):
-            try:
-                return datetime.strptime(date_str.strip(), fmt)
-            except ValueError:
                 continue
-        return None
+            base = _num(_get(wf, "SampleBase"))
+            exponent = _num(_get(wf, "SampleExponent")) or 0
+            if not base or base <= 0:
+                raise CorruptedFileError(f"{kind} waveform has no valid SampleBase in {file_path}")
+            rate = int(round(base * 10 ** exponent))
+
+            leads: list[Lead] = []
+            for ld in wf.findall("LeadData"):
+                lead = self._read_lead(ld, rate, kind, file_path, crc_results)
+                if lead is not None:
+                    leads.append(lead)
+            if kind == "rhythm":
+                meta["stored_rhythm_leads"] = len(leads)
+                self._read_filters(wf, record.recording.acquisition.filters)
+                pace = wf.find("PaceSpikes")
+                if pace is not None:
+                    # Detected spikes are device output, not a patient attribute
+                    meta["pace_spikes"] = {c.tag: _text(c) for c in pace}
+            for lead, label in zip(leads, unique_labels([lead.label for lead in leads])):
+                lead.label = label
+            found[kind] = leads
+
+        meta["checksum_valid"] = all(crc_results) if crc_results else None
+        if getattr(self, "_sample_size", None):
+            meta["sample_size"] = self._sample_size
+        return found.get("rhythm", []), found.get("median", [])
+
+    def _read_lead(
+        self, ld: ET.Element, rate: int, kind: str, file_path: Path, crc_results: list[bool]
+    ) -> Lead | None:
+        lead_id = _get(ld, "LeadID")
+        data = _get(ld, "WaveFormData")
+        if not lead_id:
+            raise CorruptedFileError(f"LeadData without LeadID in {kind} waveform of {file_path}")
+        if not data:
+            raise CorruptedFileError(f"Lead {lead_id} ({kind}) has no WaveFormData in {file_path}")
+        try:
+            payload = base64.b64decode("".join(data.split()), validate=True)
+        except (binascii.Error, ValueError) as e:
+            raise CorruptedFileError(f"Invalid Base64 in lead {lead_id} ({kind}) of {file_path}") from e
+
+        size = int(_num(_get(ld, "LeadSampleSize")) or 2)
+        if size not in (1, 2, 4) or len(payload) % size:
+            raise CorruptedFileError(
+                f"Lead {lead_id} ({kind}): {len(payload)} bytes is not a whole number "
+                f"of {size}-byte samples in {file_path}"
+            )
+        expected_bytes = _num(_get(ld, "LeadByteCountTotal"))
+        expected_samples = _num(_get(ld, "LeadSampleCountTotal"))
+        if expected_bytes is not None and int(expected_bytes) != len(payload):
+            raise CorruptedFileError(
+                f"Lead {lead_id} ({kind}): LeadByteCountTotal {int(expected_bytes)} "
+                f"but {len(payload)} bytes decoded in {file_path}"
+            )
+        samples = np.frombuffer(payload, dtype=f"<i{size}").astype(np.float64)
+        self._sample_size = size
+        if expected_samples is not None and int(expected_samples) != len(samples):
+            raise CorruptedFileError(
+                f"Lead {lead_id} ({kind}): LeadSampleCountTotal {int(expected_samples)} "
+                f"but {len(samples)} samples decoded in {file_path}"
+            )
+
+        crc = _get(ld, "LeadDataCRC32")
+        if crc.isdigit():
+            ok = (zlib.crc32(payload) & 0xFFFFFFFF) == int(crc)
+            crc_results.append(ok)
+            if not ok:
+                self._warnings.append(
+                    (f"CRC32 mismatch in lead {lead_id} ({kind}) of {Path(file_path).name}",
+                     ChecksumWarning)
+                )
+
+        scale_text = _get(ld, "LeadAmplitudeUnitsPerBit")
+        unit_text = _get(ld, "LeadAmplitudeUnits")
+        scale = _num(scale_text)
+        unit = _AMPLITUDE_UNITS.get(unit_text.upper(), "") if unit_text else ""
+        if scale is not None and not unit_text:
+            unit = "uV"  # restecg.dtd default when LeadAmplitudeUnits is absent
+        resolution = scale if scale is not None else 1.0
+        if scale is None:
+            unit = ""
+        raw = derive_is_raw(resolution, 0.0, unit)
+
+        flags = {}
+        for tag in ("LeadOff", "BaselineSway", "ExcessiveACNoise", "MuscleNoise",
+                    "LeadOffsetFirstSample", "FirstSampleBaseline", "LeadTimeOffset"):
+            value = _get(ld, tag)
+            if value and value.upper() not in ("FALSE", "0"):
+                flags[tag] = value
+        return Lead(
+            label=normalize_lead_label(lead_id),
+            samples=samples,
+            sampling_rate=rate,
+            resolution=resolution,
+            resolution_unit=unit,
+            units="" if raw else unit,
+            is_raw=raw,
+            adc_resolution=scale if scale is not None else 0.0,
+            adc_resolution_unit=unit_text if scale is not None else "",
+            annotations=flags,
+        )
+
+    @staticmethod
+    def _read_filters(wf: ET.Element, fs: FilterSettings) -> None:
+        hp = _num(_get(wf, "HighPassFilter"))
+        lp = _num(_get(wf, "LowPassFilter"))
+        if hp:
+            fs.highpass = hp / 100.0  # stored in 0.01 Hz
+        if lp:
+            fs.lowpass = lp
+        ac_values = [_text(el) for el in wf.findall("ACFilter") if _text(el)]
+        for value in ac_values:
+            freq = _num(value)
+            if freq:
+                fs.notch = freq
+                fs.notch_active = True
+                break
+            if value.upper() in ("NONE", "OFF"):
+                fs.notch_active = False
+
+    # ------------------------------------------------------------------
+    # Measurements and interpretation
+    # ------------------------------------------------------------------
+
+    def _read_measurements(self, root: ET.Element, record: ECGRecord) -> GlobalMeasurements:
+        gm = GlobalMeasurements()
+        current = root.find("RestingECGMeasurements")
+        original = root.find("OriginalRestingECGMeasurements")
+        primary = current if current is not None else original
+        if primary is not None:
+            for child in primary:
+                value = _text(child)
+                if not value:
+                    continue
+                field = _MEASUREMENT_MAP.get(child.tag)
+                number = _num(value)
+                if field and number is not None:
+                    setattr(gm, field, int(round(number)))
+                elif child.tag not in ("ECGSampleBase", "ECGSampleExponent"):
+                    record.annotations[child.tag] = value
+        if current is not None and original is not None:
+            orig = {c.tag: _text(c) for c in original if _text(c)}
+            cur = {c.tag: _text(c) for c in current if _text(c)}
+            if orig != cur:
+                record.raw_metadata["original_measurements"] = orig
+
+        rr = _num(_get(root.find("QRSTimesTypes"), "GlobalRR"))
+        if rr is None:
+            rr = _num(_get(root.find("PharmaData"), "PharmaRRinterval"))
+        if rr:
+            gm.rr_interval = int(round(rr))
+        return gm
+
+    def _read_interpretation(self, root: ET.Element, test: ET.Element | None, record: ECGRecord) -> None:
+        current = self._statements(root.find("Diagnosis"))
+        original = self._statements(root.find("OriginalDiagnosis"))
+        status = _get(test, "Status").upper()
+        overreader = " ".join(p for p in (_get(test, "OverreaderFirstName"),
+                                          _get(test, "OverreaderLastName")) if p)
+        overreader = overreader or _get(test, "OverreaderID")
+        expert = status == "CONFIRMED" or bool(overreader)
+
+        interp = Interpretation()
+        interp.statements = [(s, "") for s in current]
+        if expert and current:
+            interp.source = "confirmed" if status == "CONFIRMED" else "overread"
+            interp.interpreter = overreader
+            interp.interpretation_date = _parse_datetime(_get(test, "EditDate"), _get(test, "EditTime"))
+            machine = original or []
+            if machine:
+                record.annotations["machine_interpretation"] = "\n".join(machine)
+        elif current:
+            interp.source = "machine"
+            if original and original != current:
+                record.annotations["original_diagnosis"] = "\n".join(original)
+        elif original:
+            interp.statements = [(s, "") for s in original]
+            interp.source = "machine"
+        record.interpretation = interp
+
+    @staticmethod
+    def _statements(diag: ET.Element | None) -> list[str]:
+        """Diagnosis lines; fragments are joined until a statement flagged ENDSLINE."""
+        if diag is None:
+            return []
+        items = []
+        for stmt in diag.findall("DiagnosisStatement"):
+            flags = {_text(f).upper() for f in stmt.findall("StmtFlag")}
+            text = _get(stmt, "StmtText")
+            items.append((text, "ENDSLINE" in flags))
+        if not any(end for _, end in items):
+            return [t for t, _ in items if t]
+        lines, current = [], []
+        for text, end in items:
+            if text:
+                current.append(text)
+            if end and current:
+                lines.append(" ".join(current))
+                current = []
+        if current:
+            lines.append(" ".join(current))
+        return lines
+
+    @staticmethod
+    def _read_extras(root: ET.Element, record: ECGRecord) -> None:
+        meta = record.raw_metadata
+        order = root.find("Order")
+        if order is not None:
+            values = {c.tag: _text(c) for c in order if _text(c)}
+            if values:
+                meta["order"] = values
+            reason = values.get("ReasonForTest") if values else None
+            if reason:
+                record.annotations["reason_for_test"] = reason
+        questions = {}
+        for q in root.findall("ExtraQuestions/ExtraQuestion"):
+            if _get(q, "Answer"):
+                questions[_get(q, "Question")] = _get(q, "Answer")
+        if questions:
+            meta["extra_questions"] = questions
+        qrs = root.find("QRSTimesTypes")
+        if qrs is not None:
+            beats = [
+                {"number": _get(b, "Number"), "type": _get(b, "Type"), "time": _get(b, "Time")}
+                for b in qrs.findall("QRS")
+            ]
+            if beats:
+                meta["qrs_times"] = beats
+        for tag in ("MeasurementMatrix", "PharmaData", "IntervalMeasurements",
+                    "AmplitudeMeasurements"):
+            el = root.find(tag)
+            if el is None:
+                continue
+            if len(el):
+                meta[tag] = {c.tag: _text(c) for c in el if not len(c)} or _text(el)
+            elif _text(el):
+                meta[tag] = _text(el)

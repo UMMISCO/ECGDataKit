@@ -6,6 +6,41 @@ These helpers operate on the nested dict/list structures produced by
 
 from __future__ import annotations
 
+import re
+import xml.etree.ElementTree as ET
+
+from defusedxml import ElementTree as SafeET
+
+from ecgdatakit.parsing.helpers.labels import decode_text
+
+_DECL_RE = re.compile(rb"^\s*<\?xml[^>]*?encoding\s*=\s*[\"']([A-Za-z0-9._-]+)[\"'][^>]*\?>")
+
+
+def parse_xml_root(raw: bytes) -> ET.Element:
+    """Parse XML bytes into an element tree with namespaces removed.
+
+    The declared encoding (or a BOM) is honoured. When the bytes do not match
+    the declared encoding, the text is decoded with :func:`decode_text` so no
+    character is lost. Namespace URIs are stripped from tags and attribute
+    names (``{urn:hl7-org:v3}series`` becomes ``series``, ``xsi:type``
+    becomes ``type``). Raises :class:`xml.etree.ElementTree.ParseError` when
+    the document is not well-formed.
+    """
+    try:
+        root = SafeET.fromstring(raw)
+    except ET.ParseError:
+        body = raw[3:] if raw.startswith(b"\xef\xbb\xbf") else raw
+        match = _DECL_RE.match(body)
+        text = decode_text(body, match.group(1).decode("ascii") if match else None)
+        text = re.sub(r"^\s*<\?xml[^>]*\?>", "", text, count=1)
+        root = SafeET.fromstring(text)
+    for el in root.iter():
+        if isinstance(el.tag, str) and "}" in el.tag:
+            el.tag = el.tag.split("}", 1)[1]
+        if any("}" in k for k in el.attrib):
+            el.attrib = {k.split("}", 1)[-1]: v for k, v in el.attrib.items()}
+    return root
+
 
 def find_tag(doc: dict | list | None, tag: str) -> list | dict | str | None:
     """Recursively find all occurrences of *tag* in an xmltodict structure.
