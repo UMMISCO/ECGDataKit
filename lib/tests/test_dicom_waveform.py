@@ -333,3 +333,9 @@ class TestDICOMChannelMetadata:
             record = DICOMWaveformParser().parse(path)
         assert caught[0].filename == __file__
         assert len(record.leads) == 2
+
+
+def test_missing_sampling_frequency_raises(tmp_path: Path):
+    path = _single_group(tmp_path, np.zeros((4, 1), np.int16), sampling_rate="0")
+    with pytest.raises(CorruptedFileError, match="Sampling Frequency"):
+        DICOMWaveformParser().parse(path)

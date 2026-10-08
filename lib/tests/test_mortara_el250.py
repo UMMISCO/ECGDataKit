@@ -233,3 +233,21 @@ class TestMortaraEL250Parser:
     def test_duplicate_labels_made_unique(self, tmp_path: Path):
         xml = MORTARA_XML.replace('NAME="V1"', 'NAME="II"')
         assert [l.label for l in _parse(tmp_path, xml).leads] == ["I", "II", "II_2"]
+
+
+def test_median_rate_not_stated_uses_rhythm_rate(tmp_path: Path):
+    xml = MORTARA_XML.replace(f'DURATION="{MORTARA_MEDIAN_N}" SAMPLE_FREQ="250" ',
+                              f'DURATION="{MORTARA_MEDIAN_N}" ')
+    with pytest.warns(UserWarning, match="no SAMPLE_FREQ"):
+        record = _parse(tmp_path, xml)
+    assert record.median_beats[0].sampling_rate == record.leads[0].sampling_rate
+    assert record.raw_metadata["median_sampling_rate_stated"] is False
+
+
+def test_median_scale_not_stated_stays_raw(tmp_path: Path):
+    xml = MORTARA_XML.replace('UNITS_PER_MV="200" DURATION', 'DURATION')
+    with pytest.warns(UserWarning, match="no UNITS_PER_MV"):
+        record = _parse(tmp_path, xml)
+    beat = record.median_beats[0]
+    assert beat.is_raw and beat.resolution_unit == ""
+    assert record.raw_metadata["median_scale_stated"] is False

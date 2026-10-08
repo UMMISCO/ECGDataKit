@@ -601,6 +601,8 @@ class EDANARCHolterParser(Parser):
         record.raw_metadata["arc_filepath"] = str(arc_path)
         record.raw_metadata["arc_variant"] = "neutral_holter"
         record.raw_metadata["reverse_engineered"] = True
+        # The 250 Hz rate and 3 channels are not read from the file
+        record.raw_metadata["sampling_rate_stated"] = False
         record.raw_metadata["session_uuid"] = session_uuid
         record.raw_metadata["embedded_filename"] = embedded_filename
         record.raw_metadata["index_section_offset"] = int(index_ptr)

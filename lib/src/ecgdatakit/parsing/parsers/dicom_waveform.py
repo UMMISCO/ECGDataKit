@@ -564,6 +564,11 @@ class DICOMWaveformParser(Parser):
             values[codes == padding] = np.nan
 
         rate_exact = _float(wf.get("SamplingFrequency")) or 0.0
+        if rate_exact <= 0:
+            # Sampling Frequency is a required attribute of every multiplex group
+            raise CorruptedFileError(
+                f"DICOM multiplex group {index}: Sampling Frequency is missing or invalid"
+            )
         rate = int(round(rate_exact))
         label = _text(wf.get("MultiplexGroupLabel"))
 

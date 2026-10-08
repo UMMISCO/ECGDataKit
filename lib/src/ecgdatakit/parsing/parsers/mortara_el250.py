@@ -157,7 +157,7 @@ class MortaraEL250Parser(Parser):
         record.leads = leads
 
         cycle = root.find("TYPICAL_CYCLE")
-        record.median_beats = self._read_typical_cycle(cycle, leads, file_path)
+        record.median_beats = self._read_typical_cycle(cycle, leads, file_path, raw)
 
         record.recording = self._read_recording(root, leads)
         record.recording.device = self._read_device(src)
@@ -285,19 +285,34 @@ class MortaraEL250Parser(Parser):
             lead.label = label
         return leads, encodings, offsets
 
-    def _read_typical_cycle(self, cycle, leads: list[Lead], file_path: Path) -> list[Lead]:
+    def _read_typical_cycle(self, cycle, leads: list[Lead], file_path: Path, raw: dict) -> list[Lead]:
         if cycle is None:
             return []
         channels = cycle.findall("TYPICAL_CYCLE_CHANNEL")
         if not channels:
             return []
         self._check_format(cycle.attrib, "TYPICAL_CYCLE")
-        rate = (self._rate(cycle.get("SAMPLE_FREQ"), "TYPICAL_CYCLE", file_path)
-                if cycle.get("SAMPLE_FREQ") else leads[0].sampling_rate)
+        if cycle.get("SAMPLE_FREQ"):
+            rate = self._rate(cycle.get("SAMPLE_FREQ"), "TYPICAL_CYCLE", file_path)
+        else:
+            # Not stated for the median beats: the rhythm rate is used and reported
+            rate = leads[0].sampling_rate
+            raw["median_sampling_rate_stated"] = False
+            warnings.warn(
+                f"Mortara TYPICAL_CYCLE has no SAMPLE_FREQ, the rhythm rate ({rate} Hz) "
+                "is used for the median beats",
+                stacklevel=3,
+            )
         upmv = cycle.get("UNITS_PER_MV")
         if _number(upmv) is None:
-            rhythm = {lead.adc_resolution for lead in leads}
-            upmv = str(rhythm.pop()) if len(rhythm) == 1 and 0.0 not in rhythm else None
+            # Not stated for the median beats: they stay in raw counts with no unit
+            upmv = None
+            raw["median_scale_stated"] = False
+            warnings.warn(
+                "Mortara TYPICAL_CYCLE has no UNITS_PER_MV, the median beats are left "
+                "in raw counts",
+                stacklevel=3,
+            )
         scale = self._scale(upmv)
 
         beats: list[Lead] = []
