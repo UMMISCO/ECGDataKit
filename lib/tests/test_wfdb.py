@@ -89,7 +89,7 @@ class TestWFDBParser:
         record = WFDBParser().parse(wfdb_file)
         d = record.to_dict()
         assert set(d.keys()) == {
-            "source_format", "patient", "recording",
+            "source_format", "file_format", "patient", "recording",
             "leads", "interpretation", "measurements", "median_beats",
             "annotations",
         }

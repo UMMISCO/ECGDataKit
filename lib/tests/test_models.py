@@ -285,7 +285,7 @@ class TestECGRecord:
         record = self._make_record()
         d = record.to_dict()
         assert set(d.keys()) == {
-            "source_format", "patient", "recording",
+            "source_format", "file_format", "patient", "recording",
             "leads", "interpretation", "measurements", "median_beats",
             "annotations",
         }
@@ -316,7 +316,7 @@ class TestECGRecord:
         record = ECGRecord()
         d = record.to_dict()
         assert list(d.keys()) == [
-            "source_format", "patient", "recording",
+            "source_format", "file_format", "patient", "recording",
             "leads", "interpretation", "measurements", "median_beats",
             "annotations",
         ]
@@ -327,6 +327,7 @@ class TestECGRecord:
             "patient_id", "first_name", "last_name", "birth_date",
             "sex", "race", "age", "weight", "height",
             "medications", "clinical_history",
+            "has_pacemaker", "pacemaker_type",
         }
         assert set(d.keys()) == expected
 

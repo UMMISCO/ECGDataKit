@@ -5,7 +5,7 @@ from __future__ import annotations
 import dataclasses
 import json
 from dataclasses import dataclass, field, fields
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
 
 import numpy as np
 from numpy.typing import NDArray
@@ -150,6 +150,10 @@ class PatientInfo:
     """Current medications."""
     clinical_history: str = ""
     """Clinical history notes."""
+    has_pacemaker: bool | None = None
+    """Whether the patient has a pacemaker (``None`` when not recorded)."""
+    pacemaker_type: str = ""
+    """Pacemaker type (e.g. ``"dual chamber bipolar"``)."""
 
     def __repr__(self) -> str:
         return _yaml_repr(self)
@@ -168,6 +172,8 @@ class PatientInfo:
             "height": self.height,
             "medications": list(self.medications),
             "clinical_history": self.clinical_history,
+            "has_pacemaker": self.has_pacemaker,
+            "pacemaker_type": self.pacemaker_type,
         }
 
 
@@ -700,6 +706,26 @@ a 2-D numpy array (n_leads × n_samples), or a list of 1-D numpy arrays."""
 
 
 @dataclass
+class FileFormatInfo:
+    """Source file format details."""
+
+    version: str = ""
+    """Format version declared in the file."""
+    creation_date: date | None = None
+    """Date the file was written."""
+
+    def __repr__(self) -> str:
+        return _yaml_repr(self)
+
+    def to_dict(self) -> dict:
+        """Convert to a JSON-serialisable dictionary."""
+        return {
+            "version": self.version,
+            "creation_date": self.creation_date.isoformat() if self.creation_date else None,
+        }
+
+
+@dataclass
 class ECGRecord:
     """Unified ECG record returned by all parsers.
 
@@ -731,12 +757,19 @@ class ECGRecord:
     """Parser identifier (e.g. ``"hl7_aecg"``, ``"dicom"``)."""
     raw_metadata: dict = field(default_factory=dict)
     """Original format-specific metadata from the source file."""
+    file_format: FileFormatInfo = field(default_factory=FileFormatInfo)
+    """Source file format version and creation date."""
 
     def __repr__(self) -> str:
         lines = ["ECGRecord:"]
 
         if self.source_format:
             lines.append(f"  source_format: {self.source_format}")
+
+        flines = _section_lines(self.file_format)
+        if flines:
+            lines.append("  file_format:")
+            lines.extend(flines)
 
         # Patient section
         plines = _section_lines(self.patient)
@@ -883,6 +916,7 @@ class ECGRecord:
         """
         return {
             "source_format": self.source_format,
+            "file_format": self.file_format.to_dict(),
             "patient": self.patient.to_dict(),
             "recording": self.recording.to_dict(),
             "leads": [lead.to_dict(include_samples=include_samples) for lead in self.leads],

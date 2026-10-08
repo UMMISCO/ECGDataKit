@@ -37,7 +37,7 @@ These formats provide per-lead scaling information — leads are auto-converted 
 | EDF / EDF+ | Physical min/max and digital min/max | per channel |
 | WFDB | Signal gain and baseline | per signal |
 | SCP-ECG | AVM (amplitude value multiplier) | mV |
-| ISHNE Holter | Amplitude resolution in nanovolts | mV |
+| ISHNE Holter | Amplitude resolution in nanovolts | uV |
 | MFER | Resolution tag | per channel |
 | GE MUSE XML | Waveform scale factor | uV |
 

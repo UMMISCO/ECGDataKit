@@ -1,11 +1,12 @@
 """ECGDataKit - Multi-format ECG file parsing and processing library."""
 
-__version__ = "1.0.2"
+__version__ = "1.1.0"
 
 from ecgdatakit.models import (
     AcquisitionSetup,
     DeviceInfo,
     ECGRecord,
+    FileFormatInfo,
     FilterSettings,
     GlobalMeasurements,
     Interpretation,
@@ -30,6 +31,7 @@ __all__ = [
     "AcquisitionSetup",
     "DeviceInfo",
     "ECGRecord",
+    "FileFormatInfo",
     "FilterSettings",
     "GlobalMeasurements",
     "Interpretation",

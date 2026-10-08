@@ -7,7 +7,7 @@ ECGDataKit parses 13 ECG file formats via content-based detection — no file ex
 | HL7 aECG | `.xml` | `HL7aECGParser` | `<AnnotatedECG` in header |
 | Philips Sierra XML | `.xml` | `SierraXMLParser` | `<restingecgdata` in header |
 | GE MUSE XML | `.xml` | `GEMuseXMLParser` | `<RestingECG>` in header |
-| ISHNE Holter | `.ecg`, `.hol` | `ISHNEHolterParser` | `ISHNE1.0` or `ANN  1.0` magic bytes |
+| ISHNE Holter | `.ecg` | `ISHNEHolterParser` | `ISHNE1.0` magic bytes |
 | Mortara EL250 | `.xml` | `MortaraEL250Parser` | `<ECG` + `<CHANNEL` in header |
 | EDF / EDF+ | `.edf` | `EDFParser` | `"0       "` at offset 0 + valid structure |
 | SCP-ECG | `.scp` | `SCPECGParser` | Valid Section 0 pointer table at offset 6 |
@@ -40,7 +40,7 @@ XML export format from GE Healthcare's MUSE ECG management system. Contains base
 
 A binary format defined by the International Society for Holter and Noninvasive Electrocardiology. Designed for long-duration Holter recordings. Contains a fixed-length header with patient info and signal metadata, followed by raw sample data.
 
-**Dependencies:** Optional `PyCRC` for CRC-16 checksum validation.
+**Dependencies:** `crccheck` for CRC-16 checksum validation.
 
 ```bash
 pip install "ecgdatakit[holter]"
