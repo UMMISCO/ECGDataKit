@@ -392,3 +392,15 @@ class TestMFERDetection:
             assert MFERParser.can_parse(tmp_path / "x.scp", bytes([crc_low]) + scp[1:4096]) is False
         path = _write(tmp_path, bytes([0x07]) + scp[1:], "x.scp")
         assert FileParser().parse(path, auto_scale=False).source_format != "mfer"
+
+
+def test_missing_interval_uses_mfer_default(tmp_path: Path):
+    with pytest.warns(UserWarning, match="MFER default of 1000 Hz"):
+        record = _parse(
+            tmp_path,
+            mfer_tlv(0x04, b"\x02"),
+            mfer_tlv(0x05, b"\x01"),
+            mfer_tlv(0x1E, np.array([5, 6], ">i2").tobytes()),
+        )
+    assert record.leads[0].sampling_rate == 1000
+    assert record.raw_metadata["sampling_rate_stated"] is False

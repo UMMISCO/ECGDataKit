@@ -432,3 +432,21 @@ class TestWFDBMetadata:
         assert WFDBParser.can_parse(dat, dat.read_bytes()[:4096]) is True
         record = FileParser().parse(dat, auto_scale=True)
         assert [l.label for l in record.leads] == ["I", "II"]
+
+
+def test_missing_frequency_uses_wfdb_default(tmp_path: Path):
+    hea = _write(tmp_path, "nofs", ["nofs 1", "nofs.dat 16 200 16 0 0 3 0 s"],
+                 {"nofs.dat": np.array([1, 2], "<i2").tobytes()})
+    with pytest.warns(UserWarning, match="WFDB default of 250 Hz"):
+        record = WFDBParser().parse(hea)
+    assert record.leads[0].sampling_rate == 250
+    assert record.raw_metadata["sampling_frequency_stated"] is False
+
+
+def test_fractional_frequency_kept_exact(tmp_path: Path):
+    hea = _write(tmp_path, "frac", ["frac 1 128.5", "frac.dat 16 200 16 0 0 3 0 s"],
+                 {"frac.dat": np.array([1, 2], "<i2").tobytes()})
+    record = WFDBParser().parse(hea)
+    assert record.leads[0].sampling_rate == 128  # the model field is an int
+    assert record.raw_metadata["sampling_frequency"] == 128.5
+    assert record.raw_metadata["sampling_frequency_stated"] is True

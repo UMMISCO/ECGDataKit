@@ -88,6 +88,7 @@ class _Header:
     record_name: str
     num_signals: int
     sampling_rate: float = 250.0
+    sampling_rate_stated: bool = False
     counter_frequency: float | None = None
     base_counter: float | None = None
     num_samples: int = 0
@@ -157,6 +158,8 @@ def _parse_record_line(line: str) -> _Header:
             header.base_counter = _parse_float(m.group(3), "base counter")
         if header.sampling_rate <= 0:
             header.sampling_rate = 250.0
+        else:
+            header.sampling_rate_stated = True
     if len(rest) > 1:
         header.num_samples = _parse_int(rest[1], "number of samples")
         if header.num_samples < 0:
@@ -572,6 +575,12 @@ class WFDBParser(Parser):
                 f"WFDB checksum mismatch for signals {self._bad_checksums}",
                 ChecksumWarning,
             ))
+        if not header.sampling_rate_stated:
+            # 250 Hz is the WFDB default when the header gives no frequency
+            self._warnings.append((
+                "WFDB header has no sampling frequency, using the WFDB default of 250 Hz",
+                UserWarning,
+            ))
         self._invalid_samples = invalid
         return leads
 
@@ -629,6 +638,7 @@ class WFDBParser(Parser):
         raw["filepath"] = str(self._path)
         raw["record_name"] = header.record_name
         raw["sampling_frequency"] = fs
+        raw["sampling_frequency_stated"] = header.sampling_rate_stated
         if header.counter_frequency is not None:
             raw["counter_frequency"] = header.counter_frequency
         if header.base_counter is not None:

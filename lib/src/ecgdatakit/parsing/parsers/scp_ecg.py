@@ -881,6 +881,7 @@ class SCPECGParser(Parser):
             for label, beat in zip(self._labels(ctx), beats)
         ]
         record.raw_metadata["median_encoding"] = ("amplitudes", "first_difference", "second_difference")[diff]
+        record.raw_metadata["median_sample_interval_us"] = interval
         return {"avm": avm, "interval": interval, "beats": beats}
 
     def _parse_section6(self, ctx: _Context, record: ECGRecord, median: dict | None) -> None:
@@ -932,6 +933,7 @@ class SCPECGParser(Parser):
         else:
             record.raw_metadata["simultaneous_leads"] = (ctx.lead_flags >> 3) & 0x1F
         record.raw_metadata["rhythm_avm_nv"] = avm
+        record.raw_metadata["rhythm_sample_interval_us"] = interval
 
     def _add_reference_beats(
         self, ctx: _Context, residuals: list[np.ndarray], avm: int,

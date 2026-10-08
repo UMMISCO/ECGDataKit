@@ -588,3 +588,9 @@ class TestIntegrity:
 
     def test_huffman_encoder_matches_default_table(self):
         assert scp_huffman_encode([0, 1, -1]) == bytes([0b01001010])
+
+
+def test_sample_interval_kept(tmp_path: Path):
+    record = _parse(tmp_path, create_scp_ecg_binary())
+    interval = record.raw_metadata["rhythm_sample_interval_us"]
+    assert record.leads[0].sampling_rate == round(1_000_000 / interval)

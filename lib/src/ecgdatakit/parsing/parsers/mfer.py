@@ -786,6 +786,12 @@ class MFERParser(Parser):
                 self._meta.setdefault("status_channels", {})[label] = samples
                 continue
 
+            if defs.get("ivl") is None:
+                # 1000 Hz is the MFER default when MWF_IVL is absent
+                self._meta["sampling_rate_stated"] = False
+                msg = "MFER: no sampling interval (MWF_IVL), using the MFER default of 1000 Hz"
+                if msg not in self._warnings:
+                    self._warnings.append(msg)
             rate = self._sampling_rate(defs.get("ivl"))
             resolution, unit, adc, adc_unit = self._scale(defs.get("sen"))
             offset_counts = self._typed_value(defs["off"], dtype) if "off" in defs else 0.0
