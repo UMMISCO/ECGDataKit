@@ -53,6 +53,10 @@ class TestFileParserDiscovery:
         names = [p.__name__ for p in FileParser().parsers]
         assert len(names) == len(set(names))
 
+    def test_record_names_format_and_parser(self, mortara_file: Path):
+        info = FileParser().parse(mortara_file).file_format
+        assert (info.name, info.parser) == ("Mortara ELI (EL250/ELI280)", "MortaraEL250Parser")
+
     def test_all_discovered_are_parser_subclasses(self):
         fp = FileParser()
         for p in fp.parsers:

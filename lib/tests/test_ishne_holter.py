@@ -283,10 +283,12 @@ class TestISHNEHolterLeadLabels:
 
 class TestISHNEHolterHeaderFields:
     def test_file_format(self, ishne_file: Path):
-        record = ISHNEHolterParser().parse(ishne_file)
+        record = FileParser().parse(ishne_file)
         assert record.file_format.version == "1"
         assert record.file_format.creation_date == date(2023, 12, 1)
-        assert record.to_dict()["file_format"] == {"version": "1", "creation_date": "2023-12-01"}
+        assert record.to_dict()["file_format"] == {
+            "name": "ISHNE Holter", "parser": "ISHNEHolterParser",
+            "version": "1", "creation_date": "2023-12-01"}
 
     def test_race(self, tmp_path: Path):
         record, _ = _parse(_build(tmp_path, at={130: ("<h", 3)}))

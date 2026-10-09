@@ -790,6 +790,12 @@ a 2-D numpy array (n_leads × n_samples), or a list of 1-D numpy arrays."""
 class FileFormatInfo:
     """Source file format details."""
 
+    name: str = ""
+    """Name of the detected format (e.g. ``"ISHNE Holter"``). Set by
+    :class:`~ecgdatakit.parsing.parser.FileParser`."""
+    parser: str = ""
+    """Parser class that read the file (e.g. ``"ISHNEHolterParser"``). Set by
+    :class:`~ecgdatakit.parsing.parser.FileParser`."""
     version: str = ""
     """Format version declared in the file."""
     creation_date: date | None = None
@@ -801,6 +807,8 @@ class FileFormatInfo:
     def to_dict(self) -> dict:
         """Convert to a JSON-serialisable dictionary."""
         return {
+            "name": self.name,
+            "parser": self.parser,
             "version": self.version,
             "creation_date": self.creation_date.isoformat() if self.creation_date else None,
         }

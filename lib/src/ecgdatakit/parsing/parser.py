@@ -200,7 +200,7 @@ class FileParser:
     def _run_parser(parser_cls: type[Parser], path: Path) -> ECGRecord:
         """Run *parser_cls* and report decoding failures as CorruptedFileError."""
         try:
-            return parser_cls().parse(path)
+            record = parser_cls().parse(path)
         except (ECGDataKitError, OSError, ImportError):
             # ImportError: a missing optional dependency, not a corrupt file
             raise
@@ -209,6 +209,9 @@ class FileParser:
                 f"{parser_cls.FORMAT_NAME or parser_cls.__name__}: "
                 f"cannot decode {path.name}: {type(e).__name__}: {e}"
             ) from e
+        record.file_format.name = parser_cls.FORMAT_NAME or parser_cls.__name__
+        record.file_format.parser = parser_cls.__name__
+        return record
 
     @staticmethod
     def _auto_scale(record: ECGRecord, target: str = "mV") -> ECGRecord:
