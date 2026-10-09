@@ -15,6 +15,7 @@ hide-toc: true
 
 guides/getting-started
 guides/formats
+guides/whats-new
 ```
 
 ```{toctree}

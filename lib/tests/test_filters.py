@@ -102,3 +102,89 @@ class TestPresets:
         lead = make_lead([10], fs=500, duration=2.0)
         result = monitoring_filter(lead)
         assert len(result.samples) == len(lead.samples)
+
+
+class TestFilterValidation:
+    def test_matches_scipy_reference(self):
+        from scipy import signal as ss
+        x = np.random.default_rng(0).standard_normal(2000)
+        sos = ss.butter(4, [0.5, 40], btype="band", fs=500, output="sos")
+        np.testing.assert_allclose(bandpass(x, 0.5, 40, fs=500).samples, ss.sosfiltfilt(sos, x))
+
+    @pytest.mark.parametrize("order", [0, -1, 2.5])
+    def test_bad_order(self, order):
+        with pytest.raises(ValueError, match="order"):
+            lowpass(make_lead([5]), 40, order=order)
+
+    def test_nan_cutoff(self):
+        with pytest.raises(ValueError, match="finite"):
+            lowpass(make_lead([5]), float("nan"))
+
+    def test_bad_quality(self):
+        with pytest.raises(ValueError, match="quality"):
+            notch(make_lead([5]), quality=0)
+
+    def test_zero_sampling_rate(self):
+        with pytest.raises(ValueError, match="sampling rate"):
+            lowpass(np.zeros(100), 40, fs=0)
+
+    def test_too_short(self):
+        with pytest.raises(ValueError, match="too short"):
+            bandpass(np.zeros(10), 0.5, 40, fs=500)
+
+    def test_nan_refused(self):
+        lead = make_lead([5])
+        lead.samples[10] = np.nan
+        with pytest.raises(ValueError, match="NaN"):
+            bandpass(lead, 0.5, 40)
+
+    def test_2d_refused(self):
+        with pytest.raises(ValueError, match="1-D"):
+            lowpass(np.zeros((12, 500)), 40, fs=500)
+
+    def test_raw_offset_not_reintroduced(self):
+        t = np.arange(2000) / 500
+        lead = Lead(label="II", samples=np.sin(2 * np.pi * 5 * t) * 100, sampling_rate=500,
+                    resolution=0.01, resolution_unit="mV", offset=5.0, is_raw=True)
+        via_raw = highpass(lead, 0.5).to_physical().samples
+        via_phys = highpass(lead.to_physical(), 0.5).samples
+        np.testing.assert_allclose(via_raw, via_phys, atol=1e-9)
+
+
+class TestPresetsLowRate:
+    def test_diagnostic_at_180hz_lowers_cutoff(self):
+        lead = make_lead([5, 70], fs=180, duration=10.0)
+        with pytest.warns(UserWarning, match="81 Hz"):
+            result = diagnostic_filter(lead)
+        assert len(result.samples) == len(lead.samples)
+
+    def test_notch_skipped_at_nyquist(self):
+        lead = make_lead([5], fs=100, duration=10.0)
+        with pytest.warns(UserWarning, match="notch at 50.0 Hz skipped"):
+            monitoring_filter(lead)
+
+    def test_notch_none(self):
+        lead = make_lead([5, 50], fs=500, duration=4.0)
+        result = diagnostic_filter(lead, notch_freq=None)
+        # 50 Hz component kept without a notch
+        assert np.abs(result.samples[500:-500]).max() > 1.5
+
+
+class TestWarningLocation:
+    def test_preset_warnings_point_at_caller(self):
+        lead = make_lead([5], fs=100, duration=10.0)
+        with pytest.warns(UserWarning) as record:
+            diagnostic_filter(lead)
+        assert len(record) == 2
+        assert {w.filename for w in record} == {__file__}
+
+    def test_scipy_install_hint_is_quoted(self, monkeypatch):
+        import importlib
+        from ecgdatakit.processing import _core
+
+        def fail(name):
+            raise ImportError("no scipy")
+
+        monkeypatch.setattr(importlib, "import_module", fail)
+        with pytest.raises(ImportError, match=r'pip install "ecgdatakit\[processing\]"'):
+            _core.require_scipy("signal")

@@ -172,7 +172,9 @@ class TestMuseVariants:
         assert interp.interpretation_date == datetime(2023, 12, 2, 9, 15)
         assert interp.statements[0] == ("Normal sinus rhythm", "")
         assert record.annotations["machine_interpretation"] == "Sinus bradycardia"
-        assert record.file_format.creation_date.isoformat() == "2023-12-02"
+        # EditDate is the last edit, not the file creation date
+        assert record.file_format.creation_date is None
+        assert record.raw_metadata["EditDate"] == "12-02-2023"
 
     def test_statement_fragments_joined_until_endsline(self, tmp_path: Path):
         xml = GE_MUSE_XML.replace(
@@ -276,6 +278,53 @@ class TestMuseVariants:
         labels = [lead.label for lead in _parse(tmp_path, xml).leads]
         assert labels == ["I", "V1", "V1_2"]
 
+    def test_edited_unconfirmed_statements_are_overread(self, tmp_path: Path):
+        xml = GE_MUSE_XML.replace(
+            "  <QRSTimesTypes>",
+            "  <OriginalDiagnosis><DiagnosisStatement><StmtText>Atrial fibrillation</StmtText>"
+            "</DiagnosisStatement></OriginalDiagnosis>\n  <QRSTimesTypes>",
+        )
+        record = _parse(tmp_path, xml)
+        assert record.interpretation.source == "overread"
+        assert record.interpretation.statements[0] == ("Normal sinus rhythm", "")
+        assert record.annotations["machine_interpretation"] == "Atrial fibrillation"
+        assert "original_diagnosis" not in record.annotations
+
+    def test_missing_amplitude_unit_is_not_assumed(self, tmp_path: Path):
+        xml = GE_MUSE_XML.replace("<LeadAmplitudeUnits>MICROVOLTS</LeadAmplitudeUnits>", "")
+        with pytest.warns(UserWarning, match="LeadAmplitudeUnits missing"):
+            record = _parse(tmp_path, xml)
+        lead = record.leads[0]
+        assert lead.resolution == 4.88
+        assert lead.resolution_unit == ""
+        assert lead.is_raw is True
+        assert record.raw_metadata["amplitude_unit_stated"] is False
+
+    def test_first_sample_baseline_reported_not_applied(self, tmp_path: Path):
+        xml = GE_MUSE_XML.replace(
+            "<FirstSampleBaseline>0</FirstSampleBaseline>", "<FirstSampleBaseline>100</FirstSampleBaseline>")
+        with pytest.warns(UserWarning, match="FirstSampleBaseline is non-zero"):
+            record = _parse(tmp_path, xml)
+        np.testing.assert_array_equal(record.leads[0].samples, MUSE_RHYTHM_I)
+        assert record.leads[0].offset == 0.0
+        assert record.raw_metadata["FirstSampleBaseline"]["I (rhythm)"] == "100"
+
+    def test_lead_offset_first_sample_warns(self, tmp_path: Path):
+        xml = GE_MUSE_XML.replace(
+            "<LeadOffsetFirstSample>0</LeadOffsetFirstSample>", "<LeadOffsetFirstSample>250</LeadOffsetFirstSample>")
+        with pytest.warns(UserWarning, match="LeadOffsetFirstSample is non-zero"):
+            record = _parse(tmp_path, xml)
+        assert record.raw_metadata["LeadOffsetFirstSample"]["I (rhythm)"] == "250"
+
+    @pytest.mark.parametrize("units", ["<AgeUnits>DECADES</AgeUnits>", ""])
+    def test_age_in_unknown_unit_kept_and_dob_not_used(self, tmp_path: Path, units: str):
+        xml = GE_MUSE_XML.replace(
+            "<PatientAge>38</PatientAge>\n    <AgeUnits>YEARS</AgeUnits>",
+            f"<PatientAge>7</PatientAge>\n    {units}")
+        record = _parse(tmp_path, xml)
+        assert record.patient.age is None
+        assert record.raw_metadata["age"] == {"value": "7", "units": units[10:-11]}
+
 
 class TestMuseCorruption:
     def test_invalid_base64(self, tmp_path: Path):
@@ -316,3 +365,20 @@ class TestMuseCorruption:
         xml = GE_MUSE_XML[:GE_MUSE_XML.index("  <Waveform>\n    <WaveformType>Rhythm")] + "</RestingECG>\n"
         with pytest.raises(CorruptedFileError, match="No rhythm"):
             _parse(tmp_path, xml)
+
+
+def test_entity_declarations_refused(tmp_path: Path):
+    xml = GE_MUSE_XML.replace("<RestingECG>", '<!DOCTYPE RestingECG [<!ENTITY e "x">]>\n<RestingECG>', 1)
+    with pytest.raises(CorruptedFileError, match="entity"):
+        _parse(tmp_path, xml)
+
+
+def test_utf16_file_detected_and_parsed(tmp_path: Path):
+    p = tmp_path / "utf16.xml"
+    p.write_bytes(GE_MUSE_XML.replace('encoding="ISO-8859-1"', 'encoding="UTF-16"').encode("utf-16"))
+    assert GEMuseXMLParser.can_parse(p, p.read_bytes()[:4096]) is True
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        record = FileParser().parse(p)
+    assert record.source_format == "ge_muse_xml"
+    assert record.patient.last_name == "Smith"

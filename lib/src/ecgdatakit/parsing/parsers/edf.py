@@ -196,6 +196,9 @@ class EDFParser(Parser):
     def can_parse(file_path: Path, header: bytes) -> bool:
         if len(header) < 256:
             return False
+        if header[:8] == b"\xffBIOSEMI":
+            # Claimed so the user gets "BDF not supported", not "unknown format"
+            return True
         if header[:8] != b"0       ":
             return False
         try:
@@ -310,6 +313,13 @@ class EDFParser(Parser):
                 f"only {available} are complete; reading those"
             )
             num_records = available
+        if num_records == 0:
+            raise CorruptedFileError("EDF file has no data records")
+        extra = len(raw) - expected_header - num_records * 2 * record_samples
+        if extra > 0:
+            self._warnings.append(
+                f"EDF file has {extra} byte(s) after the last data record read; ignored"
+            )
         data = np.frombuffer(
             raw, dtype="<i2", count=num_records * record_samples, offset=expected_header,
         ).reshape(num_records, record_samples)
@@ -385,6 +395,13 @@ class EDFParser(Parser):
                 record.raw_metadata["patient_additional"] = extra_patient
         else:
             record.patient = PatientInfo(patient_id=_clean_str(patient_id_str))
+            if record.patient.patient_id:
+                # Plain EDF has no subfields; writers often put the name and
+                # birth date here too, so the ID may identify the patient
+                record.raw_metadata["patient_id_note"] = (
+                    "plain EDF patient field kept whole as patient_id; it is "
+                    "free text and may contain the name and birth date"
+                )
 
         # Annotations and record start times (EDF+)
         record_onsets: list[float] = []

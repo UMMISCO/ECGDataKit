@@ -6,6 +6,7 @@ from pathlib import Path
 
 import pytest
 
+from ecgdatakit.exceptions import UnsupportedFormatError
 from ecgdatakit.parsing.parser import FileParser, Parser
 from ecgdatakit.parsing.parsers.hl7_aecg import HL7aECGParser
 from ecgdatakit.parsing.parsers.sierra_xml import SierraXMLParser
@@ -16,8 +17,6 @@ from ecgdatakit.parsing.parsers.scp_ecg import SCPECGParser
 from ecgdatakit.parsing.parsers.ge_muse_xml import GEMuseXMLParser
 from ecgdatakit.parsing.parsers.wfdb import WFDBParser
 from ecgdatakit.parsing.parsers.mfer import MFERParser
-from ecgdatakit.parsing.parsers.beneheart_r12 import BeneHeartR12Parser
-from ecgdatakit.parsing.parsers.ge_mac2000 import GEMAC2000Parser
 
 
 class TestParserABC:
@@ -39,14 +38,19 @@ class TestFileParserDiscovery:
         assert "GEMuseXMLParser" in names
         assert "WFDBParser" in names
         assert "MFERParser" in names
-        assert "BeneHeartR12Parser" in names
-        assert "GEMAC2000Parser" in names
+        assert "DICOMWaveformParser" in names
+        assert "EDANARCHolterParser" in names
+        # Removed from the release: no public spec and no real sample
+        assert "BeneHeartR12Parser" not in names
+        assert "GEMAC2000Parser" not in names
 
     def test_discovers_correct_count(self):
-        fp = FileParser()
-        # 4 original + 8 new = 12 parsers total
-        # (DICOM parser is also discovered even without pydicom installed)
-        assert len(fp.parsers) >= 11
+        # 11 parsers (DICOM is discovered even without pydicom installed)
+        assert len(FileParser().parsers) == 11
+
+    def test_discovers_each_parser_once(self):
+        names = [p.__name__ for p in FileParser().parsers]
+        assert len(names) == len(set(names))
 
     def test_all_discovered_are_parser_subclasses(self):
         fp = FileParser()
@@ -63,6 +67,8 @@ class TestFileParserDiscovery:
         unknown.write_text("not an ecg file")
         fp = FileParser()
         with pytest.raises(ValueError, match="No parser found"):
+            fp.parse(unknown)
+        with pytest.raises(UnsupportedFormatError):
             fp.parse(unknown)
 
 
@@ -161,44 +167,13 @@ class TestCanParse:
         header = hl7_aecg_file.read_bytes()[:4096]
         assert MFERParser.can_parse(hl7_aecg_file, header) is False
 
-    # --- BeneHeart R12 ---
-
-    def test_beneheart_detects_xml(self, beneheart_r12_file: Path):
-        header = beneheart_r12_file.read_bytes()[:4096]
-        assert BeneHeartR12Parser.can_parse(beneheart_r12_file, header) is True
-
-    def test_beneheart_rejects_hl7(self, hl7_aecg_file: Path):
-        header = hl7_aecg_file.read_bytes()[:4096]
-        assert BeneHeartR12Parser.can_parse(hl7_aecg_file, header) is False
-
-    # --- GE MAC 2000 ---
-
-    def test_ge_mac2000_detects_xml(self, ge_mac2000_file: Path):
-        header = ge_mac2000_file.read_bytes()[:4096]
-        assert GEMAC2000Parser.can_parse(ge_mac2000_file, header) is True
-
-    def test_ge_mac2000_rejects_muse(self, ge_muse_xml_file: Path):
-        header = ge_muse_xml_file.read_bytes()[:4096]
-        assert GEMAC2000Parser.can_parse(ge_muse_xml_file, header) is False
-
-    def test_ge_mac2000_rejects_hl7(self, hl7_aecg_file: Path):
-        header = hl7_aecg_file.read_bytes()[:4096]
-        assert GEMAC2000Parser.can_parse(hl7_aecg_file, header) is False
-
-
 class TestCrossDetection:
     """Verify that each fixture file is only claimed by its correct parser."""
 
-    ALL_PARSERS = [
-        HL7aECGParser, SierraXMLParser, ISHNEHolterParser, MortaraEL250Parser,
-        EDFParser, SCPECGParser, GEMuseXMLParser,
-        WFDBParser, MFERParser, BeneHeartR12Parser, GEMAC2000Parser,
-    ]
-
     def _matching_parsers(self, file_path: Path) -> list[str]:
-        header = file_path.read_bytes()[:4096]
+        header = file_path.read_bytes()[:4096] if file_path.is_file() else b""
         return [
-            p.__name__ for p in self.ALL_PARSERS
+            p.__name__ for p in FileParser().parsers
             if p.can_parse(file_path, header)
         ]
 
@@ -234,10 +209,21 @@ class TestCrossDetection:
         matches = self._matching_parsers(mfer_file)
         assert matches == ["MFERParser"]
 
-    def test_beneheart_exclusive(self, beneheart_r12_file: Path):
-        matches = self._matching_parsers(beneheart_r12_file)
-        assert matches == ["BeneHeartR12Parser"]
+    def test_dicom_exclusive(self, dicom_file: Path):
+        assert self._matching_parsers(dicom_file) == ["DICOMWaveformParser"]
 
-    def test_ge_mac2000_exclusive(self, ge_mac2000_file: Path):
-        matches = self._matching_parsers(ge_mac2000_file)
-        assert matches == ["GEMAC2000Parser"]
+    def test_edan_files_and_directory_exclusive(self, edan_arc_dir: Path):
+        for path in (edan_arc_dir, edan_arc_dir.parent / "ecgraw.dat", edan_arc_dir.parent):
+            assert self._matching_parsers(path) == ["EDANARCHolterParser"]
+
+    def test_edan_archives_exclusive(self, edan_arc_archive: Path, neutral_holter_arc_file: Path):
+        assert self._matching_parsers(edan_arc_archive) == ["EDANARCHolterParser"]
+        assert self._matching_parsers(neutral_holter_arc_file) == ["EDANARCHolterParser"]
+
+    def test_wfdb_dat_exclusive(self, wfdb_file: Path):
+        assert self._matching_parsers(wfdb_file.with_suffix(".dat")) == ["WFDBParser"]
+
+    def test_bdf_claimed_by_edf_parser(self, tmp_path: Path):
+        p = tmp_path / "x.bdf"
+        p.write_bytes(b"\xffBIOSEMI" + b" " * 248)
+        assert self._matching_parsers(p) == ["EDFParser"]

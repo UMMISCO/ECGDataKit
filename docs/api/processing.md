@@ -2,12 +2,12 @@
 
 Import: `from ecgdatakit.processing import ...`
 
-Requires: `pip install ecgdatakit[processing]` (scipy ≥ 1.10)
+Requires: `pip install "ecgdatakit[processing]"` (scipy ≥ 1.10)
 
 All filter and transform functions accept a {class}`~ecgdatakit.models.Lead` and return a **new** {class}`~ecgdatakit.models.Lead` (immutable pattern via `dataclasses.replace`). The original lead is never modified.
 
 ```{note}
-All processing functions accept both `Lead` objects and raw numpy arrays. When passing a numpy array, provide the sample rate via `fs`:
+All processing functions accept a `Lead` or a 1-D numpy array (one lead). Normalization also accepts 2-D/3-D arrays, `ECGRecord` and lists. When passing a numpy array, provide the sample rate via `fs`:
 
     filtered = diagnostic_filter(my_array, fs=500)
 
@@ -34,7 +34,7 @@ See {doc}`models` for details.
 
 ## {doc}`Normalization <processing/normalization>`
 
-All normalization functions accept a single lead **or** a `list[Lead]` for per-lead normalization.
+All normalization functions accept a `Lead`, `list[Lead]`, `ECGRecord`, `list[ECGRecord]` or a 1-D/2-D/3-D numpy array. Min-max and z-score outputs are dimensionless (no unit).
 
 | | |
 |---|---|
@@ -64,7 +64,7 @@ All normalization functions accept a single lead **or** a `list[Lead]` for per-l
 | | |
 |---|---|
 | {func}`~ecgdatakit.processing.power_spectrum` | Compute the power spectral density of an ECG lead |
-| {func}`~ecgdatakit.processing.fft` | Compute the single-sided FFT magnitude spectrum |
+| {func}`~ecgdatakit.processing.fft` | Compute the single-sided FFT amplitude spectrum |
 | {func}`~ecgdatakit.processing.segment_beats` | Segment individual heartbeats around R-peaks |
 | {func}`~ecgdatakit.processing.average_beat` | Compute the ensemble-averaged heartbeat (template) |
 

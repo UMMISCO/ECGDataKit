@@ -5,8 +5,12 @@ class ECGDataKitError(Exception):
     """Base exception for all ecgdatakit errors."""
 
 
-class UnsupportedFormatError(ECGDataKitError):
-    """File format is not recognized or not supported."""
+class UnsupportedFormatError(ECGDataKitError, ValueError):
+    """File format is not recognized or not supported.
+
+    Also a :class:`ValueError`, which :meth:`FileParser.parse` raised for
+    unknown files before this exception existed.
+    """
 
 
 class CorruptedFileError(ECGDataKitError):

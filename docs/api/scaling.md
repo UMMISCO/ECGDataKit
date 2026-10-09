@@ -11,13 +11,14 @@ The conversion from raw ADC to physical units uses:
 \text{physical} = \text{samples} \times \text{resolution} + \text{offset}
 ```
 
-Each {class}`~ecgdatakit.models.Lead` stores four scaling-related fields:
+Each {class}`~ecgdatakit.models.Lead` stores these scaling-related fields:
 
 | Field | Type | Default | Description |
 |-------|------|---------|-------------|
-| `resolution` | `float` | `1.0` | Multiplier — the ADC-to-physical scale factor |
+| `resolution` | `float` | `1.0` | Multiplier, the ADC-to-physical scale factor |
+| `resolution_unit` | `str` | `""` | Unit of `resolution`, the unit samples are in after `to_physical()` |
 | `offset` | `float` | `0.0` | Additive constant applied after scaling |
-| `units` | `str` | `""` | Target physical unit, e.g. `"uV"`, `"mV"` |
+| `units` | `str` | `""` | Current unit of `samples`; empty while they are raw counts |
 | `is_raw` | `bool` | `True` | `True` if samples are raw ADC, `False` after conversion |
 
 ```{tip}
@@ -39,21 +40,23 @@ These formats provide per-lead scaling information — leads are auto-converted 
 | SCP-ECG | AVM (amplitude value multiplier, nV) | uV |
 | ISHNE Holter | Amplitude resolution in nanovolts | uV |
 | MFER | `MWF_SEN` (unit and exponent) and `MWF_OFF` | uV |
-| GE MUSE XML | `LeadAmplitudeUnitsPerBit` and `LeadAmplitudeUnits` | per lead |
-| GE MAC 2000 | `LeadAmplitudeUnitsPerBit` when present | per lead |
+| GE MUSE XML | `LeadAmplitudeUnitsPerBit` and `LeadAmplitudeUnits` (a lead without `LeadAmplitudeUnits` stays raw, with a warning) | per lead |
 | Mortara ELI | `UNITS_PER_MV` per channel | uV |
 | Philips Sierra XML | `resolution` attribute | uV |
-| BeneHeart R12 | `Resolution` when present in the file | per lead |
 
 ### Formats without scaling metadata
 
 When a file does not state its scale, samples stay raw ADC integers with
 `resolution=1.0`, `offset=0.0`, `resolution_unit=""` and `units=""`, and
 `auto_scale=True` leaves them unchanged with a warning. This applies to EDAN
-ARC Holter files (the count to voltage factor is not documented), and to
-BeneHeart R12 or GE MAC 2000 exports that omit a resolution.
+ARC Holter files (the count to voltage factor is not documented) and to any
+file whose leads omit their scale.
 
 ## Manual conversion
+
+`Lead.to_physical()` raises `RawSamplesError` when the file gives no physical unit. `ECGRecord.to_physical()` leaves those leads raw with a warning.
+
+`to_dict()` and `to_json()` produce strict JSON (NaN and infinity become `null`). For long recordings use `record.to_json(fp=open(path, "w"))`, which streams with flat memory: building the string for a 24 h 12-lead Holter needs about 12 GB.
 
 ### Record-level
 

@@ -22,7 +22,7 @@ jobs:
           python-version: ${{ matrix.python-version }}
 
       - name: Install dependencies
-        run: pip install -e "./lib[all,dev,holter,dicom]"
+        run: pip install -e "./lib[all,dev]"
 
       - name: Run tests
         run: pytest lib/tests/ -v

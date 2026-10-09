@@ -350,7 +350,6 @@ def _reference_record(subtract: bool, median_avm: int = 2000):
     residuals = []
     for lead in range(2):
         base = scp_test_signal(lead, n)
-        residual = base.copy()
         full = base.copy()
         for fc in fiducials:
             start = fc - ref_fiducial  # 0-based index of template sample 0
@@ -594,3 +593,77 @@ def test_sample_interval_kept(tmp_path: Path):
     record = _parse(tmp_path, create_scp_ecg_binary())
     interval = record.raw_metadata["rhythm_sample_interval_us"]
     assert record.leads[0].sampling_rate == round(1_000_000 / interval)
+
+
+# ---------------------------------------------------------------------------
+# Language support code (Section 1 tag 14 byte 17, EN 1064:2005+A1 table as
+# implemented by BioSig decode_scp_text), SCP-ECG v3 and edge cases
+# ---------------------------------------------------------------------------
+
+
+def _tag14(language: int) -> bytes:
+    """Acquiring device ID: 36 fixed bytes then five NUL-terminated strings."""
+    value = bytearray(36)
+    value[14] = 20  # protocol revision 2.0
+    value[16] = language
+    return scp_tag(14, bytes(value) + b"\x00" * 5)
+
+
+class TestTextEncodings:
+    @pytest.mark.parametrize("language,raw,expected", [
+        (0x37, "Müller-Łukasz".encode("utf-8"), "Müller-Łukasz"),
+        (0x03, "Łódź".encode("iso8859_2"), "Łódź"),
+        (0x07, "Ab".encode("utf-16-le") + b"\x00\x00", "Ab"),
+        (0x07, "Łó".encode("utf-16"), "Łó"),  # with a byte order mark
+        (0x0F, "ｱｲｳ".encode("shift_jis"), "ｱｲｳ"),  # JIS X0201 half-width katakana
+    ])
+    def test_language_codes(self, tmp_path: Path, language: int, raw: bytes, expected: str):
+        sec1 = _section1(_tag14(language), scp_tag(0, raw + b"\x00\x00"))
+        assert _parse(tmp_path, create_scp_ecg_binary(section1=sec1)).patient.last_name == expected
+
+    def test_wide_statements(self, tmp_path: Path):
+        text = "SR".encode("utf-16-le") + b"\x00\x00" + "Normal".encode("utf-16-le") + b"\x00\x00"
+        sec8 = bytes([0]) + struct.pack("<HBB", 2024, 3, 10) + bytes([9, 15, 0, 1])
+        sec8 += bytes([1]) + struct.pack("<H", len(text)) + text
+        data = create_scp_ecg_binary(section1=_section1(_tag14(0x07)), sections={8: sec8})
+        assert _parse(tmp_path, data).interpretation.statements == [("SR Normal", "")]
+
+
+class TestEdgeCases:
+    def test_time_without_date_is_kept_raw(self, tmp_path: Path):
+        sec1 = _section1(scp_tag(26, bytes([10, 20, 30])))
+        record = _parse(tmp_path, create_scp_ecg_binary(section1=sec1))
+        assert record.recording.date is None
+        assert record.raw_metadata["acquisition_time"] == "10:20:30"
+
+    def test_long_term_section12_is_unsupported(self, tmp_path: Path):
+        data = bytearray(create_scp_ecg_binary(protocol=30, sections={12: bytes(80)}))
+        sec0_len = struct.unpack_from("<I", data, 10)[0]
+        for pos in range(22, 6 + sec0_len, 10):
+            if struct.unpack_from("<H", data, pos)[0] == 6:
+                struct.pack_into("<II", data, pos + 2, 0, 0)  # no Section 6
+        with pytest.raises(UnsupportedFormatError, match="Section 12"):
+            SCPECGParser().parse(_write(tmp_path, _fix_crcs(data)))
+
+    def test_section12_next_to_section6_is_not_a_vendor_section(self, tmp_path: Path):
+        data = create_scp_ecg_binary(protocol=30, sections={12: bytes(80)})
+        with pytest.warns(UserWarning, match="Section 12"):
+            record = SCPECGParser().parse(_write(tmp_path, data))
+        assert record.raw_metadata["section12_length"] == 96
+        assert "vendor_sections" not in record.raw_metadata
+
+    def test_subtraction_keeps_the_stored_multiplier(self, tmp_path: Path):
+        data, _, _ = _reference_record(subtract=True, median_avm=1500)
+        lead = _parse(tmp_path, data).leads[0]
+        assert lead.resolution == 0.5  # gcd(1000, 1500) nV
+        assert lead.adc_resolution == 1000.0 and lead.adc_resolution_unit == "nV"
+
+    def test_reference_beat_shorter_than_a_sample(self, tmp_path: Path):
+        sec4 = struct.pack("<HHH", 1, 1, 0)  # 1 ms at 2000 us per sample
+        sec5 = scp_signal_data(1000, 2000, 0, [[1], [2]], huffman=False)
+        data = create_scp_ecg_binary(sections={4: sec4, 5: sec5})
+        path = _write(tmp_path, data)
+        with pytest.warns(UserWarning, match="shorter than one sample"):
+            record = SCPECGParser().parse(path)
+        assert record.median_beats == []
+        assert len(record.leads[0].samples) == 500

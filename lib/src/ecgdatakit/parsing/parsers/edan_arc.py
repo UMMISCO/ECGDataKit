@@ -288,27 +288,52 @@ def _find_neutral_holter_payload_end(
     arc: bytes,
     start: int,
     channels: int,
-) -> int:
+    limit: int | None = None,
+) -> tuple[int, int]:
     """Locate the boundary between the ECG samples and the beat-records.
 
-    ECG samples have very low int16 std (~25); the trailing 32-byte beat
-    records yield std > 1000. Scan forward in blocks looking for the
-    first block whose std crosses the threshold, then refine to a
-    channel-aligned offset.
-    """
-    cursor = start
-    block = _NEUTRAL_SCAN_BLOCK
-    # Default to "no jump found": take the rest of the file as signal.
-    boundary = len(arc)
-    while cursor + block <= len(arc):
-        chunk = np.frombuffer(arc[cursor:cursor + block], dtype="<i2")
-        if chunk.size and float(chunk.std()) > _NEUTRAL_ECG_STD_THRESHOLD:
-            boundary = cursor
-            break
-        cursor += block
+    ECG samples have a low int16 std (~25); the trailing 32-byte beat
+    records give a std > 1000. The file is cut in 4 KB blocks up to
+    *limit* (the index section, or the end of the file) and the ECG ends
+    where the final run of high-std blocks begins. High-std blocks
+    followed by ECG again (motion artifact, saturation) are kept.
 
+    Returns ``(end, kept)``: the channel-aligned end offset and the number
+    of high-std blocks kept inside the ECG.
+    """
+    limit = len(arc) if limit is None else limit
+    block = _NEUTRAL_SCAN_BLOCK
+    high: list[bool] = []
+    cursor = start
+    while cursor < limit:
+        # The last block may be partial: short recordings keep their beat records there
+        end = min(cursor + block, limit)
+        chunk = np.frombuffer(arc[cursor:end - (end - cursor) % 2], dtype="<i2")
+        high.append(chunk.size >= 16 and float(chunk.std()) > _NEUTRAL_ECG_STD_THRESHOLD)
+        cursor = end
+    tail = len(high)
+    while tail and high[tail - 1]:
+        tail -= 1
     stride = channels * 2
-    return ((boundary - start) // stride) * stride + start
+    if tail < len(high):
+        # Refine inside the first high block, 16 frames at a time, then frame
+        # by frame: the end is the last frame whose preceding 16 frames are low
+        boundary = start + tail * block
+        step = 16 * stride
+        for off in range(boundary, min(boundary + block, limit), step):
+            chunk = np.frombuffer(arc[off:off + step], dtype="<i2")
+            if float(chunk.std()) > _NEUTRAL_ECG_STD_THRESHOLD:
+                boundary = off
+                for end in range(off + stride, off + step + stride, stride):
+                    window = np.frombuffer(arc[max(start, end - step):end], dtype="<i2")
+                    if float(window.std()) > _NEUTRAL_ECG_STD_THRESHOLD:
+                        break
+                    boundary = end
+                break
+    else:
+        # No trailing high-std run: take everything up to the limit
+        boundary = limit
+    return ((boundary - start) // stride) * stride + start, sum(high[:tail])
 
 
 def _parse_filename_timestamp(name: str) -> datetime | None:
@@ -463,7 +488,7 @@ class EDANARCHolterParser(Parser):
     """
 
     FORMAT_NAME = "EDAN ARC Holter"
-    FORMAT_DESCRIPTION = "EDAN SE-2012 / ARC Holter (patient.hea + ecgraw.dat or .arc)"
+    FORMAT_DESCRIPTION = "EDAN SE-2012 / ARC Holter (patient.hea + ecgraw.dat or .arc), experimental"
     FILE_EXTENSIONS = [".hea", ".dat", ".arc"]
     PRIORITY = 40
 
@@ -483,7 +508,7 @@ class EDANARCHolterParser(Parser):
             arc = path.read_bytes()
             if _is_neutral_holter(arc):
                 warnings.warn(
-                    "NEUTRAL HOLTER RECORDING .arc parsing is reverse-engineered "
+                    "EDAN support is experimental: NEUTRAL HOLTER RECORDING .arc parsing is reverse-engineered "
                     "from a single sample file; no vendor specification exists. "
                     "The signal layout (3 channels x int16 LE @ 250 Hz interleaved) "
                     "and metadata are best guesses. Validate sample values and "
@@ -496,9 +521,9 @@ class EDANARCHolterParser(Parser):
                 fill_signal_summary(record)
                 return record
             warnings.warn(
-                "Parsing EDAN .arc archives is best-effort: the wrapper format "
-                "is undocumented. Sample values and metadata should be sanity-"
-                "checked against the recorder's own export.",
+                "EDAN support is experimental: the .arc wrapper and the recording "
+                "format are undocumented. Check sample values and metadata against "
+                "the recorder's own export.",
                 UserWarning,
                 stacklevel=2,
             )
@@ -507,6 +532,13 @@ class EDANARCHolterParser(Parser):
             record.raw_metadata["arc_filepath"] = str(path)
             record.raw_metadata["arc_heuristic"] = True
         else:
+            warnings.warn(
+                "EDAN support is experimental: the format is not publicly documented "
+                "and the voltage scale is unknown. Check sample values and metadata "
+                "against the recorder's own export.",
+                UserWarning,
+                stacklevel=2,
+            )
             pair = _companion_paths(path)
             if pair is None:
                 raise CorruptedFileError(
@@ -548,9 +580,28 @@ class EDANARCHolterParser(Parser):
                 f"NEUTRAL HOLTER .arc too small: {len(arc)} bytes"
             )
 
-        payload_end = _find_neutral_holter_payload_end(
+        # The index section is past the ECG, never read samples beyond it
+        index_ptr = _u32(arc, _NEUTRAL_INDEX_PTR_OFFSET)
+        index_valid = _NEUTRAL_PAYLOAD_START < index_ptr <= len(arc)
+        payload_end, kept = _find_neutral_holter_payload_end(
             arc, _NEUTRAL_PAYLOAD_START, _NEUTRAL_CHANNELS,
+            limit=index_ptr if index_valid else None,
         )
+        if not index_valid:
+            warnings.warn(
+                f"NEUTRAL HOLTER .arc: index pointer {index_ptr} is outside the "
+                "file; the ECG end was searched up to the end of the file",
+                UserWarning,
+                stacklevel=3,
+            )
+        if kept:
+            warnings.warn(
+                f"NEUTRAL HOLTER .arc: {kept} high-amplitude 4 KB block(s) inside "
+                "the ECG were kept (artifact or saturation); check the ECG end "
+                "against the recorder's viewer",
+                UserWarning,
+                stacklevel=3,
+            )
         stride = _NEUTRAL_CHANNELS * 2
         payload_size = ((payload_end - _NEUTRAL_PAYLOAD_START) // stride) * stride
         if payload_size < stride:
@@ -560,6 +611,14 @@ class EDANARCHolterParser(Parser):
         payload = arc[_NEUTRAL_PAYLOAD_START:_NEUTRAL_PAYLOAD_START + payload_size]
         raw = np.frombuffer(payload, dtype="<i2").astype(np.float64)
         matrix = raw.reshape(-1, _NEUTRAL_CHANNELS)
+        # Zero padding before the next section is not signal: drop trailing
+        # frames that are exactly 0 on every channel
+        nonzero = np.flatnonzero(matrix.any(axis=1))
+        frames = int(nonzero[-1]) + 1 if nonzero.size else 0
+        zero_frames = matrix.shape[0] - frames
+        matrix = matrix[:frames]
+        if frames == 0:
+            raise CorruptedFileError("NEUTRAL HOLTER .arc: the ECG payload is all zero")
         samples_per_channel = matrix.shape[0]
 
         record = ECGRecord(source_format="neutral_holter_arc")
@@ -590,12 +649,13 @@ class EDANARCHolterParser(Parser):
         # Best-effort metadata
         session_uuid = _ascii(arc, _NEUTRAL_UUID_OFFSET, _NEUTRAL_UUID_LEN)
         embedded_filename = _ascii(arc, _NEUTRAL_FILENAME_OFFSET, 16)
-        index_ptr = _u32(arc, _NEUTRAL_INDEX_PTR_OFFSET)
         # Filename usually carries a recording start timestamp, e.g.
         # "DT-06_05_2026-11_38_39.arc" -> 2026-05-06 11:38:39.
         recording_start = _parse_filename_timestamp(arc_path.name)
         if recording_start is not None:
             record.recording.date = recording_start
+            # Not stored in the file content
+            record.raw_metadata["date_source"] = "filename"
 
         record.raw_metadata["filepath"] = str(arc_path)
         record.raw_metadata["arc_filepath"] = str(arc_path)
@@ -608,9 +668,11 @@ class EDANARCHolterParser(Parser):
         record.raw_metadata["index_section_offset"] = int(index_ptr)
         record.raw_metadata["ecg_payload_start"] = _NEUTRAL_PAYLOAD_START
         record.raw_metadata["ecg_payload_end"] = (
-            _NEUTRAL_PAYLOAD_START + payload_size
+            _NEUTRAL_PAYLOAD_START + samples_per_channel * stride
         )
         record.raw_metadata["samples_per_channel"] = samples_per_channel
+        record.raw_metadata["high_amplitude_blocks_kept"] = kept
+        record.raw_metadata["trailing_zero_frames_dropped"] = zero_frames
         return record
 
     # Core decode

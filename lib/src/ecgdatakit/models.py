@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+import copy
 import dataclasses
 import json
+import warnings
 from dataclasses import dataclass, field, fields
 from datetime import date, datetime, timedelta
 
@@ -31,25 +33,17 @@ def _is_empty(value: object) -> bool:
 def _format_value(value: object) -> str:
     """Format a single value for YAML-style display."""
     if isinstance(value, datetime):
-        return value.strftime("%Y-%m-%d %H:%M:%S")
+        # Keeps sub-second precision and the timezone when stored
+        return value.isoformat(sep=" ")
     if isinstance(value, timedelta):
         total = value.total_seconds()
-        if total >= 3600:
-            h, rem = divmod(total, 3600)
-            m, s = divmod(rem, 60)
-            parts = [f"{int(h)}h"]
-            if m:
-                parts.append(f"{int(m)}m")
-            if s:
-                parts.append(f"{s:.0f}s")
-            return " ".join(parts)
-        if total >= 60:
-            m, s = divmod(total, 60)
-            parts = [f"{int(m)}m"]
-            if s:
-                parts.append(f"{s:.0f}s")
-            return " ".join(parts)
-        return f"{total:.1f}s"
+        if total < 59.95:
+            return f"{total:.1f}s"
+        # Round once so 3599.6 s reads "1h", not "59m 60s"
+        h, rem = divmod(round(total), 3600)
+        m, s = divmod(rem, 60)
+        parts = [f"{n}{unit}" for n, unit in ((h, "h"), (m, "m"), (s, "s")) if n]
+        return " ".join(parts)
     if isinstance(value, np.ndarray):
         if value.ndim == 1:
             return f"{len(value)} samples ({value.dtype})"
@@ -125,6 +119,50 @@ def _json_default(value: object) -> object:
     if isinstance(value, (date, datetime)):
         return value.isoformat()
     raise TypeError(f"Object of type {type(value).__name__} is not JSON serializable")
+
+
+def _json_safe(value: object) -> object:
+    """Return *value* with non-finite floats as ``None`` and numpy scalars as
+    Python values. Sample lists (key ``"samples"``) are already safe and are
+    not walked, which keeps this cheap on long recordings."""
+    if isinstance(value, dict):
+        return {k: v if k == "samples" else _json_safe(v) for k, v in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [_json_safe(v) for v in value]
+    if isinstance(value, (float, np.floating)):
+        return float(value) if np.isfinite(value) else None
+    if isinstance(value, (np.integer, np.bool_)):
+        return value.item()
+    return value
+
+
+def _write_samples(fp, samples: np.ndarray, chunk: int = 65536) -> None:
+    """Write *samples* to *fp* as a JSON array, non-finite values as null."""
+    fp.write("[")
+    for start in range(0, len(samples), chunk):
+        if start:
+            fp.write(",")
+        part = samples[start:start + chunk]
+        finite = np.isfinite(part)
+        if finite.all():
+            fp.write(",".join(map(repr, part.tolist())))
+        else:
+            fp.write(",".join(
+                repr(v) if ok else "null" for v, ok in zip(part.tolist(), finite.tolist())
+            ))
+    fp.write("]")
+
+
+def _short(text: object, width: int = 80) -> str:
+    """One-line preview of a possibly long or multi-line annotation value."""
+    s = str(text)
+    lines = s.splitlines()
+    first = lines[0] if lines else ""
+    if len(first) > width:
+        first = first[:width] + "..."
+    if len(lines) > 1:
+        first += f" ({len(lines)} lines)"
+    return first
 
 
 def derive_is_raw(resolution: float, offset: float, resolution_unit: str) -> bool:
@@ -517,11 +555,14 @@ class Lead:
     ECG file formats store a raw ADC resolution value in format-specific
     units (e.g. nV/count for ISHNE and SCP-ECG, µV/count for Sierra XML).
     The parser converts this to a normalised scale factor stored in
-    ``resolution``, expressed in the unit given by ``units``:
+    ``resolution``, expressed in the unit given by ``resolution_unit``:
 
     .. code-block:: text
 
-        physical_value = samples * resolution + offset   (in ``units``)
+        physical_value = samples * resolution + offset   (in ``resolution_unit``)
+
+    ``units`` is the unit of ``samples`` as they are now: empty while the
+    samples are raw counts, ``resolution_unit`` after :meth:`to_physical`.
 
     The original, unconverted value from the file is preserved in
     ``adc_resolution`` for reference.
@@ -623,13 +664,18 @@ class Lead:
         """Convert raw ADC samples to physical voltage units.
 
         Applies ``physical = samples * resolution + offset`` and returns
-        a **new** :class:`Lead` with ``is_raw=False``.  If this lead is
-        already in physical units, returns ``self`` unchanged.
+        a **new** :class:`Lead` with ``is_raw=False`` and a new sample
+        array.  If this lead is already in physical units, returns ``self``
+        (same object, same array).
 
         Raises
         ------
         ValueError
             If ``resolution`` is zero (conversion undefined).
+        RawSamplesError
+            If the file gives no physical unit (``resolution_unit`` is
+            empty): the samples are uncalibrated counts and cannot be
+            converted.
         """
         if not self.is_raw:
             return self
@@ -637,6 +683,11 @@ class Lead:
             raise ValueError(
                 f"Lead '{self.label}': resolution is 0, "
                 "cannot convert to physical units"
+            )
+        if not self.resolution_unit:
+            raise RawSamplesError(
+                f"Lead '{self.label}': no physical unit in the file, the "
+                "samples are uncalibrated counts and cannot be converted"
             )
         return dataclasses.replace(
             self,
@@ -657,7 +708,8 @@ class Lead:
         Returns
         -------
         Lead
-            A new :class:`Lead` with samples scaled to *target*.
+            A new :class:`Lead` with a new, scaled sample array, or ``self``
+            when the lead is already in *target*.
 
         Raises
         ------
@@ -846,7 +898,7 @@ class ECGRecord:
 
         # Leads
         if self.leads:
-            lines.append(f"  leads:")
+            lines.append("  leads:")
             for lead in self.leads:
                 n = len(lead.samples)
                 sr = lead.sampling_rate
@@ -858,7 +910,7 @@ class ECGRecord:
 
         # Median beats
         if self.median_beats:
-            lines.append(f"  median_beats:")
+            lines.append("  median_beats:")
             for beat in self.median_beats:
                 lines.append(
                     f"    - {beat.label}: {len(beat.samples)} samples"
@@ -866,9 +918,9 @@ class ECGRecord:
 
         # Annotations
         if self.annotations:
-            lines.append(f"  annotations:")
+            lines.append("  annotations:")
             for k, v in self.annotations.items():
-                lines.append(f"    {k}: {v}")
+                lines.append(f"    {k}: {_short(v)}")
 
         # Raw metadata indicator
         if self.raw_metadata:
@@ -876,20 +928,43 @@ class ECGRecord:
 
         return "\n".join(lines)
 
+    def _with_signals(self, leads: list[Lead], median_beats: list[Lead]) -> ECGRecord:
+        """Return a copy with new lead lists and its own copy of the metadata."""
+        meta = copy.deepcopy(dataclasses.replace(self, leads=[], median_beats=[]))
+        return dataclasses.replace(meta, leads=leads, median_beats=median_beats)
+
     def to_physical(self) -> ECGRecord:
         """Convert all leads and median beats from raw ADC to physical units.
 
-        Returns a new :class:`ECGRecord` where every :class:`Lead` has
-        ``is_raw=False``.  Leads already in physical units are unchanged.
+        Returns a new :class:`ECGRecord` with its own copy of the metadata.
+        Leads already in physical units keep their sample array (it is
+        shared with this record). Leads whose file gives no physical unit
+        (uncalibrated counts) are left raw and reported in a warning.
         """
-        return dataclasses.replace(
-            self,
-            leads=[lead.to_physical() for lead in self.leads],
-            median_beats=[beat.to_physical() for beat in self.median_beats],
-        )
+        skipped: list[str] = []
+
+        def convert(lead: Lead) -> Lead:
+            if lead.is_raw and lead.resolution != 0.0 and not lead.resolution_unit:
+                skipped.append(lead.label)
+                return lead
+            return lead.to_physical()
+
+        leads = [convert(lead) for lead in self.leads]
+        beats = [convert(beat) for beat in self.median_beats]
+        if skipped:
+            warnings.warn(
+                f"Leads {skipped} have no physical unit in the file and were "
+                "left as raw counts.",
+                stacklevel=2,
+            )
+        return self._with_signals(leads, beats)
 
     def convert_units(self, target: str) -> ECGRecord:
         """Convert all leads and median beats to the specified voltage unit.
+
+        Returns a new :class:`ECGRecord` with its own copy of the metadata.
+        Leads already in *target* keep their sample array (shared with this
+        record).
 
         Parameters
         ----------
@@ -901,10 +976,9 @@ class ECGRecord:
         RawSamplesError
             If any lead is still raw ADC.
         """
-        return dataclasses.replace(
-            self,
-            leads=[lead.convert_units(target) for lead in self.leads],
-            median_beats=[beat.convert_units(target) for beat in self.median_beats],
+        return self._with_signals(
+            [lead.convert_units(target) for lead in self.leads],
+            [beat.convert_units(target) for beat in self.median_beats],
         )
 
     def plot(
@@ -937,13 +1011,17 @@ class ECGRecord:
     def to_dict(self, include_samples: bool = True) -> dict:
         """Convert the record to the **unified JSON schema**.
 
+        The result is JSON-safe: non-finite numbers (NaN, inf) are ``None``.
+        With samples, every value becomes a Python float, which takes about
+        30 bytes per sample (a 24 h 12-lead Holter at 180 Hz needs ~6 GB).
+
         Parameters
         ----------
         include_samples : bool
             If ``True`` (default), each lead contains its full sample
             array.  Set to ``False`` for metadata-only export.
         """
-        return {
+        return _json_safe({
             "source_format": self.source_format,
             "file_format": self.file_format.to_dict(),
             "patient": self.patient.to_dict(),
@@ -953,20 +1031,55 @@ class ECGRecord:
             "measurements": self.measurements.to_dict(),
             "median_beats": [b.to_dict(include_samples=include_samples) for b in self.median_beats],
             "annotations": dict(self.annotations),
-        }
+        })
 
-    def to_json(self, include_samples: bool = True, indent: int | None = 2) -> str:
-        """Serialise the record to a JSON string.
+    def to_json(
+        self,
+        include_samples: bool = True,
+        indent: int | None = 2,
+        fp=None,
+    ) -> str | None:
+        """Serialise the record to JSON (strict: no NaN or Infinity).
 
         Parameters
         ----------
         include_samples : bool
             Include full sample arrays (default ``True``).
         indent : int | None
-            JSON indentation level.  ``None`` for compact output.
+            JSON indentation level.  ``None`` for compact output.  Ignored
+            when *fp* is given.
+        fp : file-like, optional
+            Text stream to write to.  The JSON is then written compactly,
+            lead by lead and in chunks of samples, and ``None`` is returned.
+            Use it for long recordings: building the string in memory takes
+            several times the size of the output (a 24 h 12-lead Holter
+            gives ~2 GB of JSON and needs ~12 GB as a string).
         """
-        return json.dumps(
-            self.to_dict(include_samples=include_samples),
-            indent=indent,
-            default=_json_default,
-        )
+        if fp is None:
+            return json.dumps(
+                self.to_dict(include_samples=include_samples),
+                indent=indent,
+                default=_json_default,
+                allow_nan=False,
+            )
+        meta = self.to_dict(include_samples=False)
+        dump = lambda v: json.dumps(v, default=_json_default, allow_nan=False)  # noqa: E731
+        fp.write("{")
+        for i, (key, value) in enumerate(meta.items()):
+            if i:
+                fp.write(",")
+            fp.write(dump(key) + ":")
+            if key not in ("leads", "median_beats") or not include_samples:
+                fp.write(dump(value))
+                continue
+            signals = self.leads if key == "leads" else self.median_beats
+            fp.write("[")
+            for j, (lead_meta, lead) in enumerate(zip(value, signals)):
+                if j:
+                    fp.write(",")
+                fp.write(dump(lead_meta)[:-1] + ',"samples":')
+                _write_samples(fp, lead.samples)
+                fp.write("}")
+            fp.write("]")
+        fp.write("}")
+        return None

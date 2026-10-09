@@ -1,7 +1,6 @@
 """Tests for Shannon energy R-peak detection method."""
 
 import numpy as np
-import pytest
 from ecgdatakit.models import Lead
 from ecgdatakit.processing.peaks import detect_r_peaks
 

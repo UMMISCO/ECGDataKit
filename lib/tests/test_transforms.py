@@ -59,3 +59,50 @@ class TestAverageBeat:
         avg = average_beat(lead, peaks=peaks, before=0.1, after=0.2)
         assert avg.label == "II_avg"
         assert len(avg.samples) > 0
+
+
+class TestFFTScaling:
+    def test_dc_not_doubled(self):
+        _, mags = fft(np.full(1000, 3.0), fs=500)
+        assert mags[0] == pytest.approx(3.0)
+
+    def test_nyquist_not_doubled(self):
+        n = np.arange(1000)
+        _, mags = fft(np.cos(np.pi * n), fs=500)
+        assert mags[-1] == pytest.approx(1.0)
+
+    def test_interior_amplitude(self):
+        freqs, mags = fft(make_lead(freq=10, fs=500, duration=2.0))
+        assert mags[np.argmin(np.abs(freqs - 10))] == pytest.approx(1.0, abs=1e-9)
+
+    def test_empty_refused(self):
+        with pytest.raises(ValueError, match="no samples"):
+            fft(np.array([]), fs=500)
+
+
+class TestPowerSpectrumMethods:
+    def test_periodogram(self):
+        from scipy import signal as ss
+        lead = make_lead(freq=10, fs=500, duration=2.0)
+        freqs, psd = power_spectrum(lead, method="periodogram")
+        ref_f, ref_p = ss.periodogram(lead.samples, fs=500)
+        np.testing.assert_allclose(psd, ref_p)
+        np.testing.assert_allclose(freqs, ref_f)
+
+    def test_unknown_method(self):
+        with pytest.raises(ValueError, match="Unknown method"):
+            power_spectrum(make_lead(), method="bogus")
+
+
+class TestBeatsEdgeCases:
+    def test_whole_float_peaks(self):
+        beats = segment_beats(make_lead(duration=4.0), peaks=np.array([500.0, 1000.0]))
+        assert len(beats) == 2
+
+    def test_fractional_peaks_refused(self):
+        with pytest.raises(ValueError, match="integer"):
+            segment_beats(make_lead(duration=4.0), peaks=np.array([500.5]))
+
+    def test_average_beat_without_beats_raises(self):
+        with pytest.raises(ValueError, match="no complete beat"):
+            average_beat(make_lead(duration=4.0), peaks=np.array([5]))

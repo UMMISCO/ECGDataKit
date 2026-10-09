@@ -2,11 +2,12 @@
 
 All public functions return ``plotly.graph_objects.Figure``.
 
-Requires: ``pip install ecgdatakit[plotting-interactive]``
+Requires: ``pip install "ecgdatakit[plotting-interactive]"``
 """
 
 from __future__ import annotations
 
+import html
 from typing import TYPE_CHECKING
 
 import numpy as np
@@ -14,15 +15,21 @@ from numpy.typing import NDArray
 
 from ecgdatakit.models import ECGRecord, Lead, LeadLike
 from ecgdatakit.plotting._core import (
-    GRID_12LEAD,
     STANDARD_12LEAD,
     _find_lead,
     _grid_shape,
     _resolve_leads,
+    amplitude_label,
+    amplitude_unit,
+    check_rate,
+    check_rr,
+    decimate_minmax,
     ensure_lead,
     lead_color,
     require_plotly,
     time_axis,
+    warn_decimated,
+    x_extent,
 )
 
 if TYPE_CHECKING:
@@ -31,11 +38,30 @@ if TYPE_CHECKING:
 
 def _x_data_i(lead, x_axis):
     """Return ``(x_array, xlabel, hover_template)`` based on *x_axis* mode."""
+    unit = amplitude_unit(lead)
+    amp = f"Amplitude: %{{y:.3f}} {unit}".rstrip()
     if x_axis == "samples":
         x = np.arange(1, len(lead.samples) + 1)
-        return x, "Sample", "Sample: %{x}<br>Amplitude: %{y:.3f}<extra></extra>"
+        return x, "Sample", f"Sample: %{{x}}<br>{amp}<extra></extra>"
     x = time_axis(lead)
-    return x, "Time (s)", "Time: %{x:.3f}s<br>Amplitude: %{y:.3f}<extra></extra>"
+    return x, "Time (s)", f"Time: %{{x:.3f}}s<br>{amp}<extra></extra>"
+
+
+def _x_hover(x_axis: str) -> str:
+    """Hover format for the x value."""
+    return "sample %{x}" if x_axis == "samples" else "%{x:.3f} s"
+
+
+def _trace_xy(lead, x_axis, decimated: list[str], sl: slice | None = None):
+    """x and y arrays for a trace, min/max-decimated when very long."""
+    x, _, _ = _x_data_i(lead, x_axis)
+    y = lead.samples
+    if sl is not None:
+        x, y = x[sl], y[sl]
+    x, y, cut = decimate_minmax(x, y)
+    if cut:
+        decimated.append(lead.label)
+    return x, y
 
 
 
@@ -73,10 +99,13 @@ def iplot_lead(
     import plotly.graph_objects as go
 
     x, xlabel, hover_tpl = _x_data_i(lead, x_axis)
+    decimated: list[str] = []
+    xs, ys = _trace_xy(lead, x_axis, decimated)
+    warn_decimated(decimated)
 
     fig = go.Figure()
     fig.add_trace(go.Scatter(
-        x=x, y=lead.samples,
+        x=xs, y=ys,
         mode="lines",
         name=lead.label,
         line=dict(color=lead_color(lead.label), width=1),
@@ -99,7 +128,7 @@ def iplot_lead(
     fig.update_layout(
         title=title or lead.label,
         xaxis_title=xlabel,
-        yaxis_title=f"Amplitude ({lead.units})" if lead.units else "Amplitude",
+        yaxis_title=amplitude_label(lead),
         height=height,
         template="plotly_white",
         xaxis=dict(
@@ -173,19 +202,23 @@ def iplot_leads(
         vertical_spacing=max(0.02, 0.12 / r),
     )
 
+    decimated: list[str] = []
     for i, ld in enumerate(lead_list):
         ri, ci = divmod(i, c)
         x, _, _ = _x_data_i(ld, x_axis)
+        xs, ys = _trace_xy(ld, x_axis, decimated)
+        unit = amplitude_unit(ld)
         fig.add_trace(
             go.Scatter(
-                x=x, y=ld.samples,
+                x=xs, y=ys,
                 mode="lines",
                 name=ld.label,
                 line=dict(color=lead_color(ld.label), width=1),
-                hovertemplate="%{y:.3f}<extra></extra>",
+                hovertemplate=f"%{{y:.3f}} {unit}".rstrip() + "<extra></extra>",
             ),
             row=ri + 1, col=ci + 1,
         )
+        fig.update_yaxes(title_text=unit, row=ri + 1, col=ci + 1)
 
         if peaks_dict and ld.label in peaks_dict:
             pk = peaks_dict[ld.label]
@@ -200,6 +233,10 @@ def iplot_leads(
                 row=ri + 1, col=ci + 1,
             )
 
+    warn_decimated(decimated)
+    extent = x_extent(lead_list, x_axis)
+    if extent is not None:
+        fig.update_xaxes(range=list(extent))
     xlabel = "Sample" if x_axis == "samples" else "Time (s)"
     fig.update_layout(
         title=title or "ECG Leads",
@@ -233,7 +270,7 @@ def iplot_12lead(
     """Interactive 12-lead plot with standard lead names.
 
     Unlike :func:`iplot_leads`, this function assigns the standard 12-lead
-    names (I, II, III, aVR, …, V6) when the input contains unnamed leads.
+    names (I, II, III, aVR, …, V6), in order, when the input is a numpy array.
     The full signal is plotted without cropping.
 
     Parameters
@@ -271,9 +308,11 @@ def iplot_12lead(
     if n == 0:
         return go.Figure()
 
-    # Assign standard 12-lead names when leads are unnamed
-    for i, ld in enumerate(lead_list):
-        if i < len(STANDARD_12LEAD) and ld.label.startswith("Lead "):
+    # Name leads built from numpy arrays; Lead objects are never modified
+    if isinstance(leads, np.ndarray) or (
+        isinstance(leads, list) and leads and isinstance(leads[0], np.ndarray)
+    ):
+        for i, ld in enumerate(lead_list[:len(STANDARD_12LEAD)]):
             ld.label = STANDARD_12LEAD[i]
 
     r, c = _grid_shape(n, rows, cols)
@@ -287,20 +326,28 @@ def iplot_12lead(
         vertical_spacing=max(0.02, 0.12 / r),
     )
 
+    decimated: list[str] = []
     for i, ld in enumerate(lead_list):
         ri, ci = divmod(i, c)
-        x, _, _ = _x_data_i(ld, x_axis)
+        xs, ys = _trace_xy(ld, x_axis, decimated)
+        unit = amplitude_unit(ld)
         fig.add_trace(
             go.Scatter(
-                x=x, y=ld.samples,
+                x=xs, y=ys,
                 mode="lines",
                 name=ld.label,
                 line=dict(color=lead_color(ld.label), width=1),
                 showlegend=False,
-                hovertemplate=f"{ld.label}<br>%{{x:.3f}}: %{{y:.3f}}<extra></extra>",
+                hovertemplate=(f"{ld.label}<br>{_x_hover(x_axis)}: %{{y:.3f}} {unit}".rstrip()
+                               + "<extra></extra>"),
             ),
             row=ri + 1, col=ci + 1,
         )
+        fig.update_yaxes(title_text=unit, row=ri + 1, col=ci + 1)
+    warn_decimated(decimated)
+    extent = x_extent(lead_list, x_axis)
+    if extent is not None:
+        fig.update_xaxes(range=list(extent))
 
     if rec is not None:
         header_text = _build_header_text(rec)
@@ -336,15 +383,16 @@ def _build_header_text(record: ECGRecord) -> str:
     """Build compact header text for plotly annotations."""
     parts = []
     p = record.patient
+    # File text is escaped: plotly renders a subset of HTML
     name = f"{p.first_name} {p.last_name}".strip()
     if name:
-        parts.append(f"<b>{name}</b>")
+        parts.append(f"<b>{html.escape(name)}</b>")
     if p.patient_id:
-        parts.append(f"ID: {p.patient_id}")
+        parts.append(f"ID: {html.escape(p.patient_id)}")
     if p.age is not None:
         parts.append(f"Age: {p.age}")
     if p.sex:
-        parts.append(f"Sex: {p.sex}")
+        parts.append(f"Sex: {html.escape(p.sex)}")
 
     m = record.measurements
     meas = []
@@ -393,6 +441,7 @@ def iplot_peaks(
     from ecgdatakit.processing.peaks import detect_r_peaks
 
     lead = ensure_lead(lead, fs=fs)
+    check_rate(lead)
     require_plotly()
     import plotly.graph_objects as go
 
@@ -400,10 +449,13 @@ def iplot_peaks(
         peaks = detect_r_peaks(lead)
 
     x, xlabel, hover_tpl = _x_data_i(lead, x_axis)
+    decimated: list[str] = []
+    xs, ys = _trace_xy(lead, x_axis, decimated)
+    warn_decimated(decimated)
 
     fig = go.Figure()
     fig.add_trace(go.Scatter(
-        x=x, y=lead.samples,
+        x=xs, y=ys,
         mode="lines",
         name=lead.label,
         line=dict(color=lead_color(lead.label), width=1),
@@ -433,7 +485,7 @@ def iplot_peaks(
     fig.update_layout(
         title=title or f"{lead.label} \u2014 R-peaks",
         xaxis_title=xlabel,
-        yaxis_title=f"Amplitude ({lead.units})" if lead.units else "Amplitude",
+        yaxis_title=amplitude_label(lead),
         height=height,
         template="plotly_white",
         xaxis=dict(rangeslider=dict(visible=True)),
@@ -472,6 +524,7 @@ def iplot_spectrum(
     from ecgdatakit.processing.transforms import power_spectrum
 
     lead = ensure_lead(lead, fs=fs)
+    check_rate(lead)
     require_plotly()
     import plotly.graph_objects as go
 
@@ -536,6 +589,7 @@ def iplot_rr_tachogram(
     show : bool
         Display the plot immediately (default ``True``).
     """
+    rr_ms = check_rr(rr_ms)
     require_plotly()
     import plotly.graph_objects as go
 
@@ -589,6 +643,9 @@ def iplot_poincare(
     show : bool
         Display the plot immediately (default ``True``).
     """
+    from ecgdatakit.processing.hrv import poincare
+
+    rr_ms = check_rr(rr_ms)
     require_plotly()
     import plotly.graph_objects as go
 
@@ -625,10 +682,10 @@ def iplot_poincare(
         showlegend=False,
     ))
 
-    sd1 = float(np.std(y - x, ddof=1) / np.sqrt(2))
-    sd2 = float(np.std(y + x, ddof=1) / np.sqrt(2))
+    # SD1/SD2 from the HRV module so the plot and the metrics agree
+    desc = poincare(rr_ms)
+    sd1, sd2 = desc["sd1"], desc["sd2"]
     cx, cy = float(x.mean()), float(y.mean())
-
     theta = np.linspace(0, 2 * np.pi, 100)
     cos45, sin45 = np.cos(np.pi / 4), np.sin(np.pi / 4)
     ex = sd2 * np.cos(theta)
@@ -636,12 +693,13 @@ def iplot_poincare(
     rx = cx + ex * cos45 - ey * sin45
     ry = cy + ex * sin45 + ey * cos45
 
-    fig.add_trace(go.Scatter(
-        x=rx, y=ry,
-        mode="lines",
-        name=f"SD1={sd1:.1f}, SD2={sd2:.1f}",
-        line=dict(color="red", width=1.5, dash="dash"),
-    ))
+    if np.isfinite(sd1) and np.isfinite(sd2):
+        fig.add_trace(go.Scatter(
+            x=rx, y=ry,
+            mode="lines",
+            name=f"SD1={sd1:.1f}, SD2={sd2:.1f}",
+            line=dict(color="red", width=1.5, dash="dash"),
+        ))
 
     fig.update_layout(
         title="Poincar\u00e9 Plot",
@@ -669,6 +727,10 @@ def iplot_report(
 ) -> go.Figure:
     """Interactive full ECG report.
 
+    Shows the first 10 s of up to 12 leads and a lead II rhythm strip of the
+    whole recording with a range slider. A rhythm strip longer than
+    200 000 samples is drawn with min/max decimation and a warning.
+
     Parameters
     ----------
     record : ECGRecord
@@ -685,8 +747,15 @@ def iplot_report(
     leads = record.leads
     n_leads = min(len(leads), 12)
 
+    def title(ld):
+        unit = amplitude_unit(ld)
+        return f"{ld.label} ({unit})" if unit else ld.label
+
+    rl = _find_lead(leads, "II")
     total_rows = n_leads + 1
-    subplot_titles = [ld.label for ld in leads[:n_leads]] + ["II Rhythm Strip"]
+    subplot_titles = [title(ld) for ld in leads[:n_leads]]
+    subplot_titles.append(f"II rhythm strip ({amplitude_unit(rl)})"
+                          if rl is not None and amplitude_unit(rl) else "II rhythm strip")
 
     fig = make_subplots(
         rows=total_rows, cols=1,
@@ -695,37 +764,38 @@ def iplot_report(
         vertical_spacing=0.015,
     )
 
+    decimated: list[str] = []
     for i, ld in enumerate(leads[:n_leads], start=1):
-        x, _, _ = _x_data_i(ld, x_axis)
-        max_s = int(10.0 * ld.sampling_rate)
-        sl = slice(0, min(max_s, len(ld.samples)))
+        check_rate(ld)
+        sl = slice(0, int(10.0 * ld.sampling_rate))
+        xs, ys = _trace_xy(ld, x_axis, decimated, sl)
         fig.add_trace(
             go.Scatter(
-                x=x[sl], y=ld.samples[sl],
+                x=xs, y=ys,
                 mode="lines",
                 name=ld.label,
                 line=dict(color=lead_color(ld.label), width=1),
                 showlegend=False,
-                hovertemplate=f"{ld.label}<br>%{{x:.3f}}: %{{y:.3f}}<extra></extra>",
+                hovertemplate=f"{ld.label}<br>{_x_hover(x_axis)}: %{{y:.3f}}<extra></extra>",
             ),
             row=i, col=1,
         )
 
-    rl = _find_lead(leads, "II")
     if rl is not None:
-        x, _, _ = _x_data_i(rl, x_axis)
+        xs, ys = _trace_xy(rl, x_axis, decimated)
         fig.add_trace(
             go.Scatter(
-                x=x, y=rl.samples,
+                x=xs, y=ys,
                 mode="lines",
                 name="II rhythm",
                 line=dict(color=lead_color("II"), width=1),
                 showlegend=False,
-                hovertemplate="II<br>%{x:.3f}: %{y:.3f}<extra></extra>",
+                hovertemplate=f"II<br>{_x_hover(x_axis)}: %{{y:.3f}}<extra></extra>",
             ),
             row=total_rows, col=1,
         )
         fig.update_xaxes(rangeslider=dict(visible=True), row=total_rows, col=1)
+    warn_decimated(decimated)
 
     header_text = _build_header_text(record)
     fig.add_annotation(

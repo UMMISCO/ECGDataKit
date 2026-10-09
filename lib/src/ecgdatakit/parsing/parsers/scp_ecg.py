@@ -24,16 +24,10 @@ from ecgdatakit.exceptions import (
     UnsupportedFormatError,
 )
 from ecgdatakit.models import (
-    DeviceInfo,
     ECGRecord,
     FileFormatInfo,
-    FilterSettings,
-    GlobalMeasurements,
     Interpretation,
     Lead,
-    PatientInfo,
-    RecordingInfo,
-    SignalCharacteristics,
     derive_is_raw,
 )
 from ecgdatakit.parsing.helpers import (
@@ -72,9 +66,12 @@ _MANUFACTURERS = [
 _LANGUAGE_CODECS = {
     0x03: "iso8859_2", 0x0B: "iso8859_4", 0x13: "iso8859_5", 0x1B: "iso8859_6",
     0x23: "iso8859_7", 0x2B: "iso8859_8", 0x33: "iso8859_11", 0x3B: "iso8859_15",
-    0x07: "utf-16", 0x0F: "euc_jp", 0x17: "euc_jp", 0x1F: "euc_jp",
-    0x27: "gb2312", 0x2F: "cp949",
+    0x07: "utf-16-le", 0x0F: "shift_jis", 0x17: "euc_jp", 0x1F: "euc_jp",
+    0x27: "gb2312", 0x2F: "cp949", 0x37: "utf-8",
 }
+# ISO 10646 (code 0x07) is a 2-byte encoding: text ends at a 2-byte NUL.
+# Without a byte order mark it is read little-endian, like every SCP field.
+_WIDE_CODECS = {"utf-16-le"}
 
 _RACE = {1: "Caucasian", 2: "Black", 3: "Oriental"}
 _SEX = {1: "M", 2: "F"}
@@ -144,6 +141,18 @@ def _time(raw: bytes) -> tuple[int, int, int] | None:
     if len(raw) < 3 or raw[0] > 23 or raw[1] > 59 or raw[2] > 59:
         return None
     return raw[0], raw[1], raw[2]
+
+
+def _decode(value: bytes, encoding: str | None) -> str:
+    """Decode a NUL-terminated SCP text in the Section 1 language encoding."""
+    if encoding in _WIDE_CODECS:
+        if value[:2] in (b"\xff\xfe", b"\xfe\xff"):
+            encoding = "utf-16"  # the byte order mark decides
+        end = next((i for i in range(0, len(value) - 1, 2) if value[i:i + 2] == b"\x00\x00"), None)
+        value = value[:end] if end is not None else value[: len(value) // 2 * 2]
+    else:
+        value = value.split(b"\x00", 1)[0]
+    return decode_text(value, encoding).strip()
 
 
 def _lead_label(code: int) -> str:
@@ -418,6 +427,10 @@ class SCPECGParser(Parser):
             raw["huffman_tables"] = (
                 "default" if ctx.tables[0] is _DEFAULT_TABLE else len(ctx.tables)
             )
+        if 6 not in ctx.sections and 12 in ctx.sections:
+            raise UnsupportedFormatError(
+                "SCP-ECG: long-term rhythm data (Section 12, SCP-ECG v3) is not supported"
+            )
         if 3 not in ctx.sections:
             raise CorruptedFileError("SCP-ECG: Section 3 (lead definition) is missing")
         self._parse_section3(ctx)
@@ -446,7 +459,14 @@ class SCPECGParser(Parser):
         self._parse_statements(ctx, record)
         if 9 in ctx.sections:
             raw["section9"] = ctx.sections[9].body(data)
-        vendor = {i: s.length for i, s in ctx.sections.items() if i > 11}
+        if 12 in ctx.sections and ctx.protocol >= 30:
+            # SCP-ECG v3 Section 12 (long-term rhythm data) next to Section 6
+            raw["section12_length"] = ctx.sections[12].length
+            ctx.warn("SCP-ECG: Section 12 (long-term rhythm data) is present but not loaded")
+        vendor = {
+            i: s.length for i, s in ctx.sections.items()
+            if i > 12 or (i == 12 and ctx.protocol < 30)
+        }
         if vendor:
             raw["vendor_sections"] = vendor
 
@@ -551,7 +571,7 @@ class SCPECGParser(Parser):
                 ctx.encoding = _LANGUAGE_CODECS.get(value[16], "latin-1")
 
         def text(value: bytes) -> str:
-            return decode_text(value.split(b"\x00", 1)[0], ctx.encoding).strip()
+            return _decode(value, ctx.encoding)
 
         patient = record.patient
         rec = record.recording
@@ -697,6 +717,9 @@ class SCPECGParser(Parser):
                 )
             else:
                 extra["acquisition_date"] = acq_date.date().isoformat()
+        elif acq_time is not None:
+            # A time of day without a date: kept as stored, no date invented
+            extra["acquisition_time"] = "{:02d}:{:02d}:{:02d}".format(*acq_time)
         # Stored age (0 means not set), else derived from the date of birth
         if age_years:
             patient.age = age_years
@@ -832,7 +855,11 @@ class SCPECGParser(Parser):
         return avm, interval, diff, flag, leads
 
     @staticmethod
-    def _make_lead(label: str, samples: np.ndarray, rate: int, avm: float) -> Lead:
+    def _make_lead(
+        label: str, samples: np.ndarray, rate: int, avm: float, file_avm: float | None = None,
+    ) -> Lead:
+        """*avm* scales the samples; *file_avm* is the multiplier as written."""
+        file_avm = avm if file_avm is None else file_avm
         if avm > 0:
             resolution, unit = avm / 1000.0, "uV"
         else:
@@ -846,8 +873,8 @@ class SCPECGParser(Parser):
             resolution_unit=unit,
             units="" if is_raw else unit,
             is_raw=is_raw,
-            adc_resolution=float(avm) if avm > 0 else 0.0,
-            adc_resolution_unit="nV" if avm > 0 else "",
+            adc_resolution=float(file_avm) if file_avm > 0 else 0.0,
+            adc_resolution_unit="nV" if file_avm > 0 else "",
         )
 
     @staticmethod
@@ -868,6 +895,10 @@ class SCPECGParser(Parser):
         counts = None
         if ctx.ref_length_ms:
             n = round(ctx.ref_length_ms * 1000 / interval)
+            if n < 1:
+                ctx.warn(f"SCP-ECG: reference beat length {ctx.ref_length_ms} ms is shorter "
+                         "than one sample, median beats skipped")
+                return None
             counts = [n] * len(ctx.leads)
         elif ctx.tables is not None:
             ctx.warn("SCP-ECG: Section 5 is Huffman encoded but the reference beat "
@@ -907,7 +938,7 @@ class SCPECGParser(Parser):
             ctx.warn("SCP-ECG: Section 6 amplitude multiplier is 0, leads left unscaled")
         labels = self._labels(ctx)
         for label, lead_def, samples in zip(labels, ctx.leads, leads):
-            lead = self._make_lead(label, samples, rate, res_avm)
+            lead = self._make_lead(label, samples, rate, res_avm, avm)
             if lead_def.start != 1:
                 lead.annotations["start_sample"] = str(lead_def.start)
             record.leads.append(lead)
@@ -1115,13 +1146,26 @@ class SCPECGParser(Parser):
             pos += 3 + size
             if sid == 11:
                 value = value[1:]  # statement type byte
-            parts = [decode_text(p, ctx.encoding).strip() for p in value.split(b"\x00")]
+            parts = self._split_text(value, ctx.encoding)
             line = " ".join(p for p in parts if p)
             if line:
                 interp.statements.append((line, ""))
         if interp.source != "machine":
             interp.interpreter = ctx.confirming_physician
         return interp
+
+    @staticmethod
+    def _split_text(value: bytes, encoding: str | None) -> list[str]:
+        """Split NUL-separated statement texts."""
+        if encoding in _WIDE_CODECS:
+            parts, start = [], 0
+            for i in range(0, len(value) - 1, 2):
+                if value[i:i + 2] == b"\x00\x00":
+                    parts.append(value[start:i])
+                    start = i + 2
+            parts.append(value[start:])
+            return [_decode(p, encoding) for p in parts]
+        return [decode_text(p, encoding).strip() for p in value.split(b"\x00")]
 
     def _parse_statements(self, ctx: _Context, record: ECGRecord) -> None:
         found = [self._read_statements(ctx, sid) for sid in (8, 11) if sid in ctx.sections]

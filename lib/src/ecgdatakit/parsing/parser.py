@@ -2,14 +2,21 @@
 
 from __future__ import annotations
 
+import dataclasses
 import importlib
 import pkgutil
 import warnings
 from abc import ABC, abstractmethod
 from pathlib import Path
 
-from ecgdatakit.exceptions import CorruptedFileError, ECGDataKitError
-from ecgdatakit.models import ECGRecord, _UNIT_ALIASES, _normalize_unit
+import numpy as np
+
+from ecgdatakit.exceptions import (
+    CorruptedFileError,
+    ECGDataKitError,
+    UnsupportedFormatError,
+)
+from ecgdatakit.models import ECGRecord, Lead, _TO_UV, _normalize_unit
 from ecgdatakit.parsing.helpers.record import fill_signal_summary
 
 _SNIFF_SIZE = 4096
@@ -126,19 +133,23 @@ class FileParser:
         units : str
             Target voltage unit when *auto_scale* is ``True``.
             Accepted values: ``"uV"`` (microvolts), ``"mV"``
-            (millivolts, default), ``"V"`` (volts).  Ignored when
-            *auto_scale* is ``False``.
+            (millivolts, default), ``"V"`` (volts), in any case.
+            Ignored when *auto_scale* is ``False``.
 
         Raises
         ------
+        UnsupportedFormatError
+            If no parser can handle the file (also a ``ValueError``).
         ValueError
-            If no parser can handle the file or *units* is not
-            recognised.
+            If *units* is not recognised.
         CorruptedFileError
-            If the file is recognised but cannot be decoded.
+            If the file is recognised but cannot be decoded, or holds no
+            samples.
+        ImportError
+            If the format needs an optional dependency that is missing.
         """
         # Validate units early
-        target = _UNIT_ALIASES.get(units)
+        target = _normalize_unit(units)
         if target not in ("uV", "mV", "V"):
             raise ValueError(
                 f"Unknown unit {units!r}. "
@@ -155,17 +166,26 @@ class FileParser:
 
         parser_cls = next((p for p in self._parsers if p.can_parse(path, header)), None)
         if parser_cls is None:
-            raise ValueError(f"No parser found for: {path.name}")
+            raise UnsupportedFormatError(f"No parser found for: {path.name}")
 
-        # Parser warnings are re-emitted here so they point at the caller
-        with warnings.catch_warnings(record=True) as caught:
-            warnings.simplefilter("always")
-            record = self._run_parser(parser_cls, path)
-            fill_signal_summary(record)
-            if auto_scale:
-                record = self._auto_scale(record, target)
-        for w in caught:
-            warnings.warn(w.message, w.category, stacklevel=2)
+        # Parser warnings are re-emitted here so they point at the caller,
+        # also when the parser fails
+        caught: list[warnings.WarningMessage] = []
+        try:
+            with warnings.catch_warnings(record=True) as caught:
+                warnings.simplefilter("always")
+                record = self._run_parser(parser_cls, path)
+                if record.leads and all(len(lead.samples) == 0 for lead in record.leads):
+                    raise CorruptedFileError(
+                        f"{parser_cls.FORMAT_NAME or parser_cls.__name__}: "
+                        f"{path.name} holds no samples"
+                    )
+                fill_signal_summary(record)
+                if auto_scale:
+                    record = self._auto_scale(record, target)
+        finally:
+            for w in caught:
+                warnings.warn(w.message, w.category, stacklevel=2)
 
         if not auto_scale and any(lead.is_raw for lead in record.leads):
             warnings.warn(
@@ -181,7 +201,8 @@ class FileParser:
         """Run *parser_cls* and report decoding failures as CorruptedFileError."""
         try:
             return parser_cls().parse(path)
-        except (ECGDataKitError, OSError):
+        except (ECGDataKitError, OSError, ImportError):
+            # ImportError: a missing optional dependency, not a corrupt file
             raise
         except Exception as e:
             raise CorruptedFileError(
@@ -193,6 +214,11 @@ class FileParser:
     def _auto_scale(record: ECGRecord, target: str = "mV") -> ECGRecord:
         """Convert leads to physical units where scaling metadata is available.
 
+        The record comes straight from a parser and is not shared, so its
+        float64 sample arrays are scaled in place: no second copy of a long
+        recording is made. Other arrays (other dtypes, read-only, or shared
+        between leads) are copied.
+
         Parameters
         ----------
         record : ECGRecord
@@ -200,28 +226,69 @@ class FileParser:
         target : str
             Canonical target unit (``"uV"``, ``"mV"``, or ``"V"``).
         """
-        import dataclasses
-
         raw_labels: list[str] = []
         other_units: list[str] = []
+        def root(samples: np.ndarray) -> int:
+            while isinstance(samples.base, np.ndarray):
+                samples = samples.base
+            return id(samples)
 
-        def scale(lead, report: bool):
-            # A raw lead needs a known voltage unit and a non-zero resolution
+        # Buffers used by more than one lead must not be modified in place
+        users: dict[int, int] = {}
+        for lead in record.leads + record.median_beats:
+            key = root(np.asarray(lead.samples))
+            users[key] = users.get(key, 0) + 1
+
+        def owned(samples: np.ndarray) -> bool:
+            # True when the array may be modified in place
+            return (
+                isinstance(samples, np.ndarray)
+                and samples.dtype == np.float64
+                and samples.flags.writeable
+                and users.get(root(samples)) == 1
+            )
+
+        def apply(samples: np.ndarray, scale: float, shift: float) -> np.ndarray:
+            if owned(samples):
+                samples *= scale
+                if shift:
+                    samples += shift
+                return samples
+            return samples * scale + shift
+
+        def scale(lead: Lead, report: bool) -> Lead:
             if lead.is_raw:
+                # A raw lead needs a known voltage unit and a non-zero resolution
                 if not lead.resolution_unit or lead.resolution == 0.0:
                     if report:
                         raw_labels.append(lead.label)
                     return lead
-                lead = lead.to_physical()
-            norm = _normalize_unit(lead.units)
-            if norm is None:
+                unit = _normalize_unit(lead.resolution_unit)
+                if unit is None:
+                    if report:
+                        other_units.append(f"{lead.label} ({lead.resolution_unit})")
+                    return lead.to_physical()
+                factor = _TO_UV[unit] / _TO_UV[target]
+                return dataclasses.replace(
+                    lead,
+                    samples=apply(lead.samples, lead.resolution * factor, lead.offset * factor),
+                    is_raw=False,
+                    units=target,
+                )
+            unit = _normalize_unit(lead.units)
+            if unit is None:
                 if report:
                     other_units.append(f"{lead.label} ({lead.units or 'no unit'})")
                 return lead
-            return lead.convert_units(target) if norm != target else lead
+            if unit == target:
+                return dataclasses.replace(lead, units=target)
+            factor = _TO_UV[unit] / _TO_UV[target]
+            return dataclasses.replace(
+                lead, samples=apply(lead.samples, factor, 0.0), units=target,
+            )
 
-        new_leads = [scale(lead, True) for lead in record.leads]
-        new_beats = [scale(beat, False) for beat in record.median_beats]
+        record.leads = [scale(lead, True) for lead in record.leads]
+        record.median_beats = [scale(beat, False) for beat in record.median_beats]
 
         if raw_labels:
             warnings.warn(
@@ -235,7 +302,4 @@ class FileParser:
                 f"converted to {target}.",
                 stacklevel=3,
             )
-
-        return dataclasses.replace(
-            record, leads=new_leads, median_beats=new_beats,
-        )
+        return record

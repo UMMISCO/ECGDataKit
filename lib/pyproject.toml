@@ -9,17 +9,18 @@ description = "Multi-format ECG file parsing and signal processing library"
 readme = {file = "README.md", content-type = "text/markdown"}
 authors = [{name = "Ahmad Fall", email = "ahmad.fall@ird.fr"}]
 maintainers = [{name = "Ahmad Fall", email = "ahmad.fall@ird.fr"}]
-license = {text = "Apache-2.0"}
+license = "Apache-2.0"
+license-files = ["LICENSE"]
 requires-python = ">=3.10"
 dependencies = [
     "numpy>=1.24",
     "defusedxml>=0.7.1",
-    "xmltodict>=1.0",
-    "python-dateutil>=2.9",
+    # 1.0.0 drops entity references and 1.0.1 raises on them with disable_entities
+    "xmltodict>=1.0.2",
 ]
 keywords = ["ecg", "electrocardiogram", "signal-processing", "medical", "waveform", "hl7", "dicom", "edf", "scp-ecg", "wfdb", "cardiology", "ecg-parser", "ecg-processing", "mfer", "muse", "physionet", "heart-rate", "hrv"]
 classifiers = [
-    "Development Status :: 3 - Alpha",
+    "Development Status :: 5 - Production/Stable",
     "Intended Audience :: Science/Research",
     "Intended Audience :: Healthcare Industry",
     "Topic :: Scientific/Engineering :: Medical Science Apps.",
@@ -29,7 +30,6 @@ classifiers = [
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
     "Programming Language :: Python :: 3.13",
-    "License :: OSI Approved :: Apache Software License",
     "Operating System :: OS Independent",
 ]
 
@@ -44,19 +44,21 @@ UMMISCO = "https://www.ummisco.fr"
 IRD = "https://www.ird.fr"
 
 [project.optional-dependencies]
-holter = ["crccheck>=1.3"]
-
 dicom = ["pydicom>=2.4"]
 processing = ["scipy>=1.10"]
-cleaning = ["biosppy", "neurokit2"]
+# biosppy imports peakutils without declaring it
+cleaning = ["biosppy", "peakutils", "neurokit2"]
 denoising = ["torch>=2.0"]
-plotting = ["matplotlib>=3.7"]
-plotting-interactive = ["plotly>=5.15"]
+# R-peak, spectrum and quality plots use scipy
+plotting = ["matplotlib>=3.7", "scipy>=1.10"]
+plotting-interactive = ["plotly>=5.15", "scipy>=1.10"]
 all = [
+    "pydicom>=2.4",
     "scipy>=1.10",
     "matplotlib>=3.7",
     "plotly>=5.15",
     "biosppy",
+    "peakutils",
     "neurokit2",
 ]
 dev = ["pytest>=9.0", "pytest-cov>=7.0", "ruff>=0.15"]
@@ -74,6 +76,7 @@ docs = [
 where = ["src"]
 
 [tool.setuptools.package-data]
+"ecgdatakit" = ["py.typed"]
 "ecgdatakit.processing.nn" = ["weights/*.pt"]
 
 [tool.setuptools.dynamic]

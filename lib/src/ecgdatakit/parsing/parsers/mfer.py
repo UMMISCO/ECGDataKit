@@ -15,7 +15,9 @@ are NaN.
 from __future__ import annotations
 
 import codecs
+import copy
 import math
+import re
 import warnings
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -140,7 +142,7 @@ _TEXT_CODECS = {
     "utf-8": "utf-8", "utf8": "utf-8", "unicode": "utf-8",
     "jis x 0201": "shift_jis", "jis x 0208": "iso2022_jp", "jis x 0212": "iso2022_jp_1",
     "rfc 1468": "iso2022_jp", "iso 2022": "iso2022_jp", "iso-2022-jp": "iso2022_jp",
-    "iso-ir 100": "latin-1", "iso 8859": "latin-1",
+    "iso-ir 100": "latin-1",
 }
 
 _SEX = {1: "M", 2: "F"}
@@ -226,6 +228,10 @@ def _iter_tlv(data: bytes, pos: int, end: int):
 
 def _text_codec(name: str) -> str | None:
     key = name.strip().lower()
+    part = re.match(r"iso[ _-]?8859(?:[ _-]?(\d+))?", key)
+    if part:
+        # ISO 8859 parts 1-9 are listed; a bare "ISO 8859" means part 1
+        return f"iso8859_{part.group(1) or 1}"
     for prefix, codec in _TEXT_CODECS.items():
         if key.startswith(prefix):
             return codec
@@ -324,6 +330,11 @@ class MFERParser(Parser):
         return True
 
     def parse(self, file_path: Path) -> ECGRecord:
+        # Parsing state lives on the instance: work on a copy so that one
+        # parser object can be shared between threads
+        return copy.copy(self)._parse(file_path)
+
+    def _parse(self, file_path: Path) -> ECGRecord:
         with open(file_path, "rb") as f:
             data = f.read()
         if not data:
@@ -358,7 +369,7 @@ class MFERParser(Parser):
 
         fill_signal_summary(record)
         for message in self._warnings:
-            warnings.warn(message, stacklevel=2)
+            warnings.warn(message, stacklevel=3)
         return record
 
     # ------------------------------------------------------------------
@@ -727,14 +738,21 @@ class MFERParser(Parser):
             if not frames:
                 groups.append(([], []))
                 continue
-            base = frames[0]
-            same = [f for f in frames if len(f["channels"]) == len(base["channels"])]
-            if len(same) != len(frames):
+            # Only consecutive frames with the same channel layout, sampling
+            # and scaling form one recording; joining frames that redefine
+            # them would apply the first frame's rate and scale to the others
+            key = self._frame_key(frames[0])
+            run = 1
+            while run < len(frames) and self._frame_key(frames[run]) == key:
+                run += 1
+            if run < len(frames):
                 self._warnings.append(
-                    f"MFER: {len(frames) - len(same)} frame(s) with a different channel "
-                    "count are not loaded (see raw_metadata['frames'])"
+                    f"MFER: {len(frames) - run} frame(s) after frame "
+                    f"{next(i for i, f in enumerate(self._frames) if f is frames[run - 1]) + 1} "
+                    "redefine the channels, "
+                    "sampling or scaling and are not loaded (see raw_metadata['frames'])"
                 )
-            groups.append(self._frames_to_leads(same))
+            groups.append(self._frames_to_leads(frames[:run]))
 
         (leads, rates), (beats, _) = groups
         record.median_beats = beats
@@ -742,7 +760,11 @@ class MFERParser(Parser):
         # attribute: the channel stays in raw_metadata["status_channels"]
         statuses = meta.get("status_channels", {})
         record.leads = leads
-        if not leads and not beats and not statuses:
+        if not any(len(lead.samples) for lead in leads + beats):
+            if any(len(v) for v in statuses.values()):
+                raise UnsupportedFormatError(
+                    "MFER: the file holds only status channels, no waveform leads"
+                )
             raise CorruptedFileError("MFER: waveform frames contain no samples")
 
         ref = leads or beats
@@ -761,6 +783,12 @@ class MFERParser(Parser):
             meta["sampling_rates"] = rates
             duration = timedelta(seconds=len(leads[0].samples) / rates[0])
             record.recording.duration = duration
+
+    @staticmethod
+    def _frame_key(frame: dict) -> tuple:
+        """Definitions that must match for frames to be concatenated."""
+        names = ("dtp", "ivl", "sen", "off", "nul", "ldn", "wfm")
+        return tuple(tuple(d.get(n) for n in names) for d in frame["defs"])
 
     def _frames_to_leads(self, frames: list[dict]) -> tuple[list[Lead], list[float]]:
         """Concatenate frames per channel; returns the leads and exact rates (Hz)."""
@@ -793,6 +821,11 @@ class MFERParser(Parser):
                 if msg not in self._warnings:
                     self._warnings.append(msg)
             rate = self._sampling_rate(defs.get("ivl"))
+            if round(rate) < 1:
+                raise UnsupportedFormatError(
+                    f"MFER: sampling rate {rate:g} Hz is below 1 Hz and cannot be "
+                    "represented as an integer sampling rate"
+                )
             resolution, unit, adc, adc_unit = self._scale(defs.get("sen"))
             offset_counts = self._typed_value(defs["off"], dtype) if "off" in defs else 0.0
             annotations: dict[str, str] = {}

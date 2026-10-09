@@ -31,12 +31,25 @@ def normalize_lead_label(label: str) -> str:
 
 
 def unique_labels(labels: list[str]) -> list[str]:
-    """Suffix repeated labels so every label is unique (``II``, ``II_2``, ...)."""
-    seen: dict[str, int] = {}
+    """Suffix repeated labels so every label is unique (``II``, ``II_2``, ...).
+
+    A suffix never reuses a label present in the input, so
+    ``["II", "II_2", "II"]`` gives ``["II", "II_2", "II_3"]``.
+    """
+    originals = set(labels)
+    used: set[str] = set()
+    counts: dict[str, int] = {}
     result: list[str] = []
     for label in labels:
-        seen[label] = seen.get(label, 0) + 1
-        result.append(label if seen[label] == 1 else f"{label}_{seen[label]}")
+        name = label
+        if name in used:
+            n = counts.get(label, 1)
+            while name in used or name in originals:
+                n += 1
+                name = f"{label}_{n}"
+            counts[label] = n
+        used.add(name)
+        result.append(name)
     return result
 
 

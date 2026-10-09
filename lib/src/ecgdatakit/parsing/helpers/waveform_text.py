@@ -20,7 +20,8 @@ def decode_int16_text(text: str) -> tuple[np.ndarray, str]:
     semicolons or whitespace, and Base64 of little-endian int16 values.
     Integer lists are detected first (a string of digits with separators is
     never valid sample data in Base64 form), so ``"1000,2000"`` is not
-    misread as Base64.
+    misread as Base64. A single signed integer of at most 6 digits (the
+    int16 range) is one sample; a longer run of digits is read as Base64.
 
     Returns ``(samples, encoding)`` where *encoding* is ``"int_list"`` or
     ``"base64_int16le"``. Raises ``ValueError`` when the text is neither.
@@ -30,7 +31,7 @@ def decode_int16_text(text: str) -> tuple[np.ndarray, str]:
         return np.array([], dtype=np.float64), ""
 
     if _INT_LIST.fullmatch(stripped) and (
-        _SEPARATOR.search(stripped) or stripped[0] in "+-"
+        _SEPARATOR.search(stripped) or stripped[0] in "+-" or len(stripped) <= 6
     ):
         values = [int(v) for v in re.split(r"[\s,;]+", stripped) if v]
         return np.array(values, dtype=np.float64), "int_list"

@@ -39,7 +39,7 @@ from ecgdatakit.parsing.helpers import (
     normalize_lead_label,
     unique_labels,
 )
-from ecgdatakit.parsing.helpers.xml import parse_xml_root
+from ecgdatakit.parsing.helpers.xml import header_text, parse_xml_root
 from ecgdatakit.parsing.parser import Parser
 
 # Lead codes whose label is not the code suffix
@@ -99,7 +99,8 @@ def _parse_ts(value: str | None, need_time: bool = False) -> datetime | None:
 
     Precision may stop at any component. Returns ``None`` when the value is
     malformed, when it has less than day precision, or (with *need_time*)
-    when it has no hour. A time zone offset gives an aware datetime.
+    when it has no minute, so no time of day is filled in. A time zone
+    offset gives an aware datetime.
     """
     if not value:
         return None
@@ -107,7 +108,7 @@ def _parse_ts(value: str | None, need_time: bool = False) -> datetime | None:
     if not m:
         return None
     year, month, day, hour, minute, second, frac, tz = m.groups()
-    if day is None or (need_time and hour is None):
+    if day is None or (need_time and minute is None):
         return None
     micro = int(frac[:6].ljust(6, "0")) if frac else 0
     tzinfo = None
@@ -201,13 +202,7 @@ class HL7aECGParser(Parser):
 
     @staticmethod
     def can_parse(file_path: Path, header: bytes) -> bool:
-        if header.startswith((b"\xff\xfe", b"\xfe\xff")):
-            try:
-                text = header.decode("utf-16", errors="ignore")
-            except Exception:
-                return False
-        else:
-            text = header.decode("utf-8", errors="ignore")
+        text = header_text(header)
         return re.search(r"<([A-Za-z_][\w.-]*:)?AnnotatedECG\b", text) is not None
 
     def parse(self, file_path: Path) -> ECGRecord:
@@ -462,7 +457,9 @@ class HL7aECGParser(Parser):
         rec = record.recording
         if rec.date is None and time_info.get("code", "").upper() == "TIME_ABSOLUTE":
             rec.date = _parse_ts(time_info.get("head"), need_time=True)
-        if rec.date and rec.end_date and rec.end_date >= rec.date:
+        same_kind = rec.date and rec.end_date and (
+            (rec.date.tzinfo is None) == (rec.end_date.tzinfo is None))
+        if same_kind and rec.end_date >= rec.date:
             rec.duration = rec.end_date - rec.date
         elif record.leads and record.leads[0].sampling_rate:
             lead = record.leads[0]
@@ -699,7 +696,7 @@ class HL7aECGParser(Parser):
             return
 
         if upper in _SEVERITY_CODES:
-            sink.severity = self._severity(_code_text(value))
+            sink.severity = self._severity(value)
         elif upper in _COMMENT_CODES:
             text = _code_text(value)
             if text:
@@ -787,12 +784,9 @@ class HL7aECGParser(Parser):
         return v * table[unit]
 
     @staticmethod
-    def _severity(text: str) -> str:
-        up = text.upper()
-        for key in ("ABNORMAL", "BORDERLINE", "NORMAL"):
-            if key in up:
-                return key
-        return up
+    def _severity(value: ET.Element | None) -> str:
+        """Severity as stored: the CE code, else the value text (upper-cased)."""
+        return (_attr(value, "code") or _code_text(value)).upper()
 
 
 class _AnnotationSink:

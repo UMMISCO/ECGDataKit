@@ -15,6 +15,7 @@ from ecgdatakit.models import (
     PatientInfo,
     RecordingInfo,
     SignalCharacteristics,
+    derive_is_raw,
 )
 from ecgdatakit.parsing.parser import FileParser, Parser
 from ecgdatakit.exceptions import (
@@ -26,7 +27,7 @@ from ecgdatakit.exceptions import (
     ChecksumWarning,
     RawSamplesError,
 )
-from ecgdatakit.parsing.batch import parse_batch
+from ecgdatakit.parsing.batch import BatchParseWarning, parse_batch
 
 __all__ = [
     "AcquisitionSetup",
@@ -41,6 +42,7 @@ __all__ = [
     "PatientInfo",
     "RecordingInfo",
     "SignalCharacteristics",
+    "derive_is_raw",
     "FileParser",
     "Parser",
     "ECGDataKitError",
@@ -50,5 +52,6 @@ __all__ = [
     "ChecksumError",
     "ChecksumWarning",
     "RawSamplesError",
+    "BatchParseWarning",
     "parse_batch",
 ]

@@ -175,3 +175,50 @@ class TestIplotReport:
         record = _make_record()
         fig = iplot_report(record)
         assert isinstance(fig, go.Figure)
+
+
+# ---------------------------------------------------------------------------
+# Axes, units, long recordings and dependencies
+# ---------------------------------------------------------------------------
+
+
+class TestInteractiveAxes:
+    def test_time_axis(self):
+        fig = iplot_lead(_make_lead(fs=250, duration=4.0), show=False)
+        x = np.asarray(fig.data[0].x)
+        assert x[1] == pytest.approx(1 / 250) and x[-1] == pytest.approx(999 / 250)
+        assert fig.layout.yaxis.title.text == "Amplitude (mV)"
+
+    def test_mixed_lengths_range(self):
+        leads = [
+            Lead(label="I", samples=np.zeros(5000), sampling_rate=500, units="mV"),
+            Lead(label="II", samples=np.zeros(2500), sampling_rate=500, units="mV"),
+        ]
+        fig = iplot_leads(leads, show=False)
+        assert tuple(fig.layout.xaxis.range) == pytest.approx((0.0, 9.998))
+        assert fig.layout.yaxis.title.text == "mV"
+
+    def test_long_lead_is_decimated_with_warning(self):
+        n = 500_000
+        samples = np.zeros(n)
+        samples[123_457] = 5.0
+        lead = Lead(label="II", samples=samples, sampling_rate=500, units="mV")
+        with pytest.warns(UserWarning, match="min/max decimation") as rec:
+            fig = iplot_lead(lead, show=False)
+        assert rec[0].filename == __file__
+        y = np.asarray(fig.data[0].y)
+        assert len(y) <= 200_002 and y.max() == 5.0
+        assert np.asarray(fig.data[0].x)[-1] == pytest.approx((n - 1) / 500)
+
+    def test_header_text_is_escaped(self):
+        record = _make_record()
+        record.patient.first_name = "<i>A</i>"
+        fig = iplot_12lead(record, record=record, show=False)
+        assert "&lt;i&gt;A&lt;/i&gt;" in fig.layout.annotations[-1].text
+
+    def test_missing_plotly(self, monkeypatch):
+        import sys
+
+        monkeypatch.setitem(sys.modules, "plotly", None)
+        with pytest.raises(ImportError, match=r"ecgdatakit\[plotting-interactive\]"):
+            iplot_rr_tachogram(np.array([800.0, 810.0]), show=False)

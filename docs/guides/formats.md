@@ -1,6 +1,6 @@
 # Supported Formats
 
-ECGDataKit parses 13 ECG file formats via content-based detection, not file extensions. Parsers with a reliable magic number are tried first and loose sniffers last (`Parser.PRIORITY`).
+ECGDataKit parses 11 ECG file formats via content-based detection, not file extensions. Parsers with a reliable magic number are tried first and loose sniffers last (`Parser.PRIORITY`).
 
 | Format | File Types | Parser Class | Detection |
 |--------|-----------|--------------|-----------|
@@ -14,27 +14,25 @@ ECGDataKit parses 13 ECG file formats via content-based detection, not file exte
 | DICOM Waveform | `.dcm` | `DICOMWaveformParser` | `DICM` at offset 128 |
 | WFDB (PhysioNet) | `.hea` + `.dat` | `WFDBParser` | valid `.hea` header, or a `.dat` with a sibling `.hea` |
 | MFER | `.mwf`, `.mfer`, `.mfr` | `MFERParser` | `MFR ` preamble or a chain of known MFER tags |
-| Mindray BeneHeart R12 | `.xml` | `BeneHeartR12Parser` | `<BeneHeartR12>` or `<MindrayECG>` |
-| GE MAC 2000 | `.xml` | `GEMAC2000Parser` | `<MAC2000>` or `<GE_MAC>` |
-| EDAN ARC Holter | recording folder, `patient.hea` + `ecgraw.dat`, `.arc` | `EDANARCHolterParser` | `patient.hea` with sibling `ecgraw.dat`, or an `.arc` with a known signature |
+| EDAN ARC Holter (experimental) | recording folder, `patient.hea` + `ecgraw.dat`, `.arc` | `EDANARCHolterParser` | `patient.hea` with sibling `ecgraw.dat`, or an `.arc` with a known signature |
 
 ## HL7 aECG
 
 The HL7 annotated ECG standard (**ANSI/HL7 V3 aECG**) is an XML-based format widely used for regulatory ECG submissions to the FDA. Files contain waveform data, patient demographics, annotations, and measurements in a structured XML hierarchy.
 
-**Dependencies:** None (uses built-in XML parsing).
+**Dependencies:** No optional dependency (XML is read with the core dependency `defusedxml`).
 
 ## Philips Sierra XML
 
 The proprietary XML format produced by Philips/Sierra ECG management systems. Found on devices like the PageWriter TC series and IntelliSpace ECG. Contains lead data, patient info, and interpretation statements.
 
-**Dependencies:** None.
+**Dependencies:** No optional dependency (XML is read with the core dependencies `defusedxml` and `xmltodict`).
 
 ## GE MUSE XML
 
 XML export format from GE Healthcare's MUSE ECG management system. Contains base64-encoded waveform data, patient demographics, measurements, and interpretation text. Common in hospital GE environments.
 
-**Dependencies:** None.
+**Dependencies:** No optional dependency (XML is read with the core dependency `defusedxml`).
 
 ## ISHNE Holter
 
@@ -42,11 +40,11 @@ A binary format defined by the International Society for Holter and Noninvasive 
 
 **Dependencies:** None (the CRC-16 check uses the standard library). Some recorders store a constant instead of a real checksum: the mismatch is reported as `ChecksumWarning` and `raw_metadata["checksum_valid"]`.
 
-## Mortara EL250
+## Mortara ELI (EL250/ELI280)
 
-XML format produced by Mortara/Welch Allyn ELI 250 series ECG devices. Stores multi-channel waveform data with per-channel metadata in a straightforward XML structure.
+XML format produced by Mortara/Welch Allyn ELI series ECG devices (ELI 250, ELI 280). Stores multi-channel waveform data with per-channel metadata in a straightforward XML structure.
 
-**Dependencies:** None.
+**Dependencies:** No optional dependency (XML is read with the core dependency `defusedxml`).
 
 ## EDF / EDF+
 
@@ -74,22 +72,20 @@ pip install "ecgdatakit[dicom]"
 
 The format used by **PhysioNet** and the WFDB (WaveForm DataBase) toolset. Consists of a header file (`.hea`) describing the signal layout and one or more binary data files (`.dat`) containing raw samples. Commonly used in research datasets like MIT-BIH, PTB-XL, and MIMIC.
 
-**Dependencies:** None. Requires both `.hea` and `.dat` files in the same directory.
+**Dependencies:** None. Requires both `.hea` and `.dat` files in the same directory. FLAC storage formats 508/516/524 (used by MIMIC-IV waveforms) are not supported and raise `UnsupportedFormatError`. When a signal gives no unit, the WFDB default mV is used and flagged with a warning.
 
 ## MFER
 
-The **Medical waveform Format Encoding Rules** (ISO 22077) is a lightweight binary format popular in Japan and Asia. Uses a tag-length-value (BER) encoding with compact representation. Supports multiple channels and various data types.
+The **Medical waveform Format Encoding Rules** (ISO 22077) is a lightweight binary format popular in Japan and Asia. Uses a tag-length-value (BER) encoding with compact representation. Supports multiple channels and various data types. Only the first frame's channel layout is joined into leads: later frames that redefine channels, sampling or scaling are reported in `raw_metadata["frames"]` with a warning.
 
 **Dependencies:** None.
 
-## Mindray BeneHeart R12
+## EDAN ARC Holter (experimental)
 
-XML format exported by Mindray BeneHeart R12 and similar Mindray ECG devices. Contains patient data, waveforms, and interpretation in a device-specific XML schema.
+```{warning}
+EDAN support is experimental. EDAN does not publish this format: the parser follows a partial reverse-engineered description and has not been checked on a wide range of recorders. Every parse issues a `UserWarning`. Check sample values and metadata against the recorder's own export before using the data.
+```
 
-**Dependencies:** None.
-
-## GE MAC 2000
-
-XML format from GE Healthcare MAC 2000 resting ECG devices. Contains patient demographics, waveform data, and device-generated measurements and interpretation.
+Holter recordings from EDAN devices, either as a recording folder (`patient.hea` with a sibling `ecgraw.dat`) or as a single `.arc` archive. The format is not publicly documented and the file does not state the count to voltage factor, so samples stay in raw counts (`is_raw=True`, no unit). "NEUTRAL" `.arc` archives are reverse engineered (`raw_metadata["reverse_engineered"]` is `True`) and their 250 Hz rate is not read from the file (`raw_metadata["sampling_rate_stated"]` is `False`).
 
 **Dependencies:** None.

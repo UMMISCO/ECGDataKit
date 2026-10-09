@@ -65,7 +65,7 @@ class TestEDANARCDocumentedLayout:
 
     def test_lead_labels(self, edan_arc_dir: Path):
         record = EDANARCHolterParser().parse(edan_arc_dir)
-        labels = [l.label for l in record.leads]
+        labels = [lead.label for lead in record.leads]
         assert labels == ["I", "II", "III"]
 
     def test_lead_samples_are_float(self, edan_arc_dir: Path):
@@ -166,7 +166,7 @@ class TestEDANARCArchive:
             EDANARCHolterParser().parse(edan_arc_archive)
         assert any(
             issubclass(w.category, UserWarning)
-            and "best-effort" in str(w.message)
+            and "experimental" in str(w.message)
             for w in caught
         )
 
@@ -280,7 +280,7 @@ class TestNeutralHolterArc:
             record = FileParser().parse(neutral_holter_arc_file)
         assert record.source_format == "neutral_holter_arc"
 
-    def test_auto_detection_via_file_parser(self, edan_arc_archive: Path):
+    def test_archive_auto_detection_via_file_parser(self, edan_arc_archive: Path):
         with warnings.catch_warnings():
             warnings.simplefilter("ignore", UserWarning)
             record = FileParser().parse(edan_arc_archive)
@@ -317,7 +317,7 @@ class TestEDANChannelLayout:
         dat = create_edan_arc_dat(3, 1000, stored_channels=12, pad_value=0)
         hea_path = _write_pair(tmp_path, create_edan_arc_hea(), dat)
         record = EDANARCHolterParser().parse(hea_path)
-        assert [l.label for l in record.leads] == ["I", "II", "III"]
+        assert [lead.label for lead in record.leads] == ["I", "II", "III"]
         for ch, lead in enumerate(record.leads):
             np.testing.assert_array_equal(lead.samples, _expected_channel(ch, 1000))
         sig = record.recording.acquisition.signal
@@ -349,7 +349,7 @@ class TestEDANChannelLayout:
         labels = ("I", "II", "III", "AVR", "AVL", "AVF", "V1", "V2", "V3", "V4", "V5", "V6")
         hea = create_edan_arc_hea(channel_count=12, lead_labels=labels)
         record = EDANARCHolterParser().parse(_write_pair(tmp_path, hea, create_edan_arc_dat(12, 1000)))
-        assert [l.label for l in record.leads][3:6] == ["aVR", "aVL", "aVF"]
+        assert [lead.label for lead in record.leads][3:6] == ["aVR", "aVL", "aVF"]
         np.testing.assert_array_equal(record.leads[11].samples, _expected_channel(11, 1000))
 
     def test_no_plausible_layout_raises(self, tmp_path: Path):
@@ -384,7 +384,7 @@ class TestEDANRobustness:
         with pytest.warns(UserWarning, match="truncated"):
             record = EDANARCHolterParser().parse(hea_path)
         assert record.patient.last_name == ""
-        assert [l.label for l in record.leads] == ["I", "II", "III"]
+        assert [lead.label for lead in record.leads] == ["I", "II", "III"]
 
     @pytest.mark.parametrize("rate", [0, -5, 20000])
     def test_bad_sampling_rate(self, tmp_path: Path, rate: int):
@@ -419,12 +419,12 @@ class TestEDANRobustness:
     def test_duplicate_and_nonstandard_labels(self, tmp_path: Path):
         hea = create_edan_arc_hea(lead_labels=("II", "II", "avf"))
         record = EDANARCHolterParser().parse(_write_pair(tmp_path, hea, create_edan_arc_dat()))
-        assert [l.label for l in record.leads] == ["II", "II_2", "aVF"]
+        assert [lead.label for lead in record.leads] == ["II", "II_2", "aVF"]
 
     def test_empty_label_falls_back(self, tmp_path: Path):
         hea = create_edan_arc_hea(lead_labels=("I", "", "III"))
         record = EDANARCHolterParser().parse(_write_pair(tmp_path, hea, create_edan_arc_dat()))
-        assert [l.label for l in record.leads] == ["I", "Ch2", "III"]
+        assert [lead.label for lead in record.leads] == ["I", "Ch2", "III"]
 
 
 class TestEDANText:
@@ -506,3 +506,94 @@ class TestEDANArcHeuristics:
         record = _parse_quiet(edan_arc_archive)
         for ch, lead in enumerate(record.leads):
             np.testing.assert_array_equal(lead.samples, _expected_channel(ch, 1000))
+
+
+def _neutral_arc(signal: np.ndarray, index_gap: int = 1024, index_ptr: int | None = None) -> bytes:
+    """NEUTRAL HOLTER .arc with *signal* (frames x 3), zero gap, then beat-like noise."""
+    header = bytearray(0x1000)
+    struct.pack_into("<I", header, 0, 3)
+    header[4:32] = b"##NEUTRAL HOLTER RECORDING##"
+    payload = signal.astype("<i2").tobytes()
+    tail = np.random.default_rng(1).integers(-20000, 20000, size=8192, dtype=np.int16).tobytes()
+    gap = b"\x00" * index_gap
+    if index_ptr is None:
+        index_ptr = 0x1000 + len(payload) + len(gap)
+    struct.pack_into("<I", header, 0x56, index_ptr)
+    return bytes(header) + payload + gap + tail
+
+
+class TestNeutralHolterEnd:
+    def _signal(self, seconds: int = 60) -> np.ndarray:
+        t = np.arange(seconds * 250) / 250
+        sig = np.round(20 * np.sin(2 * np.pi * 1.2 * t))[:, None].repeat(3, 1)
+        sig[:, 1] += 5
+        return sig
+
+    def _parse(self, tmp_path: Path, blob: bytes):
+        p = tmp_path / "DT-01_02_2025-10_00_00.arc"
+        p.write_bytes(blob)
+        with warnings.catch_warnings(record=True) as caught:
+            warnings.simplefilter("always")
+            record = EDANARCHolterParser().parse(p)
+        return record, [str(w.message) for w in caught]
+
+    def test_artifact_inside_ecg_is_kept(self, tmp_path: Path):
+        sig = self._signal()
+        sig[20 * 250:24 * 250] += np.random.default_rng(0).normal(0, 1500, size=(1000, 3))
+        record, messages = self._parse(tmp_path, _neutral_arc(sig))
+        np.testing.assert_array_equal(record.leads[0].samples, sig[:, 0].astype("<i2"))
+        assert any("high-amplitude" in m for m in messages)
+        assert record.raw_metadata["high_amplitude_blocks_kept"] > 0
+
+    def test_exact_end_and_zero_gap_dropped(self, tmp_path: Path):
+        sig = self._signal(10)
+        record, _ = self._parse(tmp_path, _neutral_arc(sig))
+        assert len(record.leads[0].samples) == 2500
+        assert record.raw_metadata["trailing_zero_frames_dropped"] == 1024 // 6
+
+    def test_invalid_index_pointer_warns(self, tmp_path: Path):
+        sig = self._signal(10)
+        record, messages = self._parse(tmp_path, _neutral_arc(sig, index_ptr=0xFFFFFFF0))
+        assert any("index pointer" in m for m in messages)
+        assert len(record.leads[0].samples) == 2500
+        assert record.raw_metadata["date_source"] == "filename"
+
+
+def test_neutral_end_detected_to_the_frame(tmp_path: Path):
+    # ECG of 2503 frames (not a multiple of 16) followed directly by beat records
+    import struct
+    from tests.conftest import create_neutral_holter_arc
+
+    _, base = create_neutral_holter_arc(duration_s=1)
+    header = bytearray(base[:0x1000])
+    frames = 2503
+    t = np.arange(frames) / 250
+    ecg = np.stack([(20 * np.sin(2 * np.pi * 1.2 * t + ch * np.pi / 4) + 3).astype("<i2")
+                    for ch in range(3)], axis=1)
+    tail = np.random.default_rng(0).integers(-20000, 20000, 8192).astype("<i2").tobytes()
+    struct.pack_into("<I", header, 0x56, 0x1000 + ecg.nbytes + len(tail))
+    path = tmp_path / "DT-06_05_2026-11_38_39.arc"
+    path.write_bytes(bytes(header) + ecg.tobytes() + tail)
+    with pytest.warns(UserWarning):
+        record = EDANARCHolterParser().parse(path)
+    assert len(record.leads[0].samples) == frames
+    np.testing.assert_array_equal(record.leads[2].samples, ecg[:, 2])
+
+
+def test_neutral_short_recording_records_in_last_partial_block(tmp_path: Path):
+    # 683 frames of ECG: the beat records start inside the final, partial 4 KB block
+    from tests.conftest import create_neutral_holter_arc
+
+    _, base = create_neutral_holter_arc(duration_s=1)
+    header = bytearray(base[:0x1000])
+    frames = 683
+    t = np.arange(frames) / 250
+    ecg = np.stack([(20 * np.sin(2 * np.pi * 1.2 * t + ch * np.pi / 4) + 3).astype("<i2")
+                    for ch in range(3)], axis=1)
+    tail = np.random.default_rng(1).integers(-20000, 20000, 750).astype("<i2").tobytes()
+    struct.pack_into("<I", header, 0x56, 0x1000 + ecg.nbytes + len(tail))
+    path = tmp_path / "DT-06_05_2026-11_38_39.arc"
+    path.write_bytes(bytes(header) + ecg.tobytes() + tail)
+    with pytest.warns(UserWarning):
+        record = EDANARCHolterParser().parse(path)
+    assert len(record.leads[0].samples) == frames

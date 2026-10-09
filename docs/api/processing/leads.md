@@ -1,6 +1,11 @@
 # Lead Derivation
 
-Pure numpy — no scipy required. Validates sample rate and length match.
+Pure numpy, no scipy required. Validates that sample rates and lengths match.
+
+- Raw leads with the same `resolution` and `resolution_unit` are combined in ADC counts (offsets folded in), and the derived leads stay raw on that scale.
+- Otherwise both leads are converted to physical values in lead I's unit first, and the derived leads are physical. `derive_standard_12` then also converts I, II and V1 to V6, so all 12 leads share one scale.
+- Raw leads with different scales and no voltage unit raise `ValueError`.
+- Derived leads do not copy file-specific metadata from lead I: `annotations`, `quality`, `transducer` and `adc_resolution` are reset.
 
 | | |
 |---|---|

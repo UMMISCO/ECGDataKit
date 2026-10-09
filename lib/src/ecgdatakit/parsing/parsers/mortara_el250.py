@@ -44,6 +44,7 @@ from ecgdatakit.parsing.helpers import (
     unique_labels,
 )
 from ecgdatakit.parsing.helpers.waveform_text import decode_int16_text
+from ecgdatakit.parsing.helpers.xml import header_text, parse_xml_root
 from ecgdatakit.parsing.parser import Parser
 
 _ROOT_RE = re.compile(r"<ECG[\s>/]")
@@ -110,14 +111,14 @@ def _sex(value: str | None) -> str:
 class MortaraEL250Parser(Parser):
     """Parser for Mortara ELI XML ECG files (ELI 250 / ELI 280 / ELI Link)."""
 
-    FORMAT_NAME = "Mortara EL250"
+    FORMAT_NAME = "Mortara ELI (EL250/ELI280)"
     FORMAT_DESCRIPTION = "Mortara ELI XML ECG format"
     FILE_EXTENSIONS = [".xml"]
     PRIORITY = 50
 
     @staticmethod
     def can_parse(file_path: Path, header: bytes) -> bool:
-        text = header.decode("utf-8", errors="ignore")
+        text = header_text(header)
         if not _ROOT_RE.search(text):
             return False
         upper = text.upper()
@@ -126,7 +127,7 @@ class MortaraEL250Parser(Parser):
     def parse(self, file_path: Path) -> ECGRecord:
         data = Path(file_path).read_bytes()
         try:
-            root = ET.fromstring(data)
+            root = parse_xml_root(data)
         except ET.ParseError as e:
             raise CorruptedFileError(f"Malformed Mortara XML in {file_path}: {e}") from e
         if root.tag != "ECG":
@@ -281,7 +282,7 @@ class MortaraEL250Parser(Parser):
                 samples, rate, self._scale(ch.get("UNITS_PER_MV")),
             ))
 
-        for lead, label in zip(leads, unique_labels([l.label for l in leads])):
+        for lead, label in zip(leads, unique_labels([ld.label for ld in leads])):
             lead.label = label
         return leads, encodings, offsets
 

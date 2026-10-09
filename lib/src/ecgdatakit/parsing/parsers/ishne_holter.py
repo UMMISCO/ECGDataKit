@@ -26,6 +26,7 @@ from ecgdatakit.models import (
     SignalCharacteristics,
     derive_is_raw,
 )
+from ecgdatakit.parsing.helpers import unique_labels
 from ecgdatakit.parsing.parser import Parser
 
 _MAGIC_ECG = b"ISHNE1.0"
@@ -310,6 +311,12 @@ class ISHNEHolterParser(Parser):
             f.seek(layout.data_offset)
             data_bytes = f.read()
         raw = np.frombuffer(data_bytes, dtype="<i2", count=len(data_bytes) // 2)
+        if len(data_bytes) % 2:
+            warnings.warn(
+                "ISHNE: odd number of data bytes, the last byte is ignored. "
+                "File may be truncated",
+                stacklevel=3,
+            )
 
         available = raw.size
         usable = (available // nleads) * nleads  # whole multiplexed frames only
@@ -323,11 +330,15 @@ class ISHNEHolterParser(Parser):
                 f"sample(s) not divisible by {nleads} leads. File may be truncated",
                 stacklevel=3,
             )
+        if usable == 0:
+            raise CorruptedFileError(
+                f"ISHNE file holds no complete sample frame for {nleads} leads"
+            )
         return np.reshape(raw[:usable], (nleads, usable // nleads), order="F")
 
     def _build_leads(self, signal: np.ndarray, meta: _LeadMeta) -> list[Lead]:
         leads: list[Lead] = []
-        seen: dict[str, int] = {}
+        labels = unique_labels([self._lead_label(meta.spec[i], i) for i in range(meta.nleads)])
         for i in range(meta.nleads):
             res_nv = meta.ampl_res[i]
             has_res = res_nv > 0 # is resolution present ?
@@ -338,7 +349,7 @@ class ISHNEHolterParser(Parser):
             # or with no resolution at all, stay raw ADC counts.
             is_raw = derive_is_raw(resolution, 0.0, res_unit)
             leads.append(Lead(
-                label=self._lead_label(meta.spec[i], i, seen),
+                label=labels[i],
                 samples=signal[i].astype(np.float64),
                 sampling_rate=meta.sampling_rate,
                 resolution=resolution,
@@ -353,16 +364,13 @@ class ISHNEHolterParser(Parser):
         return leads
 
     @staticmethod
-    def _lead_label(code: int, index: int, seen: dict[str, int]) -> str:
+    def _lead_label(code: int, index: int) -> str:
         if code == _ABSENT:
             warnings.warn(
                 f"ISHNE: stored lead {index + 1} has spec code -9 (not present)",
                 stacklevel=4,
             )
-        label = _LEAD_SPECS.get(code, f"Lead {index + 1}")
-        # Suffix repeated codes so labels stay unique (II, II_2, ...)
-        seen[label] = seen.get(label, 0) + 1
-        return label if seen[label] == 1 else f"{label}_{seen[label]}"
+        return _LEAD_SPECS.get(code, f"Lead {index + 1}")
 
     def _finalize_recording(self, record: ECGRecord, meta: _LeadMeta) -> None:
         if record.leads:

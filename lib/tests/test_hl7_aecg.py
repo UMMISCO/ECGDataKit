@@ -199,6 +199,9 @@ class TestDates:
         assert _parse_ts("20230615103000-0500") == datetime(
             2023, 6, 15, 10, 30, tzinfo=timezone(timedelta(hours=-5)))
         assert _parse_ts("20230615", need_time=True) is None
+        # Hour-only precision: minutes and seconds are not filled in
+        assert _parse_ts("2023061510", need_time=True) is None
+        assert _parse_ts("2023061510") == datetime(2023, 6, 15, 10)
         assert _parse_ts("2023") is None
         assert _parse_ts("garbage") is None
 
@@ -482,3 +485,30 @@ def test_unknown_time_increment_unit_raises(tmp_path: Path):
     xml = HL7_AECG_XML.replace('<increment value="0.002" unit="s"/>', '<increment value="0.002" unit="tick"/>')
     with pytest.raises(CorruptedFileError, match="time increment unit"):
         _parse(tmp_path, xml)
+
+
+@pytest.mark.parametrize("value, expected", [
+    ('<value xsi:type="CE" code="NORMAL" displayName="Normal ECG"/>', "NORMAL"),
+    ("<value>Otherwise normal ECG</value>", "OTHERWISE NORMAL ECG"),
+    ("<value>Not normal</value>", "NOT NORMAL"),
+])
+def test_severity_reported_as_stored(tmp_path: Path, value: str, expected: str):
+    xml = HL7_AECG_XML.replace(
+        '<value xsi:type="CE" code="NORMAL" displayName="Normal ECG"/>', value)
+    assert _parse(tmp_path, xml).interpretation.severity == expected
+
+
+def test_entity_declarations_refused(tmp_path: Path):
+    xml = HL7_AECG_XML.replace(
+        '<AnnotatedECG', '<!DOCTYPE x [<!ENTITY e "hello">]>\n<AnnotatedECG', 1)
+    with pytest.raises(CorruptedFileError, match="entity"):
+        _parse(tmp_path, xml)
+
+
+def test_effective_time_with_mixed_timezones(tmp_path: Path):
+    # low has an offset, high has none: they cannot be compared, the duration
+    # comes from the samples instead of failing
+    xml = HL7_AECG_XML.replace('<low value="20230615103000"/>', '<low value="20230615103000+0200"/>', 1)
+    record = _parse(tmp_path, xml)
+    assert record.recording.date.utcoffset() == timedelta(hours=2)
+    assert record.recording.duration is not None

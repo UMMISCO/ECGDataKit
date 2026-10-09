@@ -1,7 +1,8 @@
-"""XML navigation utilities for xmltodict-parsed documents.
+"""XML parsing and navigation utilities.
 
-These helpers operate on the nested dict/list structures produced by
-``xmltodict.parse()``.
+:func:`parse_xml_root` parses untrusted XML safely into an element tree.
+:func:`find_tag` and :func:`read_path` navigate the nested dict/list
+structures produced by ``xmltodict.parse()``.
 """
 
 from __future__ import annotations
@@ -9,11 +10,20 @@ from __future__ import annotations
 import re
 import xml.etree.ElementTree as ET
 
+from defusedxml import DefusedXmlException
 from defusedxml import ElementTree as SafeET
 
+from ecgdatakit.exceptions import CorruptedFileError
 from ecgdatakit.parsing.helpers.labels import decode_text
 
 _DECL_RE = re.compile(rb"^\s*<\?xml[^>]*?encoding\s*=\s*[\"']([A-Za-z0-9._-]+)[\"'][^>]*\?>")
+
+
+def header_text(header: bytes) -> str:
+    """Decode a file header for format sniffing (UTF-16 when it has a BOM)."""
+    if header.startswith((b"\xff\xfe", b"\xfe\xff")):
+        return header.decode("utf-16", errors="ignore")
+    return header.decode("utf-8", errors="ignore")
 
 
 def parse_xml_root(raw: bytes) -> ET.Element:
@@ -24,16 +34,21 @@ def parse_xml_root(raw: bytes) -> ET.Element:
     character is lost. Namespace URIs are stripped from tags and attribute
     names (``{urn:hl7-org:v3}series`` becomes ``series``, ``xsi:type``
     becomes ``type``). Raises :class:`xml.etree.ElementTree.ParseError` when
-    the document is not well-formed.
+    the document is not well-formed and :class:`CorruptedFileError` when it
+    declares entities or uses other constructs refused for security
+    (external entities, entity expansion).
     """
     try:
-        root = SafeET.fromstring(raw)
-    except ET.ParseError:
-        body = raw[3:] if raw.startswith(b"\xef\xbb\xbf") else raw
-        match = _DECL_RE.match(body)
-        text = decode_text(body, match.group(1).decode("ascii") if match else None)
-        text = re.sub(r"^\s*<\?xml[^>]*\?>", "", text, count=1)
-        root = SafeET.fromstring(text)
+        try:
+            root = SafeET.fromstring(raw)
+        except ET.ParseError:
+            body = raw[3:] if raw.startswith(b"\xef\xbb\xbf") else raw
+            match = _DECL_RE.match(body)
+            text = decode_text(body, match.group(1).decode("ascii") if match else None)
+            text = re.sub(r"^\s*<\?xml[^>]*\?>", "", text, count=1)
+            root = SafeET.fromstring(text)
+    except DefusedXmlException as e:
+        raise CorruptedFileError(f"XML entity declarations are not allowed: {e}") from e
     for el in root.iter():
         if isinstance(el.tag, str) and "}" in el.tag:
             el.tag = el.tag.split("}", 1)[1]

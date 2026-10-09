@@ -3,10 +3,9 @@
 from __future__ import annotations
 
 import numpy as np
-import pytest
 
 from ecgdatakit.parsing.codecs.lzw import LzwDecoder
-from ecgdatakit.parsing.codecs.xli import xli_decode, xli_decode_deltas, xli_unpack
+from ecgdatakit.parsing.codecs.xli import xli_decode_deltas, xli_unpack
 
 
 class TestLzwDecoder:

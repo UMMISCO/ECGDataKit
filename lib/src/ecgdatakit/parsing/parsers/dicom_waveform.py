@@ -18,7 +18,12 @@ from pathlib import Path
 
 import numpy as np
 
-from ecgdatakit.exceptions import CorruptedFileError, ECGDataKitError, MissingElementError
+from ecgdatakit.exceptions import (
+    CorruptedFileError,
+    ECGDataKitError,
+    MissingElementError,
+    UnsupportedFormatError,
+)
 from ecgdatakit.models import (
     DeviceInfo,
     ECGRecord,
@@ -96,14 +101,15 @@ _LEAD_CODES: dict[int, str] = {
     66: "V8", 67: "V9", 68: "V8R", 69: "V9R",
 }
 
-# Global measurement codes (PS3.16 CID 3226-3229 MDC codes, MDC reference
-# ids, LOINC heart rate and legacy SCPECG codes).
+# Global measurement codes: PS3.16 CID 3227-3229 MDC codes, their MDC
+# reference ids and LOINC heart rate. SCPECG codes number the byte offset in
+# the SCP-ECG section (code meanings as written by a cart in pydicom's
+# waveform_ecg.dcm). Unlisted codes are kept as annotations.
 _MEASUREMENT_CODES: dict[str, str] = {
     "2:16770": "heart_rate",
     "8867-4": "heart_rate",
     "MDC_ECG_HEART_RATE": "heart_rate",
     "2:16168": "rr_interval",
-    "2:16000": "rr_interval",
     "MDC_ECG_TIME_PD_RR": "rr_interval",
     "MDC_ECG_TIME_PD_RR_GL": "rr_interval",
     "2:15872": "pr_interval",
@@ -125,11 +131,13 @@ _MEASUREMENT_CODES: dict[str, str] = {
     "MDC_ECG_ANGLE_QRS_FRONT": "qrs_axis",
     "2:16136": "t_axis",
     "MDC_ECG_ANGLE_T_FRONT": "t_axis",
-    "5.10.2.1-1": "heart_rate",
-    "5.10.3-1": "rr_interval",
-    "5.10.3-2": "pr_interval",
-    "5.10.3-3": "qrs_duration",
-    "5.10.3-4": "qt_interval",
+    "5.10.2.1-3": "rr_interval",
+    "5.13.5-7": "pr_interval",
+    "5.13.5-9": "qrs_duration",
+    "5.13.5-11": "qt_interval",
+    "5.10.3-11": "p_axis",
+    "5.10.3-13": "qrs_axis",
+    "5.10.3-15": "t_axis",
 }
 
 _MEDIAN_GROUP_WORDS = ("MEDIAN", "REPRESENTATIVE", "AVERAGE")
@@ -570,6 +578,11 @@ class DICOMWaveformParser(Parser):
                 f"DICOM multiplex group {index}: Sampling Frequency is missing or invalid"
             )
         rate = int(round(rate_exact))
+        if rate < 1:
+            raise UnsupportedFormatError(
+                f"DICOM multiplex group {index}: Sampling Frequency {rate_exact} Hz is below "
+                "1 Hz and cannot be represented as an integer sampling rate"
+            )
         label = _text(wf.get("MultiplexGroupLabel"))
 
         channel_defs = list(wf.get("ChannelDefinitionSequence") or [])
@@ -596,7 +609,12 @@ class DICOMWaveformParser(Parser):
         if any(row != first for row in filter_rows):
             channel_filters = [dict(row, label=lead.label) for row, lead in zip(filter_rows, leads)]
 
-        stored = wf.get("WaveformBitsStored")
+        # Waveform Bits Stored (003A,021A) belongs to each channel definition
+        stored = next(
+            (ch.get("WaveformBitsStored") for ch in channel_defs
+             if ch.get("WaveformBitsStored") is not None),
+            None,
+        )
         sig = SignalCharacteristics(
             sampling_rate=rate,
             bits_per_sample=int(stored) if stored else bits,
@@ -723,7 +741,7 @@ class DICOMWaveformParser(Parser):
             numeric = _float(item.get("NumericValue"))
             _, unit_value, unit_meaning = _code_parts(_first_code(item, "MeasurementUnitsCodeSequence"))
             unit = unit_value or unit_meaning
-            channels = self._referenced_channels(item, channel_labels)
+            channels, whole_groups = self._referenced_channels(item, channel_labels)
 
             positions = None
             for attr in ("ReferencedSamplePositions", "ReferencedTimeOffsets", "ReferencedDateTime"):
@@ -743,13 +761,15 @@ class DICOMWaveformParser(Parser):
                 continue
 
             if numeric is not None:
-                field_name = None if channels else self._measurement_field(code, name)
+                # Channel number 0 references all channels of a group
+                # (PS3.3 C.10.10.1.1): such a value is a global measurement
+                field_name = None if not whole_groups else self._measurement_field(code, name)
                 converted = self._convert_measurement(field_name, numeric, unit)
-                if field_name and converted is not None:
+                if field_name and converted is not None and field_name not in measurements:
                     measurements[field_name] = converted
                 else:
                     key = name or code or "measurement"
-                    if channels:
+                    if channels and not whole_groups:
                         key = f"{key} ({', '.join(channels)})"
                     record.annotations[key] = f"{numeric:g} {unit}".strip()
                 continue
@@ -771,19 +791,23 @@ class DICOMWaveformParser(Parser):
         record.measurements = meas
 
     @staticmethod
-    def _referenced_channels(item, channel_labels: dict) -> list[str]:
+    def _referenced_channels(item, channel_labels: dict) -> tuple[list[str], bool]:
+        """Return the referenced channel names and whether the item applies to
+        whole multiplex groups only (no reference, or channel number 0)."""
         refs = item.get("ReferencedWaveformChannels")
         if refs is None:
-            return []
+            return [], True
         values = list(refs) if type(refs).__name__ == "MultiValue" or isinstance(refs, list) else [refs]
         result = []
+        whole_groups = True
         for i in range(0, len(values) - 1, 2):
             key = (int(values[i]), int(values[i + 1]))
             if key[1] == 0:
                 result.append(f"group {key[0]}")
             else:
+                whole_groups = False
                 result.append(channel_labels.get(key, f"group {key[0]} channel {key[1]}"))
-        return result
+        return result, whole_groups
 
     @staticmethod
     def _measurement_field(code: str, meaning: str) -> str | None:
@@ -805,13 +829,13 @@ class DICOMWaveformParser(Parser):
         if field_name.endswith("_axis"):
             if unit in ("rad",):
                 value = float(np.degrees(value))
-            elif unit not in ("", "deg", "°", "degree", "degrees"):
+            elif unit not in ("deg", "°", "degree", "degrees"):
                 return None
         elif field_name == "heart_rate":
-            if unit not in ("", "/min", "{beats}/min", "{beat}/min", "1/min", "bpm", "beats/min"):
+            if unit not in ("/min", "{beats}/min", "{beat}/min", "1/min", "bpm", "beats/min"):
                 return None
         else:
-            factors = {"": 1.0, "ms": 1.0, "s": 1000.0, "us": 0.001}
+            factors = {"ms": 1.0, "s": 1000.0, "us": 0.001}
             if unit not in factors:
                 return None
             value *= factors[unit]

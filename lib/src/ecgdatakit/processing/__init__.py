@@ -1,6 +1,6 @@
 """ECG signal processing utilities.
 
-Requires: ``pip install ecgdatakit[processing]``
+Requires: ``pip install "ecgdatakit[processing]"``
 
 Modules
 -------

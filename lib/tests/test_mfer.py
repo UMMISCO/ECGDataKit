@@ -78,7 +78,7 @@ class TestMFERFixture:
     def test_leads_follow_block_layout(self, mfer_file: Path):
         record = MFERParser().parse(mfer_file)
         expected = mfer_test_signal(2, 500)
-        assert [l.label for l in record.leads] == ["I", "II"]
+        assert [ld.label for ld in record.leads] == ["I", "II"]
         for lead, values in zip(record.leads, expected):
             assert lead.samples.dtype == np.float64
             assert np.array_equal(lead.samples, values.astype(float))
@@ -135,7 +135,7 @@ class TestMFERSpecExamples:
               for ch, code in enumerate([1, 2, 3, 4, 5, 6, 7, 8])],
             mfer_tlv(0x1E, mfer_frame_data(signal, 1)),
         )
-        assert [l.label for l in record.leads] == ["I", "II", "V1", "V2", "V3", "V4", "V5", "V6"]
+        assert [ld.label for ld in record.leads] == ["I", "II", "V1", "V2", "V3", "V4", "V5", "V6"]
         lead = record.leads[2]
         assert lead.sampling_rate == 1000
         assert np.array_equal(lead.samples, signal[2].astype(float))
@@ -214,7 +214,7 @@ class TestMFERSpecExamples:
             mfer_att(1, mfer_tlv(0x09, b"\x40")),
             mfer_tlv(0x1E, mfer_frame_data(mfer_test_signal(2, 4), 1)),
         )
-        assert [l.label for l in record.leads] == ["aVR", "aVF"]
+        assert [ld.label for ld in record.leads] == ["aVR", "aVF"]
 
     def test_channel_count_resets_attributes(self, tmp_path: Path):
         record = _parse(
@@ -233,7 +233,7 @@ class TestMFERSpecExamples:
             mfer_tlv(0x09, b"\x02"),
             mfer_tlv(0x1E, b"\x00\x01\x00\x02"),
         )
-        assert [l.label for l in record.leads] == ["II", "Ch2"]
+        assert [ld.label for ld in record.leads] == ["II", "Ch2"]
 
     def test_duplicate_lead_codes_are_unique(self, tmp_path: Path):
         record = _parse(
@@ -243,7 +243,7 @@ class TestMFERSpecExamples:
             mfer_att(1, mfer_tlv(0x09, b"\x01")),
             mfer_tlv(0x1E, b"\x00\x01\x00\x02"),
         )
-        assert [l.label for l in record.leads] == ["I", "I_2"]
+        assert [ld.label for ld in record.leads] == ["I", "I_2"]
 
     @pytest.mark.parametrize("dtp,dtype", [
         (1, ">u2"), (2, ">i4"), (3, "u1"), (5, "i1"), (6, ">u4"), (7, ">f4"), (8, ">f8"),
@@ -293,7 +293,7 @@ class TestMFERSpecExamples:
             mfer_att(1, mfer_tlv(0x09, struct.pack(">H", 4160)), mfer_tlv(0x0A, b"\x04")),
             mfer_tlv(0x1E, ecg.tobytes() + status.tobytes()),
         )
-        assert [l.label for l in record.leads] == ["I"]
+        assert [ld.label for ld in record.leads] == ["I"]
         assert record.patient.has_pacemaker is None  # pacing detections are not a patient attribute
         assert record.raw_metadata["status_channels"]["Status"].tolist() == [0, 0, 4, 0]
 
@@ -404,3 +404,88 @@ def test_missing_interval_uses_mfer_default(tmp_path: Path):
         )
     assert record.leads[0].sampling_rate == 1000
     assert record.raw_metadata["sampling_rate_stated"] is False
+
+
+# ---------------------------------------------------------------------------
+# Frames that redefine their definitions (Part 1 5.2: definitions override
+# in order) and empty or non-ECG content
+# ---------------------------------------------------------------------------
+
+IVL_2MS = mfer_tlv(0x0B, mfer_scaled(1, -3, 2))
+
+
+class TestMFERFrameDefinitions:
+    def test_redefined_scale_is_not_joined(self, tmp_path: Path):
+        data = np.arange(4, dtype=">i2").tobytes()
+        path = _write(tmp_path, b"".join([
+            IVL_2MS, mfer_tlv(0x0C, mfer_scaled(0, -6, 1)), mfer_tlv(0x1E, data),
+            mfer_tlv(0x0C, mfer_scaled(0, -6, 10)), mfer_tlv(0x1E, data),
+        ]))
+        with pytest.warns(UserWarning, match="1 frame\\(s\\) after frame 1 redefine") as caught:
+            record = MFERParser().parse(path)
+        assert caught[0].filename == __file__
+        lead = record.leads[0]
+        assert lead.samples.tolist() == [0.0, 1.0, 2.0, 3.0]
+        assert lead.resolution == 1.0 and lead.resolution_unit == "uV"
+        assert record.recording.duration == timedelta(milliseconds=8)
+        assert [f["samples"] for f in record.raw_metadata["frames"]] == [4, 4]
+
+    def test_redefined_interval_is_not_joined(self, tmp_path: Path):
+        data = np.arange(4, dtype=">i2").tobytes()
+        path = _write(tmp_path, b"".join([
+            IVL_2MS, mfer_tlv(0x1E, data),
+            mfer_tlv(0x0B, mfer_scaled(1, -3, 4)), mfer_tlv(0x1E, data),
+        ]))
+        with pytest.warns(UserWarning, match="redefine"):
+            record = MFERParser().parse(path)
+        assert record.leads[0].sampling_rate == 500
+        assert len(record.leads[0].samples) == 4
+
+    def test_repeated_identical_definitions_are_joined(self, tmp_path: Path):
+        sen = mfer_tlv(0x0C, mfer_scaled(0, -6, 1))
+        record = _parse(
+            tmp_path, IVL_2MS, sen, mfer_tlv(0x1E, np.array([1, 2], ">i2").tobytes()),
+            sen, mfer_tlv(0x1E, np.array([3, 4], ">i2").tobytes()),
+        )
+        assert record.leads[0].samples.tolist() == [1.0, 2.0, 3.0, 4.0]
+
+    def test_empty_frame_raises(self, tmp_path: Path):
+        with pytest.raises(CorruptedFileError, match="no samples"):
+            _parse(tmp_path, IVL_2MS, mfer_tlv(0x1E, b""))
+        with pytest.raises(CorruptedFileError, match="no samples"):
+            _parse(tmp_path, IVL_2MS, mfer_tlv(0x06, b"\x00"), mfer_tlv(0x1E, bytes(8)))
+
+    def test_status_only_is_unsupported(self, tmp_path: Path):
+        with pytest.raises(UnsupportedFormatError, match="only status channels"):
+            _parse(tmp_path, IVL_2MS, mfer_tlv(0x0A, b"\x04"), mfer_tlv(0x1E, bytes(8)))
+
+    def test_rate_below_1_hz_is_unsupported(self, tmp_path: Path):
+        # Trend data sampled once a minute (MWF_IVL 60 s)
+        with pytest.raises(UnsupportedFormatError, match="below 1 Hz"):
+            _parse(tmp_path, mfer_tlv(0x0B, mfer_scaled(1, 0, 60)), mfer_tlv(0x1E, bytes(8)))
+
+    def test_iso_8859_part_is_used(self, tmp_path: Path):
+        record = _parse(
+            tmp_path, IVL_2MS, mfer_tlv(0x03, b"ISO 8859-5"),
+            mfer_tlv(0x81, "Иванов".encode("iso8859_5")), mfer_tlv(0x1E, b"\x00\x01"),
+        )
+        assert record.patient.last_name == "Иванов"
+
+    def test_parser_instance_keeps_no_state(self, tmp_path: Path):
+        parser = MFERParser()
+        path = _write(tmp_path, b"".join([IVL_2MS, mfer_tlv(0x82, b"P1"), mfer_tlv(0x1E, b"\x00\x01")]))
+        assert parser.parse(path).patient.patient_id == "P1"
+        assert not hasattr(parser, "_record")
+
+
+def test_three_frames_with_redefined_third(tmp_path: Path):
+    # Frames 1 and 2 share definitions, frame 3 changes the scale
+    data = np.arange(4, dtype=">i2").tobytes()
+    sen = mfer_tlv(0x0C, mfer_scaled(0, -6, 1))
+    path = _write(tmp_path, b"".join([
+        IVL_2MS, sen, mfer_tlv(0x1E, data), sen, mfer_tlv(0x1E, data),
+        mfer_tlv(0x0C, mfer_scaled(0, -6, 10)), mfer_tlv(0x1E, data),
+    ]))
+    with pytest.warns(UserWarning, match="1 frame\\(s\\) after frame 2 redefine"):
+        record = MFERParser().parse(path)
+    assert record.leads[0].samples.tolist() == [0.0, 1.0, 2.0, 3.0] * 2

@@ -141,7 +141,8 @@ class TestCleanECGDeepFADE:
         lead = make_noisy_ecg(duration=10.0)
         if not _DEEPFADE_WEIGHTS.exists():
             pytest.skip("weights file not found")
-        result = clean_ecg(lead, method="deepfade")
+        with pytest.warns(UserWarning, match="experimental"):
+            result = clean_ecg(lead, method="deepfade")
         assert isinstance(result, Lead)
         assert len(result.samples) == len(lead.samples)
 
@@ -151,5 +152,80 @@ class TestCleanECGDeepFADE:
         lead = make_noisy_ecg(duration=10.0)
         if not _DEEPFADE_WEIGHTS.exists():
             pytest.skip("weights file not found")
-        result = clean_ecg(lead, method="deepfade", device="cpu")
+        with pytest.warns(UserWarning, match="experimental"):
+            result = clean_ecg(lead, method="deepfade", device="cpu")
         assert isinstance(result, Lead)
+
+
+class TestCleanECGOptions:
+    def test_powerline_60(self):
+        fs = 500
+        t = np.arange(0, 10, 1 / fs)
+        lead = Lead(label="II", samples=np.sin(2 * np.pi * 60 * t), sampling_rate=fs)
+        def hum(result):
+            spectrum = np.abs(np.fft.rfft(result.samples[fs:-fs]))
+            return spectrum[np.argmin(np.abs(np.fft.rfftfreq(len(t) - 2 * fs, 1 / fs) - 60))]
+
+        assert hum(clean_ecg(lead, powerline=60)) < hum(clean_ecg(lead)) / 100
+
+    def test_unknown_kwarg_rejected(self):
+        with pytest.raises(TypeError, match="notch_freq"):
+            clean_ecg(make_noisy_ecg(), notch_freq=60)
+
+    def test_deepfade_kwarg_rejected_for_default(self):
+        with pytest.raises(TypeError, match="device"):
+            clean_ecg(make_noisy_ecg(), device="cpu")
+
+    def test_low_rate_skips_notch_with_warning(self):
+        lead = make_noisy_ecg(fs=100)
+        with pytest.warns(UserWarning, match="skipped"):
+            clean_ecg(lead)
+
+    def test_nan_refused(self):
+        lead = make_noisy_ecg()
+        lead.samples[100] = np.nan
+        with pytest.raises(ValueError, match="NaN"):
+            clean_ecg(lead)
+
+
+class TestCleanECGNeuroKitErrors:
+    @pytest.fixture(autouse=True)
+    def skip_if_no_nk(self):
+        pytest.importorskip("neurokit2")
+
+    def test_backend_error_propagates(self):
+        with pytest.raises(ValueError):
+            clean_ecg(np.arange(5.0), method="neurokit2", fs=500)
+
+    def test_powerline_forwarded(self):
+        import neurokit2 as nk
+        lead = make_noisy_ecg()
+        expected = nk.ecg_clean(lead.samples, sampling_rate=500, powerline=60)
+        np.testing.assert_allclose(clean_ecg(lead, method="neurokit2", powerline=60).samples, expected)
+
+
+class TestCleanECGRound2:
+    def test_notch_warning_points_at_caller(self):
+        with pytest.warns(UserWarning, match="skipped") as record:
+            clean_ecg(make_noisy_ecg(fs=100))
+        assert {w.filename for w in record} == {__file__}
+
+    def test_low_rate_band_clamped_with_warning(self):
+        lead = make_noisy_ecg(fs=60)
+        with pytest.warns(UserWarning) as record:
+            result = clean_ecg(lead)
+        messages = [str(w.message) for w in record]
+        assert any("upper cutoff lowered from 40.0 Hz to 27 Hz" in m for m in messages)
+        assert all(w.filename == __file__ for w in record)
+        assert len(result.samples) == len(lead.samples)
+
+    def test_missing_backend_keeps_import_error_and_method(self, monkeypatch):
+        import sys
+        # None in sys.modules makes the import fail, like a missing peakutils
+        monkeypatch.setitem(sys.modules, "biosppy.signals.ecg", None)
+        with pytest.raises(ImportError) as info:
+            clean_ecg(make_noisy_ecg(), method="combined")
+        message = str(info.value)
+        assert "method='combined'" in message
+        assert "biosppy.signals.ecg" in message
+        assert 'pip install "ecgdatakit[cleaning]"' in message

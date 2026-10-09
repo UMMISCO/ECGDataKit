@@ -8,7 +8,7 @@ Import: `from ecgdatakit import ECGDataKitError, UnsupportedFormatError, ...`
 : Base exception for all ECGDataKit errors.
 
 {class}`~ecgdatakit.exceptions.UnsupportedFormatError`
-: File format not recognized by any parser.
+: File format not recognized by any parser, or a recognized format variant that is not supported. It also subclasses `ValueError`.
 
 {class}`~ecgdatakit.exceptions.CorruptedFileError`
 : File is truncated or structurally invalid.
@@ -21,6 +21,8 @@ Import: `from ecgdatakit import ECGDataKitError, UnsupportedFormatError, ...`
 
 {class}`~ecgdatakit.exceptions.RawSamplesError`
 : Operation requires physical-unit samples but the lead still contains raw ADC values. Call `to_physical()` first.
+
+A missing optional dependency (for example pydicom for DICOM files) raises `ImportError` with the install command.
 
 ## Warnings
 

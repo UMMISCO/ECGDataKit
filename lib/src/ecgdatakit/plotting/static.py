@@ -4,11 +4,12 @@ All public functions return ``matplotlib.figure.Figure``.
 Functions that accept an *ax* parameter can render into an existing axes
 for composability; when *ax* is ``None`` a new figure is created.
 
-Requires: ``pip install ecgdatakit[plotting]``
+Requires: ``pip install "ecgdatakit[plotting]"``
 """
 
 from __future__ import annotations
 
+import warnings
 from typing import TYPE_CHECKING
 
 import numpy as np
@@ -21,10 +22,18 @@ from ecgdatakit.plotting._core import (
     _find_lead,
     _grid_shape,
     _resolve_leads,
+    amplitude_label,
+    amplitude_unit,
+    check_rate,
+    check_rr,
+    decimate_minmax,
     ensure_lead,
     lead_color,
+    mpl_styled,
     require_matplotlib,
     time_axis,
+    warn_decimated,
+    x_extent,
 )
 
 if TYPE_CHECKING:
@@ -35,7 +44,7 @@ if TYPE_CHECKING:
 
 def _get_or_create_ax(figsize, ax):
     """Return (fig, ax).  Creates new ones when *ax* is ``None``."""
-    mpl = require_matplotlib()
+    require_matplotlib()
     import matplotlib.pyplot as plt
 
     if ax is None:
@@ -45,48 +54,77 @@ def _get_or_create_ax(figsize, ax):
     return fig, ax
 
 
-def _ecg_grid(ax, major_x=0.2, major_y=0.5, minor_x=0.04, minor_y=0.1):
-    """Draw ECG paper-style grid on *ax*.
+# Amplitude of one 10 mm paper square (0.5 mV) per voltage unit
+_HALF_MV = {"mV": 0.5, "uV": 500.0, "V": 0.0005}
+_MAX_TICKS = 500
 
-    If the data range on either axis would produce more than 500 ticks,
-    the locator for that axis falls back to matplotlib's ``AutoLocator``
-    to avoid excessive tick generation (e.g. when signals are in raw ADC
-    units rather than millivolts).
+
+def _ecg_grid(ax, unit: str = "mV", time_x: bool = True) -> None:
+    """Draw ECG paper-style grid lines on *ax*.
+
+    Time lines follow the paper at 0.2 s (major) and 0.04 s (minor), with
+    labels on whole seconds only. Amplitude lines are 0.5 mV and 0.1 mV,
+    converted to the lead *unit*; for raw counts or an unknown unit the
+    amplitude axis keeps matplotlib's automatic ticks. Call after the axis
+    limits are set. An axis whose range would need more than 500 lines
+    falls back to automatic ticks.
     """
+    from matplotlib.ticker import AutoLocator, AutoMinorLocator, FuncFormatter, MultipleLocator
+
     ax.set_axisbelow(True)
     ax.grid(True, which="major", color="#ffcccc", linewidth=0.8)
     ax.grid(True, which="minor", color="#ffe6e6", linewidth=0.4)
 
-    from matplotlib.ticker import AutoLocator, AutoMinorLocator, MultipleLocator
-
-    _MAX_TICKS = 500
-
     x_lo, x_hi = ax.get_xlim()
-    y_lo, y_hi = ax.get_ylim()
-
-    if (x_hi - x_lo) / minor_x < _MAX_TICKS:
-        ax.xaxis.set_major_locator(MultipleLocator(major_x))
-        ax.xaxis.set_minor_locator(MultipleLocator(minor_x))
+    if time_x and (x_hi - x_lo) / 0.04 < _MAX_TICKS:
+        ax.xaxis.set_major_locator(MultipleLocator(0.2))
+        ax.xaxis.set_minor_locator(MultipleLocator(0.04))
+        ax.xaxis.set_major_formatter(FuncFormatter(
+            lambda v, _: f"{v:.0f}" if abs(v - round(v)) < 1e-6 else ""
+        ))
     else:
         ax.xaxis.set_major_locator(AutoLocator())
         ax.xaxis.set_minor_locator(AutoMinorLocator())
 
-    if (y_hi - y_lo) / minor_y < _MAX_TICKS:
-        ax.yaxis.set_major_locator(MultipleLocator(major_y))
-        ax.yaxis.set_minor_locator(MultipleLocator(minor_y))
+    half = _HALF_MV.get(unit)
+    y_lo, y_hi = ax.get_ylim()
+    if half is not None and (y_hi - y_lo) / (half / 5) < _MAX_TICKS:
+        ax.yaxis.set_major_locator(MultipleLocator(half))
+        ax.yaxis.set_minor_locator(MultipleLocator(half / 5))
     else:
         ax.yaxis.set_major_locator(AutoLocator())
         ax.yaxis.set_minor_locator(AutoMinorLocator())
 
 
-def _style_ax(ax):
-    """Remove top/right spines and set integer x-ticks."""
+def _style_ax(ax) -> None:
+    """Remove top/right spines and use readable x ticks."""
     from matplotlib.ticker import AutoMinorLocator, MaxNLocator
 
     ax.spines["top"].set_visible(False)
     ax.spines["right"].set_visible(False)
     ax.xaxis.set_major_locator(MaxNLocator(integer=True))
     ax.xaxis.set_minor_locator(AutoMinorLocator())
+
+
+def _finish_ax(ax, extent, show_grid: bool, unit: str, x_axis: str) -> None:
+    """Set the x range, style the axes and draw the paper grid if asked."""
+    if extent is not None:
+        ax.set_xlim(*extent)
+    _style_ax(ax)
+    if show_grid:
+        _ecg_grid(ax, unit, time_x=(x_axis != "samples"))
+
+
+# Static plots add the style decorator frame between the plot and the caller
+_STATIC_STACKLEVEL = 4
+
+
+def _plot_trace(ax, lead, x, decimated: list[str], **kwargs) -> None:
+    """Plot a lead, with min/max decimation when it is very long."""
+    xs, ys, cut = decimate_minmax(x, lead.samples)
+    if cut:
+        decimated.append(lead.label)
+    ax.plot(xs, ys, **kwargs)
 
 
 def _x_data(lead, x_axis):
@@ -96,7 +134,7 @@ def _x_data(lead, x_axis):
     return time_axis(lead), "Time (s)"
 
 
-
+@mpl_styled
 def plot_lead(
     lead: LeadLike,
     peaks: NDArray[np.intp] | None = None,
@@ -120,7 +158,7 @@ def plot_lead(
     title : str | None
         Figure title. Defaults to the lead label.
     show_grid : bool
-        Draw ECG paper-style grid (default ``True``).
+        Draw ECG paper-style grid (default ``False``).
     figsize : tuple
         Figure size in inches (default ``(12, 3)``).
     ax : Axes | None
@@ -139,7 +177,9 @@ def plot_lead(
     fig, ax = _get_or_create_ax(figsize, ax)
     x, xlabel = _x_data(lead, x_axis)
 
-    ax.plot(x, lead.samples, color=lead_color(lead.label), linewidth=0.8)
+    decimated: list[str] = []
+    _plot_trace(ax, lead, x, decimated, color=lead_color(lead.label), linewidth=0.8)
+    warn_decimated(decimated, _STATIC_STACKLEVEL)
 
     if peaks is not None and len(peaks) > 0:
         ax.plot(
@@ -151,14 +191,10 @@ def plot_lead(
         )
 
     ax.set_xlabel(xlabel)
-    ax.set_ylabel(f"Amplitude ({lead.units})" if lead.units else "Amplitude")
+    ax.set_ylabel(amplitude_label(lead))
     ax.set_title(title or lead.label)
 
-    if show_grid:
-        _ecg_grid(ax)
-
-    ax.set_xlim(x[0], x[-1])
-    _style_ax(ax)
+    _finish_ax(ax, x_extent([lead], x_axis), show_grid, amplitude_unit(lead), x_axis)
     fig.tight_layout()
 
     if show and own_fig:
@@ -168,6 +204,7 @@ def plot_lead(
     return fig
 
 
+@mpl_styled
 def plot_leads(
     leads: list[Lead] | ECGRecord | NDArray[np.float64] | list[NDArray[np.float64]],
     peaks_dict: dict[str, NDArray[np.intp]] | None = None,
@@ -223,23 +260,26 @@ def plot_leads(
     r, c = _grid_shape(n, rows, cols)
     h = figsize[1] if figsize[1] is not None else max(3, 2 * r)
     fig, axes = plt.subplots(r, c, figsize=(figsize[0], h), sharex=share_x, squeeze=False)
+    # Shared axes span the longest lead so no lead is cut off
+    common = x_extent(lead_list, x_axis) if share_x else None
 
+    decimated: list[str] = []
     for i, ld in enumerate(lead_list):
         ri, ci = divmod(i, c)
         ax = axes[ri][ci]
         x, _ = _x_data(ld, x_axis)
-        ax.plot(x, ld.samples, color=lead_color(ld.label), linewidth=0.8)
+        _plot_trace(ax, ld, x, decimated, color=lead_color(ld.label), linewidth=0.8)
 
         if peaks_dict and ld.label in peaks_dict:
             pk = peaks_dict[ld.label]
             ax.plot(x[pk], ld.samples[pk], "rv", markersize=5)
 
-        ax.set_ylabel(ld.label, rotation=0, labelpad=30, fontsize=10)
+        unit = amplitude_unit(ld)
+        ax.set_ylabel(f"{ld.label}\n({unit})" if unit else ld.label,
+                      rotation=0, labelpad=30, fontsize=10)
         ax.yaxis.set_label_position("left")
-        if show_grid:
-            _ecg_grid(ax)
-        ax.set_xlim(x[0], x[-1])
-        _style_ax(ax)
+        _finish_ax(ax, common or x_extent([ld], x_axis), show_grid, unit, x_axis)
+    warn_decimated(decimated, _STATIC_STACKLEVEL)
 
     # Hide empty subplots
     for j in range(n, r * c):
@@ -260,6 +300,7 @@ def plot_leads(
     return fig
 
 
+@mpl_styled
 def plot_12lead(
     leads: list[Lead] | ECGRecord | NDArray[np.float64] | list[NDArray[np.float64]],
     record: ECGRecord | None = None,
@@ -277,8 +318,9 @@ def plot_12lead(
     """Plot 12 leads with standard lead names (I, II, III, aVR, …, V6).
 
     Unlike :func:`plot_leads`, this function assigns the standard 12-lead
-    names when the input contains unnamed leads (e.g. a raw numpy array).
-    The full signal is plotted without cropping.
+    names (in order) when the input is a numpy array.
+    The full signal is plotted without cropping; with a shared x-axis the
+    range covers the longest lead.
 
     Parameters
     ----------
@@ -290,7 +332,7 @@ def plot_12lead(
     title : str | None
         Overall figure title.
     show_grid : bool
-        Draw ECG paper-style grid (default ``True``).
+        Draw ECG paper-style grid (default ``False``).
     figsize : tuple
         Width is fixed; height is auto-calculated (2 in per row) when ``None``.
     share_x : bool
@@ -319,9 +361,11 @@ def plot_12lead(
         fig, _ = plt.subplots(figsize=(figsize[0], 3))
         return fig
 
-    # Assign standard 12-lead names when leads are unnamed
-    for i, ld in enumerate(lead_list):
-        if i < len(STANDARD_12LEAD) and ld.label.startswith("Lead "):
+    # Name leads built from numpy arrays; Lead objects are never modified
+    if isinstance(leads, np.ndarray) or (
+        isinstance(leads, list) and leads and isinstance(leads[0], np.ndarray)
+    ):
+        for i, ld in enumerate(lead_list[:len(STANDARD_12LEAD)]):
             ld.label = STANDARD_12LEAD[i]
 
     r, c = _grid_shape(n, rows, cols)
@@ -344,16 +388,17 @@ def plot_12lead(
     else:
         fig, axes = plt.subplots(r, c, figsize=(figsize[0], h), sharex=share_x, squeeze=False)
 
+    common = x_extent(lead_list, x_axis) if share_x else None
+    decimated: list[str] = []
     for i, ld in enumerate(lead_list):
         ri, ci = divmod(i, c)
         ax = axes[ri][ci]
         x, _ = _x_data(ld, x_axis)
-        ax.plot(x, ld.samples, color=lead_color(ld.label), linewidth=0.8)
-        ax.set_title(ld.label, fontsize=9, loc="left", pad=2)
-        if show_grid:
-            _ecg_grid(ax)
-        ax.set_xlim(x[0], x[-1])
-        _style_ax(ax)
+        _plot_trace(ax, ld, x, decimated, color=lead_color(ld.label), linewidth=0.8)
+        unit = amplitude_unit(ld)
+        ax.set_title(f"{ld.label} ({unit})" if unit else ld.label, fontsize=9, loc="left", pad=2)
+        _finish_ax(ax, common or x_extent([ld], x_axis), show_grid, unit, x_axis)
+    warn_decimated(decimated, _STATIC_STACKLEVEL)
 
     # Hide empty subplots
     for j in range(n, r * c):
@@ -393,7 +438,7 @@ def _draw_header(ax, record: ECGRecord) -> None:
 
     r = record.recording
     if r.date:
-        lines.append(f"Date: {r.date.strftime('%Y-%m-%d %H:%M')}")
+        lines.append(f"Date: {r.date.strftime('%Y-%m-%d %H:%M %z').strip()}")
     if r.acquisition.signal.sampling_rate:
         lines.append(f"Sample rate: {r.acquisition.signal.sampling_rate} Hz")
 
@@ -425,7 +470,7 @@ def _draw_header(ax, record: ECGRecord) -> None:
 
     interp = record.interpretation
     if interp.statements:
-        stmts = [f"{l} {r}".strip() if r else l for l, r in interp.statements[:3]]
+        stmts = [f"{left} {right}".strip() if right else left for left, right in interp.statements[:3]]
         lines.append("Interpretation: " + "; ".join(stmts))
 
     text = "\n".join(lines) if lines else "ECG Report"
@@ -435,7 +480,7 @@ def _draw_header(ax, record: ECGRecord) -> None:
     )
 
 
-
+@mpl_styled
 def plot_peaks(
     lead: LeadLike,
     peaks: NDArray[np.intp] | None = None,
@@ -465,6 +510,7 @@ def plot_peaks(
     from ecgdatakit.processing.peaks import detect_r_peaks
 
     lead = ensure_lead(lead, fs=fs)
+    check_rate(lead)
     if peaks is None:
         peaks = detect_r_peaks(lead)
 
@@ -472,7 +518,9 @@ def plot_peaks(
     fig, ax = _get_or_create_ax(figsize, ax)
     x, xlabel = _x_data(lead, x_axis)
 
-    ax.plot(x, lead.samples, color=lead_color(lead.label), linewidth=0.8)
+    decimated: list[str] = []
+    _plot_trace(ax, lead, x, decimated, color=lead_color(lead.label), linewidth=0.8)
+    warn_decimated(decimated, _STATIC_STACKLEVEL)
     if len(peaks) > 0:
         ax.plot(x[peaks], lead.samples[peaks], "rv", markersize=7, label="R-peaks")
 
@@ -499,11 +547,9 @@ def plot_peaks(
             )
 
     ax.set_xlabel(xlabel)
-    ax.set_ylabel(f"Amplitude ({lead.units})" if lead.units else "Amplitude")
+    ax.set_ylabel(amplitude_label(lead))
     ax.set_title(title or f"{lead.label} \u2014 R-peaks")
-    _ecg_grid(ax)
-    ax.set_xlim(x[0], x[-1])
-    _style_ax(ax)
+    _finish_ax(ax, x_extent([lead], x_axis), True, amplitude_unit(lead), x_axis)
     fig.tight_layout()
 
     if show and own_fig:
@@ -513,6 +559,7 @@ def plot_peaks(
     return fig
 
 
+@mpl_styled
 def plot_beats(
     lead: LeadLike,
     beats: list[Lead] | None = None,
@@ -523,6 +570,8 @@ def plot_beats(
     *,
     fs: int | None = None,
     show: bool = True,
+    before: float = 0.2,
+    after: float = 0.4,
 ) -> Figure:
     """Plot segmented heartbeats.
 
@@ -531,21 +580,27 @@ def plot_beats(
     lead : Lead | NDArray[np.float64]
         Source ECG lead or raw signal array.
     beats : list[Lead] | None
-        Pre-segmented beats. Segmented automatically if ``None``.
+        Pre-segmented beats. Segmented automatically if ``None``. When given,
+        they must have been cut with the same *before* window so the time
+        axis is right.
     peaks : NDArray | None
         R-peak indices for segmentation.
     overlay : bool
-        ``True``: overlay all beats; ``False``: waterfall display.
+        ``True``: overlay all beats with their mean; ``False``: waterfall display.
     fs : int | None
         Sample rate in Hz.  Required when *lead* is a numpy array.
     show : bool
         Display the plot immediately (default ``True``).
+    before, after : float
+        Window in seconds before and after each R-peak (default 0.2, 0.4).
+        Time 0 on the x-axis is the R-peak.
     """
-    from ecgdatakit.processing.transforms import average_beat, segment_beats
+    from ecgdatakit.processing.transforms import segment_beats
 
     lead = ensure_lead(lead, fs=fs)
+    check_rate(lead)
     if beats is None:
-        beats = segment_beats(lead, peaks)
+        beats = segment_beats(lead, peaks, before, after)
 
     own_fig = ax is None
     fig, ax = _get_or_create_ax(figsize, ax)
@@ -554,24 +609,27 @@ def plot_beats(
         ax.text(0.5, 0.5, "No beats detected", transform=ax.transAxes, ha="center")
         return fig
 
-    n_samples = len(beats[0].samples)
-    t_ms = np.arange(n_samples, dtype=np.float64) / lead.sampling_rate * 1000
+    n_samples = min(len(b.samples) for b in beats)
+    pre = int(round(before * lead.sampling_rate))
+    t_ms = (np.arange(n_samples, dtype=np.float64) - pre) / lead.sampling_rate * 1000
 
     if overlay:
-        for i, beat in enumerate(beats):
-            ax.plot(t_ms, beat.samples, color=lead_color(lead.label), alpha=0.25, linewidth=0.6)
-        avg = average_beat(lead, peaks)
-        ax.plot(t_ms[:len(avg.samples)], avg.samples, color="black", linewidth=2.0, label="Average")
+        for beat in beats:
+            ax.plot(t_ms, beat.samples[:n_samples], color=lead_color(lead.label),
+                    alpha=0.25, linewidth=0.6)
+        avg = np.mean([b.samples[:n_samples] for b in beats], axis=0)
+        ax.plot(t_ms, avg, color="black", linewidth=2.0, label="Average")
         ax.legend(fontsize=8)
     else:
         offset = 0.0
-        spacing = np.ptp(beats[0].samples) * 1.3 if len(beats[0].samples) > 0 else 1.0
-        for i, beat in enumerate(beats):
-            ax.plot(t_ms, beat.samples + offset, color=lead_color(lead.label), linewidth=0.7)
+        spacing = np.ptp(beats[0].samples) * 1.3 if n_samples > 0 else 1.0
+        for beat in beats:
+            ax.plot(t_ms, beat.samples[:n_samples] + offset, color=lead_color(lead.label),
+                    linewidth=0.7)
             offset -= spacing
 
     ax.set_xlabel("Time relative to R-peak (ms)")
-    ax.set_ylabel("Amplitude")
+    ax.set_ylabel(amplitude_label(lead))
     ax.set_title(f"{lead.label} \u2014 Segmented beats ({len(beats)})")
     _style_ax(ax)
     fig.tight_layout()
@@ -583,6 +641,7 @@ def plot_beats(
     return fig
 
 
+@mpl_styled
 def plot_average_beat(
     lead: LeadLike,
     peaks: NDArray[np.intp] | None = None,
@@ -614,6 +673,7 @@ def plot_average_beat(
     from ecgdatakit.processing.transforms import segment_beats
 
     lead = ensure_lead(lead, fs=fs)
+    check_rate(lead)
     beats = segment_beats(lead, peaks, before, after)
 
     own_fig = ax is None
@@ -627,15 +687,15 @@ def plot_average_beat(
     avg = stacked.mean(axis=0)
     std = stacked.std(axis=0)
 
-    n_samples = len(avg)
-    t_ms = np.linspace(-before * 1000, after * 1000, n_samples)
+    pre = int(round(before * lead.sampling_rate))
+    t_ms = (np.arange(len(avg), dtype=np.float64) - pre) / lead.sampling_rate * 1000
 
     ax.fill_between(t_ms, avg - std, avg + std, alpha=0.25, color=lead_color(lead.label))
     ax.plot(t_ms, avg, color=lead_color(lead.label), linewidth=2.0)
     ax.axvline(0, color="red", linestyle="--", linewidth=0.8, alpha=0.6, label="R-peak")
 
-    ax.set_xlabel("Time (ms)")
-    ax.set_ylabel("Amplitude")
+    ax.set_xlabel("Time relative to R-peak (ms)")
+    ax.set_ylabel(amplitude_label(lead))
     ax.set_title(f"{lead.label} \u2014 Average beat (n={len(beats)})")
     ax.legend(fontsize=8)
     _style_ax(ax)
@@ -648,7 +708,7 @@ def plot_average_beat(
     return fig
 
 
-
+@mpl_styled
 def plot_spectrum(
     lead: LeadLike,
     method: str = "welch",
@@ -672,6 +732,7 @@ def plot_spectrum(
         Display the plot immediately (default ``True``).
     """
     lead = ensure_lead(lead, fs=fs)
+    check_rate(lead)
     from ecgdatakit.processing.transforms import fft as ecg_fft
     from ecgdatakit.processing.transforms import power_spectrum
 
@@ -705,6 +766,7 @@ def plot_spectrum(
     return fig
 
 
+@mpl_styled
 def plot_spectrogram(
     lead: LeadLike,
     nperseg: int = 256,
@@ -730,6 +792,7 @@ def plot_spectrogram(
     from ecgdatakit.processing._core import require_scipy
 
     lead = ensure_lead(lead, fs=fs)
+    check_rate(lead)
     sig = require_scipy("signal")
     own_fig = ax is None
     fig, ax = _get_or_create_ax(figsize, ax)
@@ -755,7 +818,7 @@ def plot_spectrogram(
     return fig
 
 
-
+@mpl_styled
 def plot_rr_tachogram(
     rr_ms: NDArray[np.float64],
     figsize: tuple[float, float] = (10, 3),
@@ -772,6 +835,7 @@ def plot_rr_tachogram(
     show : bool
         Display the plot immediately (default ``True``).
     """
+    rr_ms = check_rr(rr_ms)
     own_fig = ax is None
     fig, ax = _get_or_create_ax(figsize, ax)
 
@@ -798,6 +862,7 @@ def plot_rr_tachogram(
     return fig
 
 
+@mpl_styled
 def plot_poincare(
     rr_ms: NDArray[np.float64],
     figsize: tuple[float, float] = (6, 6),
@@ -816,6 +881,9 @@ def plot_poincare(
     """
     from matplotlib.patches import Ellipse
 
+    from ecgdatakit.processing.hrv import poincare
+
+    rr_ms = check_rr(rr_ms)
     own_fig = ax is None
     fig, ax = _get_or_create_ax(figsize, ax)
 
@@ -833,22 +901,23 @@ def plot_poincare(
     ax.plot([lo - margin, hi + margin], [lo - margin, hi + margin],
             "k--", linewidth=0.5, alpha=0.4)
 
-    sd1 = float(np.std(y - x, ddof=1) / np.sqrt(2))
-    sd2 = float(np.std(y + x, ddof=1) / np.sqrt(2))
-    cx, cy = float(x.mean()), float(y.mean())
-
-    ellipse = Ellipse(
-        (cx, cy), width=2 * sd2, height=2 * sd1, angle=45,
-        edgecolor="red", facecolor="none", linewidth=1.5, linestyle="--",
-        label=f"SD1={sd1:.1f}, SD2={sd2:.1f}",
-    )
-    ax.add_patch(ellipse)
+    # SD1/SD2 from the HRV module so the plot and the metrics agree
+    desc = poincare(rr_ms)
+    sd1, sd2 = desc["sd1"], desc["sd2"]
+    if np.isfinite(sd1) and np.isfinite(sd2):
+        ellipse = Ellipse(
+            (float(x.mean()), float(y.mean())), width=2 * sd2, height=2 * sd1, angle=45,
+            edgecolor="red", facecolor="none", linewidth=1.5, linestyle="--",
+            label=f"SD1={sd1:.1f}, SD2={sd2:.1f}",
+        )
+        ax.add_patch(ellipse)
 
     ax.set_xlabel("RR(n) (ms)")
     ax.set_ylabel("RR(n+1) (ms)")
     ax.set_title("Poincar\u00e9 Plot")
     ax.set_aspect("equal", adjustable="datalim")
-    ax.legend(fontsize=8)
+    if ax.patches:
+        ax.legend(fontsize=8)
     _style_ax(ax)
     fig.tight_layout()
 
@@ -859,6 +928,7 @@ def plot_poincare(
     return fig
 
 
+@mpl_styled
 def plot_hrv_summary(
     rr_ms: NDArray[np.float64],
     figsize: tuple[float, float] = (14, 8),
@@ -874,9 +944,9 @@ def plot_hrv_summary(
     show : bool
         Display the plot immediately (default ``True``).
     """
-    require_matplotlib()
     import matplotlib.pyplot as plt
 
+    rr_ms = check_rr(rr_ms)
     fig, axes = plt.subplots(2, 2, figsize=figsize)
 
     plot_rr_tachogram(rr_ms, ax=axes[0, 0], show=False)
@@ -901,37 +971,34 @@ def plot_hrv_summary(
 
 
 def _plot_hrv_frequency(rr_ms: NDArray[np.float64], ax) -> None:
-    """Plot HRV frequency-domain PSD with shaded VLF/LF/HF bands."""
-    from ecgdatakit.processing._core import require_scipy
+    """Bar chart of the VLF/LF/HF band powers from :func:`frequency_domain`.
 
-    if len(rr_ms) < 4:
-        ax.text(0.5, 0.5, "Need \u22654 RR intervals", transform=ax.transAxes, ha="center")
+    The values come from the HRV module, so the plot always matches the
+    metrics it reports.
+    """
+    from ecgdatakit.processing.hrv import frequency_domain
+
+    # Short-recording warnings are re-emitted at the caller of plot_hrv_summary
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        fd = frequency_domain(rr_ms)
+    for w in caught:
+        warnings.warn(w.message, w.category, stacklevel=_STATIC_STACKLEVEL)
+    if not np.isfinite(fd["total_power"]):
+        ax.text(0.5, 0.5, "Not enough RR intervals for the spectrum",
+                transform=ax.transAxes, ha="center")
+        ax.axis("off")
         return
 
-    sig = require_scipy("signal")
-    interpolate = require_scipy("interpolate")
-
-    rr_s = rr_ms / 1000.0
-    t_rr = np.cumsum(rr_s) - rr_s[0]
-    interp_fs = 4.0
-    t_uniform = np.arange(0, t_rr[-1], 1.0 / interp_fs)
-    f_interp = interpolate.interp1d(t_rr, rr_ms, kind="cubic", fill_value="extrapolate")
-    rr_uniform = f_interp(t_uniform)
-    rr_uniform = rr_uniform - rr_uniform.mean()
-
-    nperseg = min(256, len(rr_uniform))
-    freqs, psd = sig.welch(rr_uniform, fs=interp_fs, nperseg=nperseg)
-
-    ax.plot(freqs, psd, color="black", linewidth=0.8)
-    ax.fill_between(freqs, psd, where=(freqs < 0.04), alpha=0.3, color="#9467bd", label="VLF")
-    ax.fill_between(freqs, psd, where=(freqs >= 0.04) & (freqs < 0.15), alpha=0.3, color="#2ca02c", label="LF")
-    ax.fill_between(freqs, psd, where=(freqs >= 0.15) & (freqs < 0.40), alpha=0.3, color="#1f77b4", label="HF")
-
-    ax.set_xlabel("Frequency (Hz)")
-    ax.set_ylabel("PSD (ms\u00b2/Hz)")
-    ax.set_title("HRV Frequency Domain")
-    ax.set_xlim(0, 0.5)
-    ax.legend(fontsize=8)
+    names = ["VLF\n0-0.04 Hz", "LF\n0.04-0.15 Hz", "HF\n0.15-0.40 Hz"]
+    values = [fd["vlf_power"], fd["lf_power"], fd["hf_power"]]
+    bars = ax.bar(names, values, color=["#9467bd", "#2ca02c", "#1f77b4"], alpha=0.7)
+    for bar, value in zip(bars, values):
+        ax.text(bar.get_x() + bar.get_width() / 2, bar.get_height(), f"{value:.0f}",
+                ha="center", va="bottom", fontsize=8)
+    ratio = fd["lf_hf_ratio"]
+    ax.set_ylabel("Power (ms\u00b2)")
+    ax.set_title("HRV Frequency Bands" + (f" (LF/HF {ratio:.2f})" if np.isfinite(ratio) else ""))
 
 
 def _plot_hrv_table(rr_ms: NDArray[np.float64], ax) -> None:
@@ -963,15 +1030,20 @@ def _plot_hrv_table(rr_ms: NDArray[np.float64], ax) -> None:
     ax.set_title("Time-Domain Metrics", fontsize=11, pad=10)
 
 
-
+@mpl_styled
 def plot_quality(
     leads: list[Lead] | ECGRecord | NDArray[np.float64] | list[NDArray[np.float64]],
     figsize: tuple[float, float] = (10, 5),
     *,
     fs: int | None = None,
     show: bool = True,
+    seconds: float | None = None,
 ) -> Figure:
     """Signal quality dashboard: SQI bar chart per lead.
+
+    The quality metrics run over the whole of each lead by default, which
+    takes a few seconds per lead on a 24 h Holter. Pass *seconds* to assess
+    only the start of each lead.
 
     Parameters
     ----------
@@ -982,6 +1054,8 @@ def plot_quality(
         Sample rate in Hz.  Required when *leads* is a numpy array.
     show : bool
         Display the plot immediately (default ``True``).
+    seconds : float | None
+        Assess only the first *seconds* of each lead (default: whole lead).
     """
     require_matplotlib()
     import matplotlib.pyplot as plt
@@ -992,6 +1066,8 @@ def plot_quality(
         fig, _ = plt.subplots(figsize=figsize)
         return fig
 
+    if seconds is not None:
+        lead_list = [_first_seconds(ld, seconds) for ld in lead_list]
     labels = [ld.label for ld in lead_list]
     sqis = [signal_quality_index(ld) for ld in lead_list]
     snrs = [snr_estimate(ld) for ld in lead_list]
@@ -1021,7 +1097,8 @@ def plot_quality(
     ax.set_xticklabels(labels, fontsize=9)
     ax.set_ylabel("Signal Quality Index")
     ax.set_ylim(0, 1.15)
-    ax.set_title("Signal Quality per Lead")
+    ax.set_title("Signal Quality per Lead"
+                 + (f" (first {seconds:g} s)" if seconds is not None else ""))
 
     from matplotlib.patches import Patch
     legend_elements = [
@@ -1042,6 +1119,20 @@ def plot_quality(
 
 
 
+_REPORT_SECONDS = 10.0
+_COLUMN_SECONDS = 2.5
+
+
+def _first_seconds(lead: Lead, seconds: float) -> Lead:
+    """The first *seconds* of a lead, as a new Lead."""
+    import dataclasses
+
+    check_rate(lead)
+    n = int(round(seconds * lead.sampling_rate))
+    return dataclasses.replace(lead, samples=lead.samples[:n])
+
+
+@mpl_styled
 def plot_report(
     record: ECGRecord,
     figsize: tuple[float, float] = (16, 20),
@@ -1050,8 +1141,16 @@ def plot_report(
 ) -> Figure:
     """Comprehensive ECG report page.
 
-    Includes header with patient/device info, 12-lead grid,
-    rhythm strip, and quality indicators.
+    Includes a header with patient/device info, the standard 3 x 4 layout
+    (each column shows its own 2.5 s of the first 10 s: I/II/III from 0 to
+    2.5 s, aVR/aVL/aVF from 2.5 to 5 s, and so on), a 10 s lead II rhythm
+    strip, and signal quality for the same first 10 s. Longer recordings
+    (e.g. Holter) are not drawn beyond the first 10 s; use :func:`plot_lead`
+    on a slice to look elsewhere.
+
+    The paper grid uses 0.2 s / 0.5 mV squares when the leads are in a
+    voltage unit. Leads in raw counts are drawn with automatic amplitude
+    ticks and labelled "raw counts".
 
     Parameters
     ----------
@@ -1060,9 +1159,8 @@ def plot_report(
     show : bool
         Display the plot immediately (default ``True``).
     """
-    require_matplotlib()
-    import matplotlib.pyplot as plt
     import matplotlib.gridspec as gridspec
+    import matplotlib.pyplot as plt
 
     fig = plt.figure(figsize=figsize)
     gs = gridspec.GridSpec(6, 4, figure=fig, height_ratios=[0.6, 1, 1, 1, 0.7, 0.8], hspace=0.35, wspace=0.15)
@@ -1071,48 +1169,54 @@ def plot_report(
     ax_hdr.axis("off")
     _draw_header(ax_hdr, record)
 
-    leads = record.leads
+    shown = [_first_seconds(ld, _REPORT_SECONDS) for ld in record.leads]
     for row_idx, row_labels in enumerate(GRID_12LEAD):
         for col_idx, lbl in enumerate(row_labels):
             ax = fig.add_subplot(gs[1 + row_idx, col_idx])
-            ld = _find_lead(leads, lbl)
+            t0 = col_idx * _COLUMN_SECONDS
+            t1 = t0 + _COLUMN_SECONDS
+            ld = _find_lead(shown, lbl)
+            unit = ""
             if ld is not None:
                 t = time_axis(ld)
-                max_s = int(10.0 * ld.sampling_rate)
-                sl = slice(0, min(max_s, len(ld.samples)))
+                sl = (t >= t0) & (t <= t1)
                 ax.plot(t[sl], ld.samples[sl], color=lead_color(lbl), linewidth=0.7)
-                ax.set_xlim(0, 10.0)
-            ax.set_title(lbl, fontsize=9, loc="left", pad=2)
-            _ecg_grid(ax)
+                unit = amplitude_unit(ld)
+            ax.set_title(f"{lbl} ({unit})" if unit else lbl, fontsize=9, loc="left", pad=2)
+            ax.set_xlim(t0, t1)
+            _style_ax(ax)
+            _ecg_grid(ax, unit)
             ax.tick_params(labelsize=6)
             if row_idx < 2:
-                ax.set_xticklabels([])
-            _style_ax(ax)
+                ax.tick_params(labelbottom=False)
 
     ax_rhythm = fig.add_subplot(gs[4, :])
-    rl = _find_lead(leads, "II")
-    if rl is not None:
+    rl = _find_lead(shown, "II")
+    unit = ""
+    if rl is not None and len(rl.samples):
         t = time_axis(rl)
         ax_rhythm.plot(t, rl.samples, color=lead_color("II"), linewidth=0.7)
-        ax_rhythm.set_xlim(t[0], t[-1])
-    ax_rhythm.set_title("II rhythm strip", fontsize=9, loc="left", pad=2)
-    _ecg_grid(ax_rhythm)
+        unit = amplitude_unit(rl)
+    ax_rhythm.set_xlim(0, _REPORT_SECONDS)
+    ax_rhythm.set_title(f"II rhythm strip ({unit})" if unit else "II rhythm strip",
+                        fontsize=9, loc="left", pad=2)
     ax_rhythm.set_xlabel("Time (s)", fontsize=8)
-    ax_rhythm.tick_params(labelsize=6)
     _style_ax(ax_rhythm)
+    _ecg_grid(ax_rhythm, unit)
+    ax_rhythm.tick_params(labelsize=6)
 
     ax_qi = fig.add_subplot(gs[5, :2])
     ax_qi.axis("off")
-    _draw_quality_summary(ax_qi, leads)
+    _draw_quality_summary(ax_qi, shown)
 
     ax_interp = fig.add_subplot(gs[5, 2:])
     ax_interp.axis("off")
     _draw_interpretation(ax_interp, record)
 
-    try:
+    # The header and text panels are not tight_layout compatible
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", UserWarning)
         fig.tight_layout()
-    except Exception:
-        pass
 
     if show:
         plt.show()
@@ -1121,11 +1225,13 @@ def plot_report(
 
 
 def _draw_quality_summary(ax, leads: list[Lead]) -> None:
-    """Draw compact quality summary text."""
+    """Draw compact quality summary text for the plotted window."""
     from ecgdatakit.processing.quality import classify_quality, signal_quality_index
 
-    lines = ["Signal Quality:"]
+    lines = [f"Signal Quality (first {_REPORT_SECONDS:.0f} s):"]
     for ld in leads[:12]:
+        if len(ld.samples) == 0:
+            continue
         sqi = signal_quality_index(ld)
         cat = classify_quality(ld)
         lines.append(f"  {ld.label:>5}: {sqi:.2f} ({cat})")

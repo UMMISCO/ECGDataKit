@@ -2,8 +2,9 @@
 
 from __future__ import annotations
 
+import io
 import json
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 import numpy as np
 import pytest
@@ -501,3 +502,97 @@ class TestECGRecordConversion:
         )
         with pytest.raises(RawSamplesError):
             record.convert_units("mV")
+
+
+class TestUncalibratedLeads:
+    def _counts(self) -> Lead:
+        return Lead(label="Ch1", samples=np.array([1.0, 2.0]), sampling_rate=250)
+
+    def test_lead_to_physical_raises_without_unit(self):
+        with pytest.raises(RawSamplesError, match="no physical unit"):
+            self._counts().to_physical()
+
+    def test_record_to_physical_leaves_counts_raw(self):
+        record = ECGRecord(leads=[
+            self._counts(),
+            Lead(label="I", samples=np.array([100.0]), sampling_rate=250,
+                 resolution=0.01, resolution_unit="mV"),
+        ])
+        with pytest.warns(UserWarning, match=r"\['Ch1'\] have no physical unit"):
+            out = record.to_physical()
+        assert out.leads[0].is_raw and out.leads[0].units == ""
+        assert out.leads[0].samples.tolist() == [1.0, 2.0]
+        assert not out.leads[1].is_raw and out.leads[1].samples.tolist() == [1.0]
+
+
+class TestRecordCopies:
+    def test_metadata_not_shared(self):
+        record = ECGRecord(leads=[Lead(label="I", samples=np.array([1.0]), sampling_rate=500,
+                                       is_raw=False, units="mV")])
+        record.patient.patient_id = "A"
+        record.raw_metadata["k"] = [1]
+        out = record.convert_units("uV")
+        out.patient.patient_id = "B"
+        out.raw_metadata["k"].append(2)
+        assert record.patient.patient_id == "A"
+        assert record.raw_metadata["k"] == [1]
+        assert record.leads[0].samples[0] == 1.0 and out.leads[0].samples[0] == 1000.0
+
+
+class TestJsonSafety:
+    def _record(self) -> ECGRecord:
+        rec = ECGRecord(leads=[Lead(label="I", samples=np.array([1.5, np.nan, -2.0, np.inf]),
+                                    sampling_rate=500, resolution=float("nan"),
+                                    resolution_unit="mV")])
+        rec.patient.weight = float("nan")
+        rec.patient.height = np.float64(np.inf)
+        rec.measurements.heart_rate = np.int64(60)
+        rec.recording.duration = timedelta(seconds=2)
+        return rec
+
+    def test_non_finite_scalars_are_null(self):
+        out = json.loads(self._record().to_json(),
+                         parse_constant=lambda c: pytest.fail(f"non-JSON constant {c}"))
+        assert out["patient"]["weight"] is None
+        assert out["patient"]["height"] is None
+        assert out["leads"][0]["resolution"] is None
+        assert out["leads"][0]["samples"] == [1.5, None, -2.0, None]
+        assert out["measurements"]["heart_rate"] == 60
+
+    def test_to_dict_is_strict_json(self):
+        json.dumps(self._record().to_dict(), allow_nan=False)
+
+    @pytest.mark.parametrize("include_samples", [True, False])
+    def test_streamed_json_matches(self, include_samples):
+        rec = self._record()
+        rec.leads.append(Lead(label="II", samples=np.arange(70000, dtype=np.float64) / 3,
+                              sampling_rate=500))
+        rec.median_beats.append(Lead(label="I", samples=np.array([0.25]), sampling_rate=500))
+        buf = io.StringIO()
+        assert rec.to_json(include_samples=include_samples, fp=buf) is None
+        streamed = json.loads(buf.getvalue())
+        assert streamed == json.loads(rec.to_json(include_samples=include_samples))
+        if include_samples:
+            assert streamed["leads"][1]["samples"][-1] == 69999 / 3
+
+
+class TestReprFormatting:
+    @pytest.mark.parametrize("seconds, text", [
+        (3599.6, "1h"), (3600.4, "1h"), (59.96, "1m"), (59.9, "59.9s"),
+        (3725, "1h 2m 5s"), (90061, "25h 1m 1s"),
+    ])
+    def test_duration(self, seconds, text):
+        rec = ECGRecord()
+        rec.recording.duration = timedelta(seconds=seconds)
+        assert f"duration: {text}\n" in repr(rec) + "\n"
+
+    def test_datetime_keeps_fraction_and_timezone(self):
+        rec = ECGRecord()
+        rec.recording.date = datetime(2020, 1, 2, 3, 4, 5, 600000,
+                                      tzinfo=timezone(timedelta(hours=2)))
+        assert "date: 2020-01-02 03:04:05.600000+02:00" in repr(rec)
+
+    def test_long_annotation_shortened(self):
+        rec = ECGRecord(annotations={"events": "\n".join(f"+{i}\tbeat" for i in range(1000))})
+        line = next(x for x in repr(rec).splitlines() if "events" in x)
+        assert line.endswith("(1000 lines)") and len(line) < 120

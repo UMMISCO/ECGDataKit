@@ -3,11 +3,14 @@
 from __future__ import annotations
 
 import json
+import struct
+from datetime import datetime
 from pathlib import Path
 
 import numpy as np
 import pytest
 
+from ecgdatakit.exceptions import CorruptedFileError, UnsupportedFormatError
 from ecgdatakit.models import ECGRecord
 from ecgdatakit.parsing.parser import FileParser
 from ecgdatakit.parsing.parsers.edf import EDFParser
@@ -56,7 +59,7 @@ class TestEDFParser:
 
     def test_lead_labels(self, edf_file: Path):
         record = EDFParser().parse(edf_file)
-        labels = [l.label for l in record.leads]
+        labels = [lead.label for lead in record.leads]
         assert labels == ["I", "II"]
 
     def test_lead_samples_are_float(self, edf_file: Path):
@@ -111,10 +114,6 @@ class TestEDFParser:
 # Spec-based builder (https://www.edfplus.info/specs/edf.html, edfplus.html)
 # ---------------------------------------------------------------------------
 
-import struct
-from datetime import datetime
-
-from ecgdatakit.exceptions import CorruptedFileError, UnsupportedFormatError
 
 
 def _sig(label="ECG I", spr=4, dim="uV", pmin=-3200, pmax=3200, dmin=-32768,
@@ -197,7 +196,7 @@ class TestEDFSignals:
     def test_labels_normalised_and_unique(self, tmp_path: Path):
         sigs = [_sig(n, spr=1) for n in ["ECG I", "ECG aVR", "ECG V1", "ECG V1"]]
         record = _parse(tmp_path, build_edf(sigs))
-        assert [l.label for l in record.leads] == ["I", "aVR", "V1", "V1_2"]
+        assert [lead.label for lead in record.leads] == ["I", "aVR", "V1", "V1_2"]
 
     def test_rate_is_rounded(self, tmp_path: Path):
         record = _parse(tmp_path, build_edf([_sig(spr=7)], duration="0.07"))
@@ -331,3 +330,31 @@ class TestEDFIdentification:
                 _sig("ECG II", prefilter="HP:0.05Hz LP:150Hz N:50Hz")]
         filters = _parse(tmp_path, build_edf(sigs)).recording.acquisition.filters
         assert (filters.highpass, filters.lowpass, filters.notch) == (0.05, 150.0, 50.0)
+
+
+class TestEDFEmptyAndTrailing:
+    def test_zero_records_raises(self, tmp_path: Path):
+        with pytest.raises(CorruptedFileError, match="no data records"):
+            _parse(tmp_path, build_edf([_sig()], nrec=0))
+
+    def test_minus_one_without_data_raises(self, tmp_path: Path):
+        with pytest.raises(CorruptedFileError, match="no data records"):
+            _parse(tmp_path, build_edf([_sig()], nrec=0, nrec_field=-1))
+
+    def test_trailing_bytes_warned(self, tmp_path: Path):
+        data = build_edf([_sig()], nrec=2) + b"\x01\x02\x03"
+        with pytest.warns(UserWarning, match="3 byte"):
+            record = _parse(tmp_path, data)
+        assert len(record.leads[0].samples) == 8
+
+    def test_bdf_through_file_parser(self, tmp_path: Path):
+        p = tmp_path / "x.bdf"
+        p.write_bytes(b"\xffBIOSEMI" + build_edf([_sig()])[8:])
+        with pytest.raises(UnsupportedFormatError, match="BDF"):
+            FileParser().parse(p)
+
+    def test_plain_edf_patient_field_kept_and_noted(self, tmp_path: Path):
+        data = build_edf([_sig()], reserved="", patient="P1 M 15-JUN-1980 Doe,_John")
+        record = _parse(tmp_path, data)
+        assert record.patient.patient_id == "P1 M 15-JUN-1980 Doe,_John"
+        assert "free text" in record.raw_metadata["patient_id_note"]

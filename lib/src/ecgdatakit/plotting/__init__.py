@@ -1,7 +1,7 @@
 """ECG visualization tools.
 
-Requires: ``pip install ecgdatakit[plotting]`` for static plots (matplotlib)
-          ``pip install ecgdatakit[plotting-interactive]`` for interactive plots (plotly)
+Requires: ``pip install "ecgdatakit[plotting]"`` for static plots (matplotlib)
+          ``pip install "ecgdatakit[plotting-interactive]"`` for interactive plots (plotly)
 
 Modules
 -------

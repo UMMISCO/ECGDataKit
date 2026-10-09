@@ -6,7 +6,7 @@ import binascii
 import json
 import struct
 import warnings
-from datetime import date, datetime
+from datetime import date
 from pathlib import Path
 
 import numpy as np
@@ -61,7 +61,7 @@ class TestISHNEHolterParser:
 
     def test_lead_labels(self, ishne_file: Path):
         record = ISHNEHolterParser().parse(ishne_file)
-        labels = [l.label for l in record.leads]
+        labels = [lead.label for lead in record.leads]
         assert "I" in labels
         assert "II" in labels
 
@@ -265,11 +265,11 @@ class TestISHNEHolterHeaderValidation:
 class TestISHNEHolterLeadLabels:
     def test_generic_codes_numbered(self, tmp_path: Path):
         record, _ = _parse(_build(tmp_path, at={158: ("<hh", (1, 0))}))
-        assert [l.label for l in record.leads] == ["Lead 1", "Lead 2"]
+        assert [lead.label for lead in record.leads] == ["Lead 1", "Lead 2"]
 
     def test_duplicate_codes_suffixed(self, tmp_path: Path):
         record, _ = _parse(_build(tmp_path, nleads=3, at={158: ("<hhh", (6, 6, 6))}))
-        assert [l.label for l in record.leads] == ["II", "II_2", "II_3"]
+        assert [lead.label for lead in record.leads] == ["II", "II_2", "II_3"]
 
     def test_absent_code_on_stored_lead_warns(self, tmp_path: Path):
         record, w = _parse(_build(tmp_path, at={158: ("<h", -9)}))
@@ -327,3 +327,19 @@ class TestISHNEHolterHeaderFields:
         record, _ = _parse(_build(tmp_path, at={274: ("", b"Hospital A"), 354: ("", b"(c) 2023")}))
         assert record.raw_metadata["proprietary"] == "Hospital A"
         assert record.raw_metadata["copyright"] == "(c) 2023"
+
+
+class TestISHNEEmptyData:
+    def test_header_only_raises(self, tmp_path: Path):
+        data = create_ishne_binary(nleads=2, samples_per_lead=10)
+        p = tmp_path / "empty.ecg"
+        p.write_bytes(data[:522])
+        with pytest.raises(CorruptedFileError, match="no complete sample frame"):
+            ISHNEHolterParser().parse(p)
+
+    def test_odd_trailing_byte_warns(self, tmp_path: Path):
+        p = tmp_path / "odd.ecg"
+        p.write_bytes(create_ishne_binary(nleads=2, samples_per_lead=10) + b"\x07")
+        record, caught = _parse(p)
+        assert any("odd number of data bytes" in str(x.message) for x in caught)
+        assert len(record.leads[0].samples) == 10

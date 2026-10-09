@@ -39,7 +39,7 @@ from ecgdatakit.parsing.helpers import (
     normalize_lead_label,
     unique_labels,
 )
-from ecgdatakit.parsing.helpers.xml import parse_xml_root
+from ecgdatakit.parsing.helpers.xml import header_text, parse_xml_root
 from ecgdatakit.parsing.parser import Parser
 
 _AMPLITUDE_UNITS = {
@@ -127,13 +127,15 @@ class GEMuseXMLParser(Parser):
 
     @staticmethod
     def can_parse(file_path: Path, header: bytes) -> bool:
-        upper = header.decode("utf-8", errors="ignore").upper()
+        upper = header_text(header).upper()
         if "<RESTINGECGDATA" in upper:  # Philips Sierra
             return False
         return re.search(r"<RESTINGECG[\s>]", upper) is not None or "<MUSEINFO" in upper
 
     def parse(self, file_path: Path) -> ECGRecord:
         self._warnings: list[tuple[str, type[Warning]]] = []
+        self._unscaled: list[str] = []
+        self._lead_offsets: dict[str, dict[str, str]] = {}
         raw = Path(file_path).read_bytes()
         try:
             root = parse_xml_root(raw)
@@ -149,7 +151,7 @@ class GEMuseXMLParser(Parser):
         test = root.find("TestDemographics")
 
         record.recording = self._read_recording(test, root, meta)
-        record.patient = self._read_patient(demo, record.recording.date)
+        record.patient = self._read_patient(demo, record.recording.date, meta)
         record.leads, record.median_beats = self._read_waveforms(root, record, file_path)
         if not record.leads:
             raise CorruptedFileError(f"No rhythm waveform in {file_path}")
@@ -169,10 +171,8 @@ class GEMuseXMLParser(Parser):
         )
         fill_signal_summary(record)
 
-        record.file_format = FileFormatInfo(
-            version=_get(root.find("MuseInfo"), "MuseVersion"),
-            creation_date=_parse_date(_get(test, "EditDate")) if _get(test, "EditDate") else None,
-        )
+        # EditDate is the last edit, not the file creation date (kept in raw_metadata)
+        record.file_format = FileFormatInfo(version=_get(root.find("MuseInfo"), "MuseVersion"))
 
         for message, category in self._warnings:
             warnings.warn(message, category, stacklevel=2)
@@ -182,7 +182,9 @@ class GEMuseXMLParser(Parser):
     # Demographics
     # ------------------------------------------------------------------
 
-    def _read_patient(self, demo: ET.Element | None, acquired: datetime | None) -> PatientInfo:
+    def _read_patient(
+        self, demo: ET.Element | None, acquired: datetime | None, meta: dict
+    ) -> PatientInfo:
         info = PatientInfo()
         if demo is None:
             return info
@@ -199,10 +201,15 @@ class GEMuseXMLParser(Parser):
             info.birth_date = datetime.combine(d, datetime.min.time()) if d else None
         info.race = _get(demo, "Race")
 
-        age = _num(_get(demo, "PatientAge"))
-        factor = _AGE_UNITS_TO_YEARS.get(_get(demo, "AgeUnits").upper() or "YEARS")
+        age_text = _get(demo, "PatientAge")
+        age = _num(age_text)
+        units = _get(demo, "AgeUnits").upper()
+        factor = _AGE_UNITS_TO_YEARS.get(units)
         if age is not None and factor:
             info.age = int(age * factor)
+        elif age is not None:
+            # Stated age in a missing or unknown unit: kept as written
+            meta["age"] = {"value": age_text, "units": units}
         elif info.birth_date and acquired:
             a, b = acquired.date(), info.birth_date.date()
             info.age = a.year - b.year - ((a.month, a.day) < (b.month, b.day))
@@ -292,6 +299,18 @@ class GEMuseXMLParser(Parser):
             found[kind] = leads
 
         meta["checksum_valid"] = all(crc_results) if crc_results else None
+        if self._unscaled:
+            meta["amplitude_unit_stated"] = False
+            self._warnings.append((
+                f"GE MUSE: LeadAmplitudeUnits missing or not a voltage unit for "
+                f"{self._unscaled}; these leads are left in raw counts", UserWarning,
+            ))
+        for tag, leads in self._lead_offsets.items():
+            meta[tag] = leads
+            self._warnings.append((
+                f"GE MUSE: {tag} is non-zero for {sorted(leads)} and was not applied "
+                f"(undocumented); see raw_metadata['{tag}']", UserWarning,
+            ))
         if getattr(self, "_sample_size", None):
             meta["sample_size"] = self._sample_size
         return found.get("rhythm", []), found.get("median", [])
@@ -344,13 +363,19 @@ class GEMuseXMLParser(Parser):
         scale_text = _get(ld, "LeadAmplitudeUnitsPerBit")
         unit_text = _get(ld, "LeadAmplitudeUnits")
         scale = _num(scale_text)
-        unit = _AMPLITUDE_UNITS.get(unit_text.upper(), "") if unit_text else ""
-        if scale is not None and not unit_text:
-            unit = "uV"  # restecg.dtd default when LeadAmplitudeUnits is absent
+        # No unit is assumed: restecg.xsd requires LeadAmplitudeUnits and gives no default
+        unit = _AMPLITUDE_UNITS.get(unit_text.upper(), "") if scale is not None else ""
+        if scale is not None and not unit:
+            self._unscaled.append(f"{lead_id} ({kind}): {unit_text or 'no unit'}")
         resolution = scale if scale is not None else 1.0
-        if scale is None:
-            unit = ""
         raw = derive_is_raw(resolution, 0.0, unit)
+
+        # Undocumented per-lead fields (BRAVEHEART adds FirstSampleBaseline to
+        # the counts, ECGToolkit ignores it): not applied, reported when non-zero
+        for tag in ("FirstSampleBaseline", "LeadOffsetFirstSample"):
+            value = _num(_get(ld, tag))
+            if value:
+                self._lead_offsets.setdefault(tag, {})[f"{lead_id} ({kind})"] = _get(ld, tag)
 
         flags = {}
         for tag in ("LeadOff", "BaselineSway", "ExcessiveACNoise", "MuscleNoise",
@@ -440,10 +465,14 @@ class GEMuseXMLParser(Parser):
             machine = original or []
             if machine:
                 record.annotations["machine_interpretation"] = "\n".join(machine)
+        elif current and original and original != current:
+            # Statements edited after acquisition but not confirmed
+            interp.source = "overread"
+            interp.interpreter = overreader
+            interp.interpretation_date = _parse_datetime(_get(test, "EditDate"), _get(test, "EditTime"))
+            record.annotations["machine_interpretation"] = "\n".join(original)
         elif current:
             interp.source = "machine"
-            if original and original != current:
-                record.annotations["original_diagnosis"] = "\n".join(original)
         elif original:
             interp.statements = [(s, "") for s in original]
             interp.source = "machine"

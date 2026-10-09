@@ -11,14 +11,14 @@ import pytest
 
 pydicom = pytest.importorskip("pydicom")
 
-from pydicom.waveforms import multiplex_array
+from pydicom.waveforms import multiplex_array  # noqa: E402
 
-from ecgdatakit.exceptions import CorruptedFileError, MissingElementError
-from ecgdatakit.models import ECGRecord
-from ecgdatakit.parsing.helpers import STANDARD_LEADS
-from ecgdatakit.parsing.parser import FileParser
-from ecgdatakit.parsing.parsers.dicom_waveform import DICOMWaveformParser
-from tests.conftest import (
+from ecgdatakit.exceptions import CorruptedFileError, MissingElementError, UnsupportedFormatError  # noqa: E402
+from ecgdatakit.models import ECGRecord  # noqa: E402
+from ecgdatakit.parsing.helpers import STANDARD_LEADS  # noqa: E402
+from ecgdatakit.parsing.parser import FileParser  # noqa: E402
+from ecgdatakit.parsing.parsers.dicom_waveform import DICOMWaveformParser  # noqa: E402
+from tests.conftest import (  # noqa: E402
     dicom_channel,
     dicom_code,
     dicom_group,
@@ -55,7 +55,7 @@ class TestDICOMWaveformParser:
 
     def test_leads(self, dicom_file: Path):
         record = DICOMWaveformParser().parse(dicom_file)
-        assert [l.label for l in record.leads] == ["I", "II"]
+        assert [ld.label for ld in record.leads] == ["I", "II"]
         assert record.recording.acquisition.signal.sampling_rate == 500
         assert record.recording.duration == timedelta(seconds=0.2)
         lead = record.leads[0]
@@ -105,7 +105,7 @@ class TestDICOMWaveformParser:
 class TestDICOM12Lead:
     def test_labels_are_standard(self, dicom_12lead_file: Path):
         record = DICOMWaveformParser().parse(dicom_12lead_file)
-        assert [l.label for l in record.leads] == list(STANDARD_LEADS)
+        assert [ld.label for ld in record.leads] == list(STANDARD_LEADS)
         assert record.leads[3].annotations["source_code"] == "MDC:2:62"
 
     def test_physical_matches_pydicom(self, dicom_12lead_file: Path):
@@ -124,7 +124,7 @@ class TestDICOM12Lead:
     def test_auto_scale_to_mv(self, dicom_12lead_file: Path):
         expected = multiplex_array(pydicom.dcmread(dicom_12lead_file), 0, as_raw=False) / 1000
         record = FileParser().parse(dicom_12lead_file)
-        assert all(l.units == "mV" and not l.is_raw for l in record.leads)
+        assert all(ld.units == "mV" and not ld.is_raw for ld in record.leads)
         assert np.allclose(record.leads[5].samples, expected[:, 5])
         with pytest.warns(UserWarning, match="auto_scale=False"):
             raw = FileParser().parse(dicom_12lead_file, auto_scale=False)
@@ -281,7 +281,7 @@ class TestDICOMChannelMetadata:
             channels.append(ch)
         samples = np.zeros((2, len(channels)), dtype="<i2")
         path = _single_group(tmp_path, samples, channels=channels)
-        return [l.label for l in DICOMWaveformParser().parse(path).leads]
+        return [ld.label for ld in DICOMWaveformParser().parse(path).leads]
 
     def test_labels_from_codes_and_meanings(self, tmp_path: Path):
         labels = self._labels(tmp_path, [
@@ -339,3 +339,98 @@ def test_missing_sampling_frequency_raises(tmp_path: Path):
     path = _single_group(tmp_path, np.zeros((4, 1), np.int16), sampling_rate="0")
     with pytest.raises(CorruptedFileError, match="Sampling Frequency"):
         DICOMWaveformParser().parse(path)
+
+
+# ---------------------------------------------------------------------------
+# Waveform annotations (PS3.3 C.10.10) and a real cart file
+# ---------------------------------------------------------------------------
+
+
+def _measurement(code, scheme, meaning, value, unit, channels=None):
+    from pydicom.dataset import Dataset
+    from pydicom.sequence import Sequence
+
+    a = Dataset()
+    a.ConceptNameCodeSequence = Sequence([dicom_code(code, scheme, meaning)])
+    a.NumericValue = value
+    a.MeasurementUnitsCodeSequence = Sequence([dicom_code(unit, "UCUM", unit)])
+    if channels is not None:
+        a.ReferencedWaveformChannels = channels
+    return a
+
+
+def _annotated(tmp_path: Path, annotations) -> ECGRecord:
+    channels = [dicom_channel(("2:1", "Lead I")), dicom_channel(("2:2", "Lead II"))]
+    group = dicom_group(dicom_12lead_samples(10)[:, :2], channels)
+    path = write_dicom_ecg(tmp_path / "ann.dcm", [group], annotations)
+    return DICOMWaveformParser().parse(path)
+
+
+class TestDICOMAnnotations:
+    def test_channel_zero_is_a_global_measurement(self, tmp_path: Path):
+        record = _annotated(tmp_path, [
+            _measurement("2:16770", "MDC", "ECG Heart Rate", "61", "/min", [1, 0]),
+            _measurement("2:16160", "MDC", "QT interval global", "402", "ms", [1, 0]),
+        ])
+        assert record.measurements.heart_rate == 61
+        assert record.measurements.qt_interval == 402
+
+    def test_lead_measurement_is_not_global(self, tmp_path: Path):
+        record = _annotated(tmp_path, [
+            _measurement("2:16160", "MDC", "QT interval global", "402", "ms", [1, 2]),
+        ])
+        assert record.measurements.qt_interval is None
+        assert record.annotations["QT interval global (II)"] == "402 ms"
+
+    def test_scpecg_boundaries_are_not_intervals(self, tmp_path: Path):
+        # Wave boundaries and counts must never land in interval fields
+        record = _annotated(tmp_path, [
+            _measurement("5.10.3-1", "SCPECG", "P Onset", "299", "ms", [1, 0]),
+            _measurement("5.10.3-4", "SCPECG", "QRS Offset", "535", "ms", [1, 0]),
+            _measurement("5.10.2.5-5", "SCPECG", "QTc Interval", "370", "ms", [1, 0]),
+        ])
+        m = record.measurements
+        assert (m.rr_interval, m.qt_interval, m.qtc_bazett, m.qtc_fridericia) == (None,) * 4
+        assert record.annotations["QRS Offset"] == "535 ms"
+        assert record.annotations["QTc Interval"] == "370 ms"
+
+    def test_real_cart_file(self):
+        """pydicom's waveform_ecg.dcm: SCPECG global measurements on channels (1, 0)."""
+        from pydicom.data import get_testdata_file
+
+        path = get_testdata_file("waveform_ecg.dcm")
+        if path is None:
+            pytest.skip("pydicom test file not available")
+        record = DICOMWaveformParser().parse(path)
+        m = record.measurements
+        assert (m.rr_interval, m.pr_interval, m.qrs_duration, m.qt_interval) == (982, 161, 75, 368)
+        assert (m.p_axis, m.qrs_axis, m.t_axis) == (74, 52, 57)
+        assert m.heart_rate is None and m.qtc_bazett is None  # not stored with a known code
+        assert record.annotations["QTc Interval"] == "370 ms"
+        assert record.annotations["PP Interval"] == "0 ms"
+        assert record.interpretation.statements == [("RITMO SINUSALE", ""), ("ECG NORMALE", "")]
+        ds = pydicom.dcmread(path)
+        physical = np.array([ld.samples * ld.resolution + ld.offset for ld in record.leads]).T
+        np.testing.assert_array_equal(physical, ds.waveform_array(0))
+
+
+def test_bits_stored_from_channel_definition(tmp_path: Path):
+    ch = dicom_channel(("2:1", "Lead I"), filters=None, bits_stored=12)
+    path = _single_group(tmp_path, np.zeros((4, 1), np.int16), channels=[ch])
+    signal = DICOMWaveformParser().parse(path).recording.acquisition.signal
+    assert signal.bits_per_sample == 12
+
+
+def test_sampling_frequency_below_1_hz_is_unsupported(tmp_path: Path):
+    path = _single_group(tmp_path, np.zeros((4, 1), np.int16), sampling_rate="0.2")
+    with pytest.raises(UnsupportedFormatError, match="below 1 Hz"):
+        DICOMWaveformParser().parse(path)
+
+
+def test_measurement_without_unit_is_not_filed(tmp_path: Path):
+    # A value whose unit the file does not state is kept, not assumed to be ms
+    m = _measurement("2:16160", "MDC", "QT interval global", "402", "ms", [1, 0])
+    del m.MeasurementUnitsCodeSequence
+    record = _annotated(tmp_path, [m])
+    assert record.measurements.qt_interval is None
+    assert any("402" in v for v in record.annotations.values())

@@ -199,16 +199,26 @@ def _flatten(node: object, skip: tuple[str, ...] = ()) -> dict[str, str]:
     return result
 
 
-def _parse_xml(data: bytes) -> dict:
-    """Parse the document, retrying with a lossless decode on encoding errors."""
+def _xmltodict(data: bytes | str) -> dict:
     try:
-        return xmltodict.parse(data)
+        return xmltodict.parse(data, disable_entities=True)
+    except ValueError as e:  # raised by xmltodict for entity declarations
+        raise CorruptedFileError(f"XML entity declarations are not allowed: {e}") from e
+
+
+def _parse_xml(data: bytes) -> dict:
+    """Parse the document, retrying with a lossless decode on encoding errors.
+
+    Entity declarations are refused (xmltodict ``disable_entities``).
+    """
+    try:
+        return _xmltodict(data)
     except ExpatError as first_error:
         # Undeclared non-UTF-8 bytes: decode without loss and drop the prolog
         try:
             text = decode_text(data)
             text = re.sub(r"^﻿?\s*<\?xml[^>]*\?>", "", text)
-            return xmltodict.parse(text)
+            return _xmltodict(text)
         except ExpatError:
             raise CorruptedFileError(f"Malformed XML: {first_error}") from first_error
 
@@ -321,6 +331,7 @@ class SierraXMLParser(Parser):
             _get(waveforms, "repbeats"),
             rhythm.sampling_rate if rhythm else 0,
             rhythm.adc_resolution if rhythm else 0.0,
+            record.raw_metadata,
         )
         record.recording.device = self._read_device(acquisition, signal_node)
         record.recording.acquisition.filters = self._read_filters(parsed, signal_node)
@@ -578,7 +589,7 @@ class SierraXMLParser(Parser):
     # ── Representative beats ─────────────────────────────────────
 
     def _read_representative_beats(
-        self, repbeats: object, rhythm_rate: int, rhythm_resolution: float
+        self, repbeats: object, rhythm_rate: int, rhythm_resolution: float, raw: dict,
     ) -> list[Lead]:
         """Decode ``<repbeats>``: one ``<repbeat leadname=...>`` per lead.
 
@@ -603,12 +614,28 @@ class SierraXMLParser(Parser):
             )
         rate = _to_int(_attr(repbeats, "samplespersec")) or _to_int(
             _attr(repbeats, "samplespersecond")
-        ) or rhythm_rate
+        )
         if not rate or rate <= 0:
-            raise CorruptedFileError("Missing or invalid representative beat sampling rate")
+            # Not stated for the beats (optional in 1.03): the rhythm rate is used and reported
+            rate = rhythm_rate
+            if not rate or rate <= 0:
+                raise CorruptedFileError("Missing or invalid representative beat sampling rate")
+            raw["median_sampling_rate_stated"] = False
+            warnings.warn(
+                f"Sierra XML: <repbeats> has no sampling rate, the rhythm rate ({rate} Hz) "
+                "is used for the representative beats",
+                stacklevel=3,
+            )
         resolution = _to_float(_attr(repbeats, "resolution"))
         if resolution is None or resolution <= 0:
             resolution = rhythm_resolution or None
+            raw["median_resolution_stated"] = False
+            warnings.warn(
+                "Sierra XML: <repbeats> has no resolution, "
+                + (f"the rhythm resolution ({resolution} uV) is used for the representative beats"
+                   if resolution else "the representative beats are left as raw ADC counts"),
+                stacklevel=3,
+            )
 
         items = _as_list(_get(repbeats, "repbeat"))
         names = unique_labels([normalize_lead_label(_attr(i, "leadname")) for i in items])

@@ -13,6 +13,7 @@ records (fixed and variable layout) are concatenated. FLAC formats (508,
 
 from __future__ import annotations
 
+import math
 import re
 import warnings
 from dataclasses import dataclass, field
@@ -58,6 +59,10 @@ _FORMAT_BITS = {
     212: 12, 310: 10, 311: 10,
 }
 # Sample value WFDB reserves for "invalid sample" in each format
+# Bytes holding a whole number of samples in each format
+_FORMAT_UNIT_BYTES = {
+    8: 1, 80: 1, 16: 2, 61: 2, 160: 2, 24: 3, 32: 4, 212: 3, 310: 4, 311: 4,
+}
 _INVALID_SAMPLE = {
     16: -32768, 24: -(2 ** 23), 32: -(2 ** 31), 61: -32768,
     80: -128, 160: -32768, 212: -2048, 310: -512, 311: -512,
@@ -75,6 +80,7 @@ class _SignalSpec:
     gain: float = 0.0  # ADC units per physical unit, 0 = uncalibrated
     baseline: int = 0
     units: str = "mV"
+    units_stated: bool = False  # False: WFDB default mV, the header gives none
     adc_resolution: int = 0
     adc_zero: int = 0
     initial_value: int = 0
@@ -116,6 +122,15 @@ def _parse_float(text: str, what: str) -> float:
         return float(text)
     except ValueError:
         raise _fail(f"invalid {what} {text!r}") from None
+
+
+def _finite(text: str) -> float | None:
+    """Number in a header comment, ``None`` when absent, NaN or infinite."""
+    try:
+        value = float(text)
+    except ValueError:
+        return None
+    return value if math.isfinite(value) else None
 
 
 def _parse_base_time(text: str) -> time:
@@ -203,6 +218,7 @@ def _parse_signal_line(line: str) -> _SignalSpec:
             baseline = int(g.group(2))
         if g.group(3):
             spec.units = g.group(3)
+            spec.units_stated = True
     if len(tokens) > 3:
         spec.adc_resolution = _parse_int(tokens[3], "ADC resolution")
     if len(tokens) > 4:
@@ -376,6 +392,10 @@ class WFDBParser(Parser):
             )
 
         record.leads = self._build_leads(header, specs, signals)
+        if not record.leads:
+            raise CorruptedFileError(f"WFDB record {header.record_name} has no signals")
+        if all(len(lead.samples) == 0 for lead in record.leads):
+            raise CorruptedFileError(f"WFDB record {header.record_name} holds no samples")
         self._fill_metadata(record, header, specs, sig_len)
 
         for msg, category in self._warnings:
@@ -422,11 +442,23 @@ class WFDBParser(Parser):
                 raise CorruptedFileError(
                     f"WFDB byte offset {byte_offset} exceeds size of {filename}"
                 )
+            payload = len(data) - byte_offset
             stream = _decode_samples(data[byte_offset:], fmt)
 
             spf = [s.samples_per_frame for s in group]
             frame_size = sum(spf)
             n_frames = len(stream) // frame_size
+            if not n:
+                # Without a declared length the file end is the record end
+                unit = _FORMAT_UNIT_BYTES[fmt]
+                odd = payload % unit if not (fmt == 212 and payload % 3 == 2) else 0
+                partial = len(stream) - n_frames * frame_size
+                if odd or partial:
+                    self._warnings.append((
+                        f"WFDB signal file {filename} ends with an incomplete frame "
+                        f"({partial} sample(s), {odd} byte(s)); ignored",
+                        UserWarning,
+                    ))
             max_skew = max(s.skew for s in group)
             if n and n_frames < n:
                 raise CorruptedFileError(
@@ -575,6 +607,14 @@ class WFDBParser(Parser):
                 f"WFDB checksum mismatch for signals {self._bad_checksums}",
                 ChecksumWarning,
             ))
+        no_unit = [label for label, spec in zip(labels, specs)
+                   if spec.gain and not spec.units_stated]
+        if no_unit:
+            self._warnings.append((
+                f"WFDB signals {no_unit} give no physical unit, using the WFDB "
+                "default mV (raw_metadata['signal_specs'][i]['units_stated'] is False)",
+                UserWarning,
+            ))
         if not header.sampling_rate_stated:
             # 250 Hz is the WFDB default when the header gives no frequency
             self._warnings.append((
@@ -690,25 +730,18 @@ class WFDBParser(Parser):
         if not value:
             return
         if key in ("age", "patient age"):
-            try:
-                patient.age = round(float(value))
-            except ValueError:
-                pass
+            age = _finite(value)
+            if age is not None:
+                patient.age = round(age)
         elif key in ("sex", "gender"):
             v = value.upper()
             patient.sex = "M" if v in ("M", "MALE") else "F" if v in ("F", "FEMALE") else "U"
         elif key in ("id", "patient id"):
             patient.patient_id = value
         elif key in ("height", "patient height"):
-            try:
-                patient.height = float(value)
-            except ValueError:
-                pass
+            patient.height = _finite(value)
         elif key in ("weight", "patient weight"):
-            try:
-                patient.weight = float(value)
-            except ValueError:
-                pass
+            patient.weight = _finite(value)
         elif key in ("dx", "diagnosis", "diagnoses"):
             context["interpretation_statements"].append((value, ""))
         elif key in ("drugs", "medications", "medication"):

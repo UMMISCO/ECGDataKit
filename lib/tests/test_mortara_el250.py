@@ -94,7 +94,7 @@ class TestMortaraEL250Parser:
 
     def test_rhythm_leads(self, mortara_file: Path):
         record = MortaraEL250Parser().parse(mortara_file)
-        assert [l.label for l in record.leads] == ["I", "II", "V1"]
+        assert [lead.label for lead in record.leads] == ["I", "II", "V1"]
         for i, lead in enumerate(record.leads):
             np.testing.assert_array_equal(lead.samples, mortara_counts(i, MORTARA_RHYTHM_N))
             assert lead.samples.dtype == np.float64
@@ -232,7 +232,7 @@ class TestMortaraEL250Parser:
 
     def test_duplicate_labels_made_unique(self, tmp_path: Path):
         xml = MORTARA_XML.replace('NAME="V1"', 'NAME="II"')
-        assert [l.label for l in _parse(tmp_path, xml).leads] == ["I", "II", "II_2"]
+        assert [lead.label for lead in _parse(tmp_path, xml).leads] == ["I", "II", "II_2"]
 
 
 def test_median_rate_not_stated_uses_rhythm_rate(tmp_path: Path):
@@ -251,3 +251,28 @@ def test_median_scale_not_stated_stays_raw(tmp_path: Path):
     beat = record.median_beats[0]
     assert beat.is_raw and beat.resolution_unit == ""
     assert record.raw_metadata["median_scale_stated"] is False
+
+
+def test_undeclared_latin1_text_decoded(tmp_path: Path):
+    xml = MORTARA_XML.replace('COMMENT="Chest pain"', 'COMMENT="Fréquence élevée"')
+    p = tmp_path / "latin1.xml"
+    p.write_bytes(xml.encode("latin-1"))  # declared UTF-8
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        record = MortaraEL250Parser().parse(p)
+    assert record.annotations["comment"] == "Fréquence élevée"
+
+
+def test_entity_declarations_refused(tmp_path: Path):
+    xml = MORTARA_XML.replace("<ECG ", '<!DOCTYPE ECG [<!ENTITY e "x">]>\n<ECG ', 1)
+    with pytest.raises(CorruptedFileError, match="entity"):
+        _parse(tmp_path, xml)
+
+
+def test_utf16_file_detected_and_parsed(tmp_path: Path):
+    p = tmp_path / "utf16.xml"
+    p.write_bytes(MORTARA_XML.replace('encoding="UTF-8"', 'encoding="UTF-16"').encode("utf-16"))
+    assert MortaraEL250Parser.can_parse(p, p.read_bytes()[:4096]) is True
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        assert FileParser().parse(p).source_format == "mortara_el250"

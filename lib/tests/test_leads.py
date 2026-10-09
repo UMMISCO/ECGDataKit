@@ -37,7 +37,7 @@ class TestDeriveAugmented:
         lead_ii = make_lead("II", np.ones(100) * 2)
         result = derive_augmented(lead_i, lead_ii)
         assert len(result) == 3
-        assert [l.label for l in result] == ["aVR", "aVL", "aVF"]
+        assert [ld.label for ld in result] == ["aVR", "aVL", "aVF"]
 
     def test_avr_formula(self):
         i_vals = np.array([2.0, 4.0])
@@ -57,7 +57,7 @@ class TestDeriveStandard12:
         leads = {name: make_lead(name, np.ones(100)) for name in ["I", "II", "V1", "V2", "V3", "V4", "V5", "V6"]}
         result = derive_standard_12(leads["I"], leads["II"], leads["V1"], leads["V2"], leads["V3"], leads["V4"], leads["V5"], leads["V6"])
         assert len(result) == 12
-        labels = [l.label for l in result]
+        labels = [ld.label for ld in result]
         assert labels == ["I", "II", "III", "aVR", "aVL", "aVF", "V1", "V2", "V3", "V4", "V5", "V6"]
 
 class TestFindLead:
@@ -70,3 +70,76 @@ class TestFindLead:
     def test_returns_none_if_not_found(self):
         leads = [make_lead("I"), make_lead("II")]
         assert find_lead(leads, "V6") is None
+
+
+class TestDeriveScaling:
+    def _raw(self, label, counts, res, offset=0.0, unit="mV"):
+        return Lead(label=label, samples=np.array(counts, dtype=np.float64), sampling_rate=500,
+                    resolution=res, resolution_unit=unit, offset=offset, is_raw=True)
+
+    def test_raw_leads_with_different_gains_use_physical_values(self):
+        # WFDB-like leads with per-lead gain and baseline
+        lead_i = self._raw("I", [100.0, 200.0], 0.002, offset=0.01)
+        lead_ii = self._raw("II", [100.0, 300.0], 0.005, offset=-0.02)
+        phys_i = lead_i.to_physical().samples
+        phys_ii = lead_ii.to_physical().samples
+        iii = derive_lead_iii(lead_i, lead_ii)
+        assert not iii.is_raw and iii.units == "mV" and iii.offset == 0.0
+        np.testing.assert_allclose(iii.samples, phys_ii - phys_i)
+        avr, avl, avf = derive_augmented(lead_i, lead_ii)
+        np.testing.assert_allclose(avr.samples, -(phys_i + phys_ii) / 2)
+        np.testing.assert_allclose(avl.samples, phys_i - phys_ii / 2)
+        np.testing.assert_allclose(avf.samples, phys_ii - phys_i / 2)
+
+    def test_raw_leads_same_scale_stay_raw_with_offset_folded(self):
+        lead_i = self._raw("I", [10.0, 20.0], 0.005, offset=0.5)
+        lead_ii = self._raw("II", [30.0, 50.0], 0.005, offset=0.5)
+        iii = derive_lead_iii(lead_i, lead_ii)
+        avr = derive_augmented(lead_i, lead_ii)[0]
+        assert iii.is_raw and iii.resolution == 0.005 and iii.offset == 0.0
+        expected_iii = lead_ii.to_physical().samples - lead_i.to_physical().samples
+        np.testing.assert_allclose(iii.to_physical().samples, expected_iii)
+        expected_avr = -(lead_i.to_physical().samples + lead_ii.to_physical().samples) / 2
+        np.testing.assert_allclose(avr.to_physical().samples, expected_avr)
+
+    def test_mixed_raw_and_physical(self):
+        lead_i = self._raw("I", [1000.0, 2000.0], 1.0, unit="uV")
+        lead_ii = Lead(label="II", samples=np.array([3.0, 5.0]), sampling_rate=500,
+                       units="mV", resolution_unit="mV", is_raw=False)
+        iii = derive_lead_iii(lead_i, lead_ii)
+        assert iii.units == "uV"
+        np.testing.assert_allclose(iii.samples, [2000.0, 3000.0])
+
+    def test_raw_without_unit_and_different_scale_raises(self):
+        lead_i = Lead(label="I", samples=np.zeros(4), sampling_rate=500, resolution=2.0)
+        lead_ii = Lead(label="II", samples=np.zeros(4), sampling_rate=500, resolution=3.0)
+        with pytest.raises(ValueError, match="voltage scale"):
+            derive_lead_iii(lead_i, lead_ii)
+
+    def test_derived_leads_drop_file_metadata(self):
+        lead_i = make_lead("I")
+        lead_i.annotations = {"qrs_onset": "120"}
+        lead_i.quality = 3
+        lead_i.adc_resolution = 4.88
+        for lead in [derive_lead_iii(lead_i, make_lead("II")), *derive_augmented(lead_i, make_lead("II"))]:
+            assert lead.annotations == {} and lead.quality is None
+            assert lead.adc_resolution == 0.0
+
+    def test_int16_samples_do_not_overflow(self):
+        lead_i = Lead(label="I", samples=np.array([30000, 30000], dtype=np.int16), sampling_rate=500)
+        lead_ii = Lead(label="II", samples=np.array([30000, -30000], dtype=np.int16), sampling_rate=500)
+        np.testing.assert_array_equal(derive_augmented(lead_i, lead_ii)[0].samples, [-30000.0, 0.0])
+        np.testing.assert_array_equal(derive_lead_iii(lead_i, lead_ii).samples, [0.0, -60000.0])
+
+    def test_standard_12_converts_precordials_with_limbs(self):
+        lead_i = self._raw("I", [100.0, 200.0], 0.002)
+        lead_ii = self._raw("II", [100.0, 300.0], 0.005)
+        vs = [self._raw(f"V{k}", [1000.0, 1000.0], 1.0, unit="uV") for k in range(1, 7)]
+        leads = derive_standard_12(lead_i, lead_ii, *vs)
+        assert all(not ld.is_raw and ld.units == "mV" for ld in leads)
+        np.testing.assert_allclose(leads[6].samples, [1.0, 1.0])
+
+    def test_standard_12_checks_precordial_length(self):
+        leads = [make_lead(lbl) for lbl in ("I", "II", "V1", "V2", "V3", "V4", "V5")]
+        with pytest.raises(ValueError, match="Sample counts"):
+            derive_standard_12(*leads, make_lead("V6", np.zeros(10)))

@@ -3,11 +3,18 @@
 from __future__ import annotations
 
 import json
+import struct
+import warnings
 from pathlib import Path
 
 import numpy as np
 import pytest
 
+from ecgdatakit.exceptions import (
+    ChecksumWarning,
+    CorruptedFileError,
+    UnsupportedFormatError,
+)
 from ecgdatakit.models import ECGRecord
 from ecgdatakit.parsing.parser import FileParser
 from ecgdatakit.parsing.parsers.wfdb import WFDBParser
@@ -51,7 +58,7 @@ class TestWFDBParser:
 
     def test_lead_labels(self, wfdb_file: Path):
         record = WFDBParser().parse(wfdb_file)
-        labels = [l.label for l in record.leads]
+        labels = [lead.label for lead in record.leads]
         assert "I" in labels
         assert "II" in labels
 
@@ -111,14 +118,6 @@ class TestWFDBParser:
 # Spec-based fixtures (https://physionet.org/physiotools/wag/signal-5.htm)
 # ---------------------------------------------------------------------------
 
-import struct
-import warnings
-
-from ecgdatakit.exceptions import (
-    ChecksumWarning,
-    CorruptedFileError,
-    UnsupportedFormatError,
-)
 
 
 def _write(directory: Path, name: str, lines: list[str], files: dict[str, bytes]) -> Path:
@@ -260,7 +259,7 @@ class TestWFDBSignalLayout:
             "a.dat 16 200/mV 16 0 0 0 0 III",
         ], {"a.dat": struct.pack("<4h", 1, 3, 2, 4), "b.dat": struct.pack("<2h", 7, 8)})
         record = WFDBParser().parse(hea)
-        assert [l.label for l in record.leads] == ["I", "II", "III"]
+        assert [lead.label for lead in record.leads] == ["I", "II", "III"]
         assert record.leads[1].samples.tolist() == [7, 8]
         assert record.leads[2].samples.tolist() == [3, 4]
 
@@ -386,7 +385,7 @@ class TestWFDBMetadata:
             f"r.dat 16 200/mV 16 0 0 0 0 {n}" for n in names
         ], {"r.dat": b"\0" * 10})
         record = WFDBParser().parse(hea)
-        assert [l.label for l in record.leads] == ["I", "aVR", "aVL", "V1", "V1_2"]
+        assert [lead.label for lead in record.leads] == ["I", "aVR", "aVL", "V1", "V1_2"]
 
     def test_fractional_sampling_rate(self, tmp_path: Path):
         hea = _write(tmp_path, "r", ["r 1 128.6 2", "r.dat 16 200/mV 16 0 0 0 0 I"],
@@ -431,7 +430,7 @@ class TestWFDBMetadata:
         dat = wfdb_file.with_suffix(".dat")
         assert WFDBParser.can_parse(dat, dat.read_bytes()[:4096]) is True
         record = FileParser().parse(dat, auto_scale=True)
-        assert [l.label for l in record.leads] == ["I", "II"]
+        assert [lead.label for lead in record.leads] == ["I", "II"]
 
 
 def test_missing_frequency_uses_wfdb_default(tmp_path: Path):
@@ -450,3 +449,57 @@ def test_fractional_frequency_kept_exact(tmp_path: Path):
     assert record.leads[0].sampling_rate == 128  # the model field is an int
     assert record.raw_metadata["sampling_frequency"] == 128.5
     assert record.raw_metadata["sampling_frequency_stated"] is True
+
+
+class TestWFDBEmptyAndPartial:
+    def test_empty_signal_file_raises(self, tmp_path: Path):
+        hea = _write(tmp_path, "e", ["e 2 500", "e.dat 16 200/mV 16 0 0 0 0 I",
+                                     "e.dat 16 200/mV 16 0 0 0 0 II"], {"e.dat": b""})
+        with pytest.raises(CorruptedFileError, match="holds no samples"):
+            WFDBParser().parse(hea)
+
+    def test_no_signals_raises(self, tmp_path: Path):
+        hea = _write(tmp_path, "z", ["z 0 500 100"], {})
+        with pytest.raises(CorruptedFileError, match="has no signals"):
+            WFDBParser().parse(hea)
+
+    def test_partial_frame_warned_without_length(self, tmp_path: Path):
+        data = struct.pack("<5h", 1, 2, 3, 4, 5) + b"\x09"
+        hea = _write(tmp_path, "p", ["p 2 500", "p.dat 16 200/mV 16 0 0 0 0 I",
+                                     "p.dat 16 200/mV 16 0 0 0 0 II"], {"p.dat": data})
+        with pytest.warns(UserWarning, match=r"incomplete frame \(1 sample\(s\), 1 byte\(s\)\)"):
+            record = WFDBParser().parse(hea)
+        assert record.leads[0].samples.tolist() == [1, 3]
+        assert record.leads[1].samples.tolist() == [2, 4]
+
+    def test_no_warning_when_length_declared(self, tmp_path: Path):
+        data = struct.pack("<5h", 1, 2, 3, 4, 5)
+        hea = _write(tmp_path, "q", ["q 2 500 2", "q.dat 16 200/mV 16 0 0",
+                                     "q.dat 16 200/mV 16 0 0"], {"q.dat": data})
+        with warnings.catch_warnings():
+            warnings.simplefilter("error")
+            WFDBParser().parse(hea)
+
+
+class TestWFDBCommentNumbers:
+    def test_nan_and_inf_ignored(self, tmp_path: Path):
+        hea = _write(tmp_path, "n", ["n 1 500 2", "n.dat 16 200/mV 16 0 0 0 0 I",
+                                     "#Age: inf", "#Weight: NaN", "#Height: 1e400"],
+                     {"n.dat": struct.pack("<2h", 1, 2)})
+        record = WFDBParser().parse(hea)
+        assert record.patient.age is None
+        assert record.patient.weight is None
+        assert record.patient.height is None
+        json.loads(record.to_json(include_samples=False),
+                   parse_constant=lambda c: pytest.fail(c))
+
+
+def test_default_units_flagged(tmp_path: Path):
+    hea = _write(tmp_path, "u", ["u 2 360 2", "u.dat 16 200 16 0 0 0 0 MLII",
+                                 "u.dat 16 200/mV 16 0 0 0 0 V5"],
+                 {"u.dat": struct.pack("<4h", 1, 2, 3, 4)})
+    with pytest.warns(UserWarning, match=r"\['MLII'\] give no physical unit"):
+        record = WFDBParser().parse(hea)
+    specs = record.raw_metadata["signal_specs"]
+    assert [s["units_stated"] for s in specs] == [False, True]
+    assert record.leads[0].resolution_unit == "mV"

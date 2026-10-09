@@ -131,19 +131,22 @@ physical_value = samples × resolution + offset
 
 ### Auto-detection by parsers
 
-Parsers compute `is_raw` automatically:
+Parsers set `is_raw` with `ecgdatakit.models.derive_is_raw`:
 
 ```python
-is_raw = not (resolution == 1.0 and offset == 0.0)
+is_raw = not (resolution_unit and resolution == 1.0 and offset == 0.0)
 ```
 
-If resolution is 1.0 and offset is 0.0, the data is already in physical
-units — no scaling is needed, and `units` is set directly. Otherwise,
-`units` stays empty until `to_physical()` is called.
+Samples are already physical only when the file gives their unit
+(`resolution_unit` is set) and scaling is a no-op. Then `units` is set
+directly. Leads with a real scale factor, or with no scaling metadata at
+all, are raw counts and `units` stays empty until `to_physical()` is called.
 
 ### Example: ISHNE Holter (153 nV/count)
 
 ```python
+from ecgdatakit import FileParser
+
 record = FileParser().parse("holter.ecg", auto_scale=False)
 lead = record.leads[0]
 # lead.adc_resolution      → 153.0        (raw file value)

@@ -1,15 +1,23 @@
 """ECG lead derivation utilities.
 
 Derives missing leads from Einthoven's triangle and Goldberger's equations.
-Pure numpy — no scipy required.
+Pure numpy, no scipy required.
+
+Scaling: raw leads that share the same ``resolution`` and
+``resolution_unit`` are combined in ADC counts (offsets folded in) and the
+derived leads stay raw on that scale.  Otherwise both leads are converted
+to physical values (in lead I's unit) first, and the derived leads are
+physical.  Raw leads with different scales and no voltage unit raise
+``ValueError``.  Derived leads carry no file-specific metadata
+(``annotations``, ``quality``, ``transducer``, ``adc_resolution`` are reset).
 """
 
 from __future__ import annotations
 
 import numpy as np
 
-from ecgdatakit.models import Lead, LeadLike
-from ecgdatakit.processing._core import ensure_lead, new_lead
+from ecgdatakit.models import Lead, LeadLike, _normalize_unit, derive_is_raw
+from ecgdatakit.processing._core import ensure_lead, fold_offset, new_lead
 
 
 def _check_compatible(a: Lead, b: Lead) -> None:
@@ -23,6 +31,84 @@ def _check_compatible(a: Lead, b: Lead) -> None:
             f"Sample counts must match: {a.label}={len(a.samples)}, "
             f"{b.label}={len(b.samples)}"
         )
+
+
+def _to_physical(lead: Lead) -> Lead:
+    if not lead.is_raw:
+        return lead
+    if not _normalize_unit(lead.resolution_unit) or lead.resolution == 0.0:
+        raise ValueError(
+            f"Lead {lead.label!r} is raw ADC counts without a usable voltage "
+            "scale, and its scale differs from the other lead; cannot "
+            "combine them"
+        )
+    return lead.to_physical()
+
+
+def _common_scale(a: Lead, b: Lead) -> tuple[Lead, Lead]:
+    """Bring two leads onto one scale so samples can be added.
+
+    Raw leads with identical ``resolution`` and ``resolution_unit`` stay in
+    ADC counts (offsets folded into the samples).  Any other combination is
+    converted to physical values in lead *a*'s unit.
+    """
+    if (
+        a.is_raw and b.is_raw
+        and a.resolution == b.resolution
+        and a.resolution_unit == b.resolution_unit
+    ):
+        if a.offset != b.offset and a.resolution == 0.0:
+            raise ValueError(
+                f"Leads {a.label!r} and {b.label!r} have different offsets "
+                "and no resolution; cannot combine them"
+            )
+        return fold_offset(a), fold_offset(b)
+    a, b = _to_physical(a), _to_physical(b)
+    ua, ub = _normalize_unit(a.units), _normalize_unit(b.units)
+    if ua and ub:
+        if ua != ub:
+            b = b.convert_units(a.units)
+    elif a.units != b.units:
+        raise ValueError(
+            f"Leads have incompatible units: {a.label}={a.units!r}, "
+            f"{b.label}={b.units!r}"
+        )
+    return a, b
+
+
+def _derived(template: Lead, other: Lead, samples, label: str) -> Lead:
+    """Lead computed from *template* and *other*, without file-specific metadata."""
+    if template.is_raw:
+        scale = dict(
+            resolution=template.resolution,
+            resolution_unit=template.resolution_unit,
+            is_raw=derive_is_raw(template.resolution, 0.0, template.resolution_unit),
+        )
+    else:
+        scale = dict(resolution=1.0, resolution_unit=template.units, is_raw=False)
+    return new_lead(
+        template,
+        samples=np.asarray(samples, dtype=np.float64),
+        label=label,
+        offset=0.0,
+        adc_resolution=0.0,
+        adc_resolution_unit="",
+        quality=None,
+        transducer="",
+        prefiltering=(
+            template.prefiltering
+            if template.prefiltering == other.prefiltering else ""
+        ),
+        annotations={},
+        **scale,
+    )
+
+
+def _prepare_limb(lead_i: LeadLike, lead_ii: LeadLike, fs: int | None) -> tuple[Lead, Lead]:
+    lead_i = ensure_lead(lead_i, fs=fs, label="I")
+    lead_ii = ensure_lead(lead_ii, fs=fs, label="II")
+    _check_compatible(lead_i, lead_ii)
+    return _common_scale(lead_i, lead_ii)
 
 
 def derive_lead_iii(
@@ -42,11 +128,8 @@ def derive_lead_iii(
     fs : int | None
         Sample rate in Hz.  Required when passing numpy arrays.
     """
-    lead_i = ensure_lead(lead_i, fs=fs, label="I")
-    lead_ii = ensure_lead(lead_ii, fs=fs, label="II")
-    _check_compatible(lead_i, lead_ii)
-    samples = (lead_ii.samples - lead_i.samples).astype(np.float64)
-    return new_lead(lead_i, samples=samples, label="III")
+    lead_i, lead_ii = _prepare_limb(lead_i, lead_ii, fs)
+    return _derived(lead_i, lead_ii, lead_ii.samples - lead_i.samples, "III")
 
 
 def derive_augmented(
@@ -71,19 +154,12 @@ def derive_augmented(
     list[Lead]
         [aVR, aVL, aVF] in that order.
     """
-    lead_i = ensure_lead(lead_i, fs=fs, label="I")
-    lead_ii = ensure_lead(lead_ii, fs=fs, label="II")
-    _check_compatible(lead_i, lead_ii)
+    lead_i, lead_ii = _prepare_limb(lead_i, lead_ii, fs)
     i, ii = lead_i.samples, lead_ii.samples
-
-    avr = (-(i + ii) / 2.0).astype(np.float64)
-    avl = (i - ii / 2.0).astype(np.float64)
-    avf = (ii - i / 2.0).astype(np.float64)
-
     return [
-        new_lead(lead_i, samples=avr, label="aVR"),
-        new_lead(lead_i, samples=avl, label="aVL"),
-        new_lead(lead_i, samples=avf, label="aVF"),
+        _derived(lead_i, lead_ii, -(i + ii) / 2.0, "aVR"),
+        _derived(lead_i, lead_ii, i - ii / 2.0, "aVL"),
+        _derived(lead_i, lead_ii, ii - i / 2.0, "aVF"),
     ]
 
 
@@ -114,18 +190,30 @@ def derive_standard_12(
     -------
     list[Lead]
         12 leads in standard order: I, II, III, aVR, aVL, aVF, V1–V6.
+        When the limb leads had to be converted to physical values (see the
+        module notes), I, II and V1–V6 are returned converted as well, so
+        all 12 leads share one scale.
     """
-    lead_i = ensure_lead(lead_i, fs=fs, label="I")
-    lead_ii = ensure_lead(lead_ii, fs=fs, label="II")
-    v1 = ensure_lead(v1, fs=fs, label="V1")
-    v2 = ensure_lead(v2, fs=fs, label="V2")
-    v3 = ensure_lead(v3, fs=fs, label="V3")
-    v4 = ensure_lead(v4, fs=fs, label="V4")
-    v5 = ensure_lead(v5, fs=fs, label="V5")
-    v6 = ensure_lead(v6, fs=fs, label="V6")
-    iii = derive_lead_iii(lead_i, lead_ii)
-    avr, avl, avf = derive_augmented(lead_i, lead_ii)
-    return [lead_i, lead_ii, iii, avr, avl, avf, v1, v2, v3, v4, v5, v6]
+    lead_i, lead_ii = _prepare_limb(lead_i, lead_ii, fs)
+    precordial = []
+    for lead, label in zip((v1, v2, v3, v4, v5, v6), ("V1", "V2", "V3", "V4", "V5", "V6")):
+        lead = ensure_lead(lead, fs=fs, label=label)
+        _check_compatible(lead_i, lead)
+        if not lead_i.is_raw:
+            # Limb leads were scaled to physical values; match them
+            lead = _to_physical(lead)
+            unit, target = _normalize_unit(lead.units), _normalize_unit(lead_i.units)
+            if unit and target and unit != target:
+                lead = lead.convert_units(lead_i.units)
+        precordial.append(lead)
+    i, ii = lead_i.samples, lead_ii.samples
+    derived = [
+        _derived(lead_i, lead_ii, ii - i, "III"),
+        _derived(lead_i, lead_ii, -(i + ii) / 2.0, "aVR"),
+        _derived(lead_i, lead_ii, i - ii / 2.0, "aVL"),
+        _derived(lead_i, lead_ii, ii - i / 2.0, "aVF"),
+    ]
+    return [lead_i, lead_ii, *derived, *precordial]
 
 
 def find_lead(leads: list[Lead], label: str) -> Lead | None:

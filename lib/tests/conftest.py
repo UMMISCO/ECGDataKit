@@ -15,6 +15,42 @@ os.environ.setdefault("MPLBACKEND", "Agg")
 import numpy as np
 import pytest
 
+import importlib.util
+
+# Optional dependencies a bare install lacks (sdist tests run without extras)
+_MISSING_OPTIONAL = [
+    name for name in ("scipy", "matplotlib", "plotly")
+    if importlib.util.find_spec(name) is None
+]
+
+
+def _missing_dependency(exc: BaseException | None) -> str | None:
+    """Name of the missing optional dependency behind *exc*, if any."""
+    while exc is not None:
+        if isinstance(exc, ImportError):
+            for name in _MISSING_OPTIONAL:
+                if name in str(exc):
+                    return name
+        exc = exc.__cause__  # explicit causes only, never an unrelated error
+    return None
+
+
+@pytest.hookimpl(wrapper=True)
+def pytest_runtest_call(item):
+    """Skip, not fail, a test that needs an optional dependency that is missing.
+
+    Only active when scipy, matplotlib or plotly is not installed: a failure
+    caused by the library's ImportError for that package becomes a skip.
+    With the dependencies installed nothing changes.
+    """
+    try:
+        return (yield)
+    except BaseException as exc:
+        name = _missing_dependency(exc) if _MISSING_OPTIONAL else None
+        if name is not None:
+            pytest.skip(f"needs {name}")
+        raise
+
 
 @pytest.fixture(autouse=True)
 def _no_plot_display(monkeypatch):
@@ -327,7 +363,6 @@ def create_ishne_binary(
 ) -> bytes:
     """Build a minimal valid ISHNE Holter binary file in memory."""
     import struct
-    import datetime as dt
 
     var_block = b""
     var_block_size = len(var_block)
@@ -626,14 +661,16 @@ def create_scp_ecg_binary(
     built = {sid: scp_section(sid, body, protocol) for sid, body in bodies.items()}
 
     # Section 0 holds one pointer per section 0 to 11 (empty ones are zero)
-    sec0_len = 16 + 10 * 12
+    # and one per further section present
+    pointer_ids = list(range(1, 12)) + sorted(sid for sid in built if sid > 11)
+    sec0_len = 16 + 10 * (1 + len(pointer_ids))
     pos = 6 + sec0_len + 1  # 1-based byte index
     pointers = struct.pack("<HII", 0, sec0_len, 7)
     offsets = {}
     for sid in sorted(built):
         offsets[sid] = pos
         pos += len(built[sid])
-    for sid in range(1, 12):
+    for sid in pointer_ids:
         if sid in built:
             pointers += struct.pack("<HII", sid, len(built[sid]), offsets[sid])
         else:
@@ -804,6 +841,7 @@ DICOM_LEAD_SOURCES = [
 
 def dicom_code(value: str, scheme: str, meaning: str):
     """Return a single code sequence item."""
+    pytest.importorskip("pydicom")
     from pydicom.dataset import Dataset
 
     item = Dataset()
@@ -820,8 +858,10 @@ def dicom_channel(
     baseline: str | None = "0",
     correction: str | None = "1",
     filters: tuple[str, str, str] | None = ("0.05", "150", "50"),
+    bits_stored: int = 16,
 ):
     """Build one Channel Definition Sequence item."""
+    pytest.importorskip("pydicom")
     from pydicom.dataset import Dataset
     from pydicom.sequence import Sequence
 
@@ -836,7 +876,7 @@ def dicom_channel(
         ch.ChannelSensitivityCorrectionFactor = correction
     if baseline is not None:
         ch.ChannelBaseline = baseline
-    ch.WaveformBitsStored = 16
+    ch.WaveformBitsStored = bits_stored
     if filters is not None:
         ch.FilterLowFrequency, ch.FilterHighFrequency, ch.NotchFilterFrequency = filters
     return ch
@@ -853,6 +893,7 @@ def dicom_group(
     padding: bytes | None = None,
 ):
     """Build one multiplex group; *samples* has shape (samples, channels)."""
+    pytest.importorskip("pydicom")
     from pydicom.dataset import Dataset
     from pydicom.sequence import Sequence
 
@@ -901,7 +942,12 @@ def write_dicom_ecg(
     ds.WaveformSequence = Sequence(groups)
     if annotations:
         ds.WaveformAnnotationSequence = Sequence(annotations)
-    ds.save_as(str(path), enforce_file_format=True, little_endian=little_endian, implicit_vr=False)
+    try:
+        ds.save_as(str(path), enforce_file_format=True, little_endian=little_endian, implicit_vr=False)
+    except TypeError:  # pydicom < 3
+        ds.is_little_endian = little_endian
+        ds.is_implicit_VR = False
+        ds.save_as(str(path), write_like_original=False)
     return path
 
 
@@ -968,6 +1014,7 @@ def dicom_12lead_file(tmp_path: Path) -> Path:
         a.ConceptNameCodeSequence = Sequence([dicom_code(code, "MDC", meaning)])
         a.NumericValue = value
         a.MeasurementUnitsCodeSequence = Sequence([dicom_code(unit, "UCUM", unit)])
+        a.ReferencedWaveformChannels = [1, 0]  # Type 1; channel 0 = all channels of group 1
         a.AnnotationGroupNumber = 1
         return a
 
@@ -1155,161 +1202,6 @@ def mfer_file(tmp_path: Path) -> Path:
     """Write a spec-compliant MFER file (2 channels, 500 Hz, 1 s)."""
     p = tmp_path / "test.mwf"
     p.write_bytes(create_mfer_binary())
-    return p
-
-
-# ---------------------------------------------------------------------------
-# BeneHeart R12 XML fixture (no public spec: inferred layout, synthetic data)
-# ---------------------------------------------------------------------------
-
-def int16_b64(values) -> str:
-    """Base64 of little-endian int16 *values*."""
-    return base64.b64encode(np.asarray(values, dtype="<i2").tobytes()).decode()
-
-
-BENEHEART_R12_XML = textwrap.dedent("""\
-<?xml version="1.0" encoding="UTF-8"?>
-<BeneHeartR12>
-  <PatientInfo>
-    <PatientID>BH001</PatientID>
-    <FirstName>Alice</FirstName>
-    <LastName>Wonder</LastName>
-    <Sex>F</Sex>
-    <DateOfBirth>1992-03-20</DateOfBirth>
-    <Age>31</Age>
-    <Height Unit="cm">165</Height>
-    <Weight Unit="kg">60</Weight>
-  </PatientInfo>
-  <AcquisitionInfo>
-    <AcquisitionDate>2023-12-01</AcquisitionDate>
-    <AcquisitionTime>09:15:00</AcquisitionTime>
-    <SampleRate>500</SampleRate>
-    <Device>BeneHeart R12</Device>
-    <SerialNumber>R12-0001</SerialNumber>
-    <SoftwareVersion>01.02</SoftwareVersion>
-  </AcquisitionInfo>
-  <FilterSettings>
-    <HighPass>0.05</HighPass>
-    <LowPass>150</LowPass>
-    <Notch>0</Notch>
-  </FilterSettings>
-  <Leads>
-    <Lead Name="I" Data="ZAAyAA=="/>
-    <Lead Name="II" Data="ZAAyAA=="/>
-  </Leads>
-  <Measurements>
-    <HeartRate>72.6</HeartRate>
-    <PRInterval>150</PRInterval>
-    <QTcBazett>410</QTcBazett>
-  </Measurements>
-  <Diagnosis>
-    <Statement>Sinus rhythm</Statement>
-    <Statement>Normal ECG</Statement>
-  </Diagnosis>
-</BeneHeartR12>
-""")
-
-
-@pytest.fixture
-def beneheart_r12_file(tmp_path: Path) -> Path:
-    """Write a minimal BeneHeart R12 XML file and return its path."""
-    p = tmp_path / "test_beneheart.xml"
-    p.write_text(BENEHEART_R12_XML, encoding="utf-8")
-    return p
-
-
-# ---------------------------------------------------------------------------
-# GE MAC 2000 XML fixture (GE MUSE element conventions, synthetic data)
-# ---------------------------------------------------------------------------
-
-GE_MAC2000_RHYTHM = [np.arange(5000) % 100 - 50, np.arange(5000) % 80 - 40]
-GE_MAC2000_MEDIAN = np.arange(600) % 60 - 30
-
-GE_MAC2000_XML = textwrap.dedent(f"""\
-<?xml version="1.0" encoding="UTF-8"?>
-<MAC2000>
-  <PatientDemographics>
-    <PatientID>MAC001</PatientID>
-    <PatientFirstName>Bob</PatientFirstName>
-    <PatientLastName>Builder</PatientLastName>
-    <Gender>MALE</Gender>
-    <DateofBirth>07-22-1978</DateofBirth>
-    <PatientAge>99</PatientAge>
-    <AgeUnits>YEARS</AgeUnits>
-    <PatientHeightCM>180</PatientHeightCM>
-    <PatientWeightKG>82</PatientWeightKG>
-  </PatientDemographics>
-  <TestDemographics>
-    <AcquisitionDevice>MAC2000</AcquisitionDevice>
-    <AcquisitionSoftwareVersion>010A</AcquisitionSoftwareVersion>
-    <AcquisitionDate>12-01-2023</AcquisitionDate>
-    <AcquisitionTime>11:00:00</AcquisitionTime>
-    <SiteName>General Hospital</SiteName>
-    <LocationName>Cardiology</LocationName>
-    <RoomID>4B</RoomID>
-    <AcquisitionTechID>TK</AcquisitionTechID>
-    <ReferringMDLastName>House</ReferringMDLastName>
-    <EditorFirstName>Ann</EditorFirstName>
-    <EditorLastName>Smith</EditorLastName>
-    <EditDate>12-02-2023</EditDate>
-    <EditTime>08:30:00</EditTime>
-  </TestDemographics>
-  <Waveform>
-    <WaveformType>Median</WaveformType>
-    <SampleBase>500</SampleBase>
-    <LeadData>
-      <LeadAmplitudeUnitsPerBit>4.88</LeadAmplitudeUnitsPerBit>
-      <LeadAmplitudeUnits>MICROVOLTS</LeadAmplitudeUnits>
-      <LeadID>I</LeadID>
-      <WaveFormData>{int16_b64(GE_MAC2000_MEDIAN)}</WaveFormData>
-    </LeadData>
-  </Waveform>
-  <Waveform>
-    <WaveformType>Rhythm</WaveformType>
-    <SampleBase>500</SampleBase>
-    <HighPassFilter>0.16</HighPassFilter>
-    <LowPassFilter>150</LowPassFilter>
-    <ACFilter>60</ACFilter>
-    <LeadData>
-      <LeadAmplitudeUnitsPerBit>4.88</LeadAmplitudeUnitsPerBit>
-      <LeadAmplitudeUnits>MICROVOLTS</LeadAmplitudeUnits>
-      <LeadID>I</LeadID>
-      <WaveFormData>{int16_b64(GE_MAC2000_RHYTHM[0])}</WaveFormData>
-    </LeadData>
-    <LeadData>
-      <LeadAmplitudeUnitsPerBit>4.88</LeadAmplitudeUnitsPerBit>
-      <LeadAmplitudeUnits>MICROVOLTS</LeadAmplitudeUnits>
-      <LeadID>II</LeadID>
-      <WaveFormData>{int16_b64(GE_MAC2000_RHYTHM[1])}</WaveFormData>
-    </LeadData>
-  </Waveform>
-  <RestingECGMeasurements>
-    <VentricularRate>68</VentricularRate>
-    <PRInterval>160</PRInterval>
-    <QRSDuration>92</QRSDuration>
-    <QTInterval>380</QTInterval>
-    <QTCorrected>404.6</QTCorrected>
-    <PAxis>50</PAxis>
-    <RAxis>-10</RAxis>
-    <TAxis>30</TAxis>
-  </RestingECGMeasurements>
-  <OriginalDiagnosis>
-    <DiagnosisStatement><StmtFlag>ENDSLINE</StmtFlag><StmtText>Sinus rhythm</StmtText></DiagnosisStatement>
-    <DiagnosisStatement><StmtText>Borderline ECG</StmtText></DiagnosisStatement>
-  </OriginalDiagnosis>
-  <Diagnosis>
-    <DiagnosisStatement><StmtFlag>ENDSLINE</StmtFlag><StmtText>Sinus rhythm</StmtText></DiagnosisStatement>
-    <DiagnosisStatement><StmtText>Normal ECG</StmtText></DiagnosisStatement>
-  </Diagnosis>
-</MAC2000>
-""")
-
-
-@pytest.fixture
-def ge_mac2000_file(tmp_path: Path) -> Path:
-    """Write a GE MAC 2000 XML file and return its path."""
-    p = tmp_path / "test_mac2000.xml"
-    p.write_text(GE_MAC2000_XML, encoding="utf-8")
     return p
 
 

@@ -5,7 +5,7 @@
 [![Tests](https://github.com/UMMISCO/ECGDataKit/actions/workflows/tests.yml/badge.svg?branch=main)](https://github.com/UMMISCO/ECGDataKit/actions/workflows/tests.yml)
 [![Docs](https://github.com/UMMISCO/ECGDataKit/actions/workflows/docs.yml/badge.svg?branch=main)](https://ecgdatakit.ummisco.fr)
 [![Python 3.10+](https://img.shields.io/badge/python-3.10%2B-blue.svg)](https://www.python.org/downloads/)
-[![License](https://img.shields.io/badge/license-Apache%202.0-green.svg)](LICENSE)
+[![License](https://img.shields.io/badge/license-Apache%202.0-green.svg)](https://github.com/UMMISCO/ECGDataKit/blob/main/LICENSE)
 [![GitLab](https://img.shields.io/badge/GitLab-mirror-orange?logo=gitlab)](https://git.ummisco.fr/open/ecgdatakit)
 
 **A Python library for parsing, processing, and visualizing multi-format ECG files.**
@@ -13,29 +13,30 @@
 Developed at [UMMISCO](https://www.ummisco.fr) / [IRD](https://www.ird.fr) by Ahmad Fall.
 
 > **[ecgdatakit.ummisco.fr](https://ecgdatakit.ummisco.fr)**: Full documentation, API reference, and getting started guide.
-pip install "ecgdatakit @ git+https://git.ummisco.fr/open/ecgdatakit.git#subdirectory=lib"
 
 ---
 
 ## Features
 
-### Parsing - 13 ECG formats, one unified data model
+### Parsing - 11 ECG formats, one unified data model
+
+Formats are detected from the file content, not the extension.
 
 | Format | File Types | Detection |
 |--------|-----------|-----------|
 | HL7 aECG | `.xml` | `<AnnotatedECG` in header |
 | Philips Sierra XML | `.xml` | `<restingecgdata` in header |
-| ISHNE Holter | `.ecg`, `.hol` | `ISHNE1.0` or `ANN  1.0` magic bytes |
-| Mortara EL250 | `.xml` | `<ECG` + `<CHANNEL` in header |
-| EDF/EDF+ | `.edf` | `"0       "` at offset 0 |
-| SCP-ECG | `.scp` | Valid Section 0 pointer table at offset 6 |
 | GE MUSE XML | `.xml` | `<RestingECG>` in header |
+| ISHNE Holter | `.ecg` | `ISHNE1.0` magic bytes |
+| Mortara ELI (EL250/ELI280) | `.xml` | `<ECG` root + ELI elements or attributes |
+| EDF/EDF+ | `.edf` | `"0       "` at offset 0 + valid structure |
+| SCP-ECG | `.scp` | Section 0 header at offset 6 and a valid pointer table |
 | DICOM Waveform | `.dcm` | `DICM` at offset 128 |
-| WFDB (PhysioNet) | `.hea` + `.dat` | `.hea` extension + valid header |
-| MFER | `.mwf`, `.mfer` | Valid MFER tag + BER length |
-| Mindray BeneHeart R12 | `.xml` | `<BeneHeartR12>` or `<MindrayECG>` |
-| GE MAC 2000 | `.xml` | `<MAC2000>` or `<GE_MAC>` |
-| EDAN ARC Holter | `patient.hea` + `ecgraw.dat` | filename `patient.hea` + sibling `ecgraw.dat` |
+| WFDB (PhysioNet) | `.hea` + `.dat` | valid `.hea` header, or a `.dat` with a sibling `.hea` |
+| MFER | `.mwf`, `.mfer`, `.mfr` | `MFR ` preamble or a chain of known MFER tags |
+| EDAN ARC Holter (experimental) | `patient.hea` + `ecgraw.dat`, `.arc` | `patient.hea` with sibling `ecgraw.dat`, or an `.arc` with a known signature |
+
+Parsers report what the file stores. They never compute clinical values (intervals, heart rate, QTc, axes, pacemaker status) or invent dates. The only derived values are those a format requires (duration from the sample count, age from the birth date when no age is stored), and a default taken from a format specification is flagged with a warning and in `raw_metadata`.
 
 ### Signal Processing
 
@@ -49,19 +50,19 @@ pip install "ecgdatakit @ git+https://git.ummisco.fr/open/ecgdatakit.git#subdire
 | **Quality** | Signal quality index (SQI), SNR estimation |
 | **Leads** | Derive III, aVR/aVL/aVF, full 12-lead assembly |
 | **Cleaning** | Built-in, BioSPPy, NeuroKit2, combined pipelines |
-| **Deep Denoising** | DeepFADE, a DenseNet encoder-decoder denoising autoencoder trained on a large private ECG database (weights bundled) |
+| **Deep Denoising** | DeepFADE (experimental), a DenseNet encoder-decoder denoising autoencoder trained on a large private ECG database (weights bundled). Not validated for clinical use |
 
 ### Visualization
 
 | Type | Plots |
 |------|-------|
-| **ECG Waveforms** | Single lead, multi-lead, standard 12-lead grid with paper background |
+| **ECG Waveforms** | Single lead, multi-lead, 12-lead, optional ECG paper grid (0.2 s / 0.5 mV squares) |
 | **Annotations** | R-peak markers, RR intervals, heart rate overlay |
 | **Beat Analysis** | Segmented beats, ensemble-averaged beat with SD shading |
 | **Spectral** | Power spectrum (PSD/FFT), spectrogram |
 | **HRV** | Tachogram, Poincaré plot, frequency bands, metrics dashboard |
-| **Reports** | Signal quality per lead, full ECG report with patient info |
-| **Interactive** | All plots available as interactive Plotly versions (zoom, pan, hover) |
+| **Reports** | Signal quality per lead, ECG report page with patient info and the standard 3 x 4 layout (2.5 s per column) plus a 10 s rhythm strip |
+| **Interactive** | Plotly versions (zoom, pan, hover) of single lead, multi-lead, 12-lead, R-peaks, spectrum, RR tachogram, Poincaré plot and report. Beat, spectrogram, HRV summary and quality plots are static only |
 
 ## Installation
 
@@ -81,18 +82,17 @@ pip install "ecgdatakit[plotting-interactive]"
 # With ECG cleaning backends
 pip install "ecgdatakit[cleaning]"
 
-# With DeepFADE denoising autoencoder (requires torch)
+# With DICOM waveform support (pydicom)
+pip install "ecgdatakit[dicom]"
+
+# With the experimental DeepFADE denoising autoencoder (requires torch)
 pip install "ecgdatakit[denoising]"
 
-# Everything (except torch, install separately if needed)
+# Everything except torch (install it separately if needed)
 pip install "ecgdatakit[all]"
-```
 
-Optional extras for specific formats:
-
-```bash
-pip install "ecgdatakit[holter]"   # ISHNE Holter CRC validation
-pip install "ecgdatakit[dicom]"    # DICOM waveform support
+# Development version from GitLab
+pip install "ecgdatakit @ git+https://git.ummisco.fr/open/ecgdatakit.git#subdirectory=lib"
 ```
 
 ## Quick Start
@@ -102,7 +102,7 @@ pip install "ecgdatakit[dicom]"    # DICOM waveform support
 ```python
 from ecgdatakit import FileParser
 
-record = FileParser().parse("path/to/ecg_file.xml")
+record = FileParser().parse("path/to/ecg_file.xml")   # leads in mV by default
 
 print(record.source_format)            # "sierra_xml"
 print(record.patient.first_name)       # "John"
@@ -110,7 +110,7 @@ print(record.patient.age)              # 55
 print(record.recording.acquisition.signal.sampling_rate)  # 500
 print(record.measurements.heart_rate)  # 75
 print(record.recording.device.manufacturer)               # "Philips"
-print(record.recording.acquisition.signal.data_encoding)  # "base64_int16le"
+print(record.recording.acquisition.signal.data_encoding)  # "Base64"
 print(len(record.leads))               # 12
 
 json_str = record.to_json()
@@ -119,31 +119,36 @@ json_str = record.to_json()
 ### Visualize
 
 ```python
-from ecgdatakit.plotting import plot_12lead, plot_lead, iplot_12lead
+from ecgdatakit.plotting import plot_12lead, plot_lead, plot_report, iplot_12lead
 
-plot_12lead(record)                # static 12-lead grid (auto-displays)
-plot_lead(record.leads[0])         # single lead
+plot_12lead(record)                # static, one row per lead (auto-displays)
+plot_lead(record.leads[0], show_grid=True)   # single lead on ECG paper grid
+plot_report(record)                # report page, standard 3 x 4 layout
 
 fig = plot_12lead(record, show=False)   # get the figure without displaying
 fig.savefig("ecg_12lead.png", dpi=150)
 
-iplot_12lead(record).show()        # interactive (plotly), opens in browser
+iplot_12lead(record)               # interactive (plotly), opens in browser
 ```
 
 ### Batch processing
+
+`parse_batch` uses worker processes, so scripts need the `__main__` guard (required on macOS and Windows).
 
 ```python
 from pathlib import Path
 from ecgdatakit import parse_batch
 
-files = list(Path("ecg_data/").glob("*.xml"))
-for record in parse_batch(files, max_workers=4):
-    print(record.patient.patient_id, record.measurements.heart_rate)
+if __name__ == "__main__":
+    files = list(Path("ecg_data/").glob("*.xml"))
+    # on_error="warn" skips unreadable files with a BatchParseWarning
+    for record in parse_batch(files, max_workers=4, on_error="warn"):
+        print(record.raw_metadata["filepath"], record.measurements.heart_rate)
 ```
 
 ## Data Model
 
-Every parser returns the same `ECGRecord`, so downstream code stays identical no matter which format was read. Leads hold raw ADC counts by default. Call `record.to_physical()` to scale them to voltage, then `record.convert_units("mV")` to switch between `uV`, `mV`, or `V`. Export the whole record with `record.to_dict()` or `record.to_json()`.
+Every parser returns the same `ECGRecord`, so downstream code stays identical no matter which format was read. `FileParser().parse(path)` returns leads in mV by default (`auto_scale=True`; pass `units="uV"` or `"V"` for another unit). Leads whose file gives no voltage scale stay in raw counts, with a warning. With `auto_scale=False`, `lead.samples` are the values stored in the file and `physical = samples * resolution + offset` in `resolution_unit`; `record.to_physical()` and `record.convert_units("mV")` do that conversion. Export the whole record with `record.to_dict()` or `record.to_json()`.
 
 ```
 ECGRecord
@@ -169,4 +174,4 @@ ECGRecord
 
 ## License
 
-Apache 2.0. See [LICENSE](LICENSE) for details.
+Apache 2.0. See [LICENSE](https://github.com/UMMISCO/ECGDataKit/blob/main/LICENSE) for details.

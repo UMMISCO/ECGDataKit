@@ -186,10 +186,17 @@ class TestNormalizeNumpyInput:
             for lead_idx in range(result.shape[1]):
                 assert abs(np.abs(result[ecg_idx, lead_idx]).max() - 2.0) < 1e-10
 
-    def test_rejects_1d_numpy(self):
+    def test_accepts_1d_numpy(self):
         from ecgdatakit.processing.normalize import normalize_minmax
-        with pytest.raises(ValueError, match="must be 3-D"):
-            normalize_minmax(_sine_signal())
+        result = normalize_minmax(_sine_signal())
+        assert result.shape == _sine_signal().shape
+        assert result.min() == pytest.approx(-1.0)
+        assert result.max() == pytest.approx(1.0)
+
+    def test_rejects_4d_numpy(self):
+        from ecgdatakit.processing.normalize import normalize_minmax
+        with pytest.raises(ValueError, match="1-D"):
+            normalize_minmax(np.zeros((1, 1, 1, 5)))
 
 
 # ---------------------------------------------------------------------------
