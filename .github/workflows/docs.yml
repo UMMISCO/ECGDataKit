@@ -22,7 +22,22 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  # A release runs on its tag, which may not deploy to github-pages: start
+  # the same workflow on main instead, so the Releases and Activity pages
+  # show the new release
+  rebuild-on-main:
+    if: github.event_name == 'release'
+    runs-on: ubuntu-latest
+    permissions:
+      actions: write
+    steps:
+      - name: Run the docs workflow on main
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh workflow run docs.yml --ref main --repo "${{ github.repository }}"
+
   build:
+    if: github.event_name != 'release'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -55,6 +70,7 @@ jobs:
           path: docs/_build/html
 
   deploy:
+    if: github.event_name != 'release'
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
