@@ -29,221 +29,8 @@
 {% endblock %}
 
 {% block body %}
-{% if pagename == "index" %}
-{# ── Full custom landing page (matches ecgdatakit.ummisco.fr) ── #}
-<link rel="stylesheet" href="{{ pathto('_static/custom.css', 1) }}">
-<div class="landing">
-
-  {# ── Header ── #}
-  <header class="site-header">
-    <div class="header-inner">
-      <a href="{{ pathto('index') }}" class="logo">
-        <div class="logo-icon">
-          <svg viewBox="0 0 40 40" fill="none">
-            <path d="M4 4H26l6 6V36H4z" fill="#f0f7ff" stroke="#d0e2f2" stroke-width=".8"/>
-            <path d="M26 4v6h6" fill="#d0e2f2" stroke="#d0e2f2" stroke-width=".8" stroke-linejoin="round"/>
-            <polyline stroke="#1B4F72" stroke-width="2.8" stroke-linecap="round" stroke-linejoin="round" points="1,22 7,22 10,22 12,19 14,26 17,7 20,33 22.5,14 24,22 27,22"/>
-            <rect x="28" y="16" width="3" height="8" rx=".8" fill="#42A5F5"/>
-            <rect x="32" y="12" width="3" height="12" rx=".8" fill="#2196F3"/>
-            <rect x="36" y="14" width="3" height="10" rx=".8" fill="#64B5F6"/>
-            <circle cx="29" cy="30" r="1.8" fill="#E91E63"/>
-            <circle cx="34" cy="28" r="1.8" fill="#E91E63"/>
-            <line x1="29" y1="30" x2="34" y2="28" stroke="#E91E63" stroke-width="1.2"/>
-            <polyline stroke="#FF9800" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" fill="none" points="27,35 29,33 31,37 33,32 35,36 37,34"/>
-          </svg>
-        </div>
-        <span class="logo-text"><span class="logo-ecg">ECG</span><span class="logo-dk">DataKit</span></span>
-      </a>
-      <span class="version-badge">v{{ release }}</span>
-      <nav>
-        <a href="{{ pathto('guides/getting-started') }}">Getting Started</a>
-        <a href="{{ pathto('api/parsing') }}">Docs</a>
-        <a href="{{ pathto('guides/formats') }}">Formats</a>
-        <a href="{{ pathto('releases') }}">Releases</a>
-        <a href="{{ pathto('activity') }}">Activity</a>
-      </nav>
-      <a href="https://www.ummisco.fr" class="header-lab" aria-label="UMMISCO" target="_blank" rel="noopener">
-        <img src="{{ pathto('_static/ummisco_logo.png', 1) }}" alt="UMMISCO" class="header-lab-logo">
-      </a>
-      <a href="https://github.com/UMMISCO/ECGDataKit" class="header-github" aria-label="GitHub" target="_blank" rel="noopener">
-        <svg viewBox="0 0 16 16" fill="currentColor"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"/></svg>
-      </a>
-      <a href="https://git.ummisco.fr/open/ecgdatakit" class="header-gitlab" aria-label="GitLab" target="_blank" rel="noopener">
-        <svg viewBox="0 0 24 24" fill="currentColor"><path d="M22.65 14.39L12 22.13 1.35 14.39a.84.84 0 01-.3-.94l1.22-3.78 2.44-7.51A.42.42 0 014.82 2a.43.43 0 01.58 0 .42.42 0 01.11.18l2.44 7.49h8.1l2.44-7.51A.42.42 0 0118.6 2a.43.43 0 01.58 0 .42.42 0 01.11.18l2.44 7.51L23 13.45a.84.84 0 01-.35.94z"/></svg>
-      </a>
-      <button class="hamburger" aria-label="Menu" onclick="document.querySelector('.site-header nav').classList.toggle('show')">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 12h18M3 6h18M3 18h18"/></svg>
-      </button>
-    </div>
-  </header>
-
-  {# ── Hero ── #}
-  <section class="hero-section">
-    <div class="hero-inner">
-      <span class="hero-version">v{{ release }}</span>
-      <div class="hero-logo">
-        <svg class="hero-logo-icon" viewBox="0 0 40 40" fill="none">
-          <path d="M4 4H26l6 6V36H4z" fill="#f0f7ff" stroke="#d0e2f2" stroke-width=".8"/>
-          <path d="M26 4v6h6" fill="#d0e2f2" stroke="#d0e2f2" stroke-width=".8" stroke-linejoin="round"/>
-          <polyline stroke="#1B4F72" stroke-width="2.8" stroke-linecap="round" stroke-linejoin="round" points="1,22 7,22 10,22 12,19 14,26 17,7 20,33 22.5,14 24,22 27,22"/>
-          <rect x="28" y="16" width="3" height="8" rx=".8" fill="#42A5F5"/>
-          <rect x="32" y="12" width="3" height="12" rx=".8" fill="#2196F3"/>
-          <rect x="36" y="14" width="3" height="10" rx=".8" fill="#64B5F6"/>
-          <circle cx="29" cy="30" r="1.8" fill="#E91E63"/>
-          <circle cx="34" cy="28" r="1.8" fill="#E91E63"/>
-          <line x1="29" y1="30" x2="34" y2="28" stroke="#E91E63" stroke-width="1.2"/>
-          <polyline stroke="#FF9800" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" fill="none" points="27,35 29,33 31,37 33,32 35,36 37,34"/>
-        </svg>
-        <h1><span class="logo-ecg">ECG</span><span class="logo-dk">DataKit</span></h1>
-      </div>
-      <p class="hero-tagline">A Python library for parsing, processing, and visualizing multi-format ECG files.</p>
-      <div class="hero-badges">
-        <span class="badge badge-blue">
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6A2 2 0 004 4v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
-          12 ECG Formats
-        </span>
-        <span class="badge badge-green">
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg>
-          Signal Processing
-        </span>
-        <span class="badge badge-purple">
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18"/><path d="M9 21V9"/></svg>
-          ECG Plotting
-        </span>
-      </div>
-      <div class="hero-cta">
-        <a href="{{ pathto('guides/getting-started') }}" class="btn btn-primary">Get Started
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12h14"/><path d="m12 5 7 7-7 7"/></svg>
-        </a>
-        <a href="{{ pathto('api/parsing') }}" class="btn btn-outline">Docs</a>
-      </div>
-      <div class="hero-install">
-        <span class="prompt">$</span>
-        <code>pip install ecgdatakit</code>
-        <button class="copy-install" onclick="navigator.clipboard.writeText('pip install ecgdatakit');this.innerHTML='&#10003;';setTimeout(()=>this.innerHTML='<svg width=&quot;16&quot; height=&quot;16&quot; viewBox=&quot;0 0 24 24&quot; fill=&quot;none&quot; stroke=&quot;currentColor&quot; stroke-width=&quot;2&quot;><rect x=&quot;9&quot; y=&quot;9&quot; width=&quot;13&quot; height=&quot;13&quot; rx=&quot;2&quot;/><path d=&quot;M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1&quot;/></svg>',2e3)" aria-label="Copy">
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg>
-        </button>
-      </div>
-    </div>
-  </section>
-
-  {# ── Features ── #}
-  <section class="features-section">
-    <div class="features-inner">
-      <div class="features-grid">
-        <div class="feature-card">
-          <div class="feature-card-header">
-            <div class="feature-icon feature-icon-blue">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6A2 2 0 004 4v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
-            </div>
-            <h3>Multi-Format Parsing</h3>
-          </div>
-          <p>Parse HL7 aECG, Philips Sierra, GE MUSE, SCP-ECG, DICOM, EDF, WFDB, MFER, and more into one unified data structure.</p>
-        </div>
-        <div class="feature-card">
-          <div class="feature-card-header">
-            <div class="feature-icon feature-icon-green">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg>
-            </div>
-            <h3>Signal Processing</h3>
-          </div>
-          <p>Butterworth filters, R-peak detection (Pan-Tompkins &amp; Shannon energy), HRV analysis, FFT, signal quality, lead derivation, ECG cleaning, and DeepFADE neural-net denoising.</p>
-        </div>
-        <div class="feature-card">
-          <div class="feature-card-header">
-            <div class="feature-icon feature-icon-purple">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18"/><path d="M9 21V9"/></svg>
-            </div>
-            <h3>Visualization</h3>
-          </div>
-          <p>Standard 12-lead grids, R-peak annotations, HRV dashboards, spectrograms, and full ECG reports. Static or interactive.</p>
-        </div>
-      </div>
-    </div>
-  </section>
-
-  {# ── Quick Example ── #}
-  <section class="home-section">
-    <div class="home-inner">
-      <h2 class="section-heading">Quick Example</h2>
-      <div class="highlight"><pre><code class="language-python"><span class="kn">from</span> <span class="nn">ecgdatakit</span> <span class="kn">import</span> <span class="n">FileParser</span>
-<span class="kn">from</span> <span class="nn">ecgdatakit.processing</span> <span class="kn">import</span> <span class="n">diagnostic_filter</span><span class="p">,</span> <span class="n">detect_r_peaks</span><span class="p">,</span> <span class="n">heart_rate</span>
-<span class="kn">from</span> <span class="nn">ecgdatakit.plotting</span> <span class="kn">import</span> <span class="n">plot_12lead</span><span class="p">,</span> <span class="n">plot_peaks</span>
-
-<span class="c1"># Parse any ECG file (auto-detect format)</span>
-<span class="n">record</span> <span class="o">=</span> <span class="n">FileParser</span><span class="p">()</span><span class="o">.</span><span class="n">parse</span><span class="p">(</span><span class="s2">"ecg_file.xml"</span><span class="p">)</span>
-
-<span class="c1"># Filter and detect R-peaks</span>
-<span class="n">lead</span> <span class="o">=</span> <span class="n">record</span><span class="o">.</span><span class="n">leads</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span>  <span class="c1"># Lead II</span>
-<span class="n">filtered</span> <span class="o">=</span> <span class="n">diagnostic_filter</span><span class="p">(</span><span class="n">lead</span><span class="p">)</span>
-<span class="n">peaks</span> <span class="o">=</span> <span class="n">detect_r_peaks</span><span class="p">(</span><span class="n">filtered</span><span class="p">)</span>
-<span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">"Heart rate: </span><span class="si">{</span><span class="n">heart_rate</span><span class="p">(</span><span class="n">filtered</span><span class="p">,</span> <span class="n">peaks</span><span class="p">)</span><span class="si">:</span><span class="s2">.0f</span><span class="si">}</span><span class="s2"> bpm"</span><span class="p">)</span>
-
-<span class="c1"># Visualize</span>
-<span class="n">fig</span> <span class="o">=</span> <span class="n">plot_12lead</span><span class="p">(</span><span class="n">record</span><span class="p">)</span>
-<span class="n">fig</span><span class="o">.</span><span class="n">savefig</span><span class="p">(</span><span class="s2">"ecg_report.png"</span><span class="p">,</span> <span class="n">dpi</span><span class="o">=</span><span class="mi">150</span><span class="p">)</span></code></pre></div>
-    </div>
-  </section>
-
-  {# ── Supported Formats ── #}
-  <section class="home-section">
-    <div class="home-inner">
-      <h2 class="section-heading">Supported Formats</h2>
-      <div class="formats-grid">
-        <div class="format-item"><strong>HL7 aECG</strong><span>Health Level 7 annotated ECG</span></div>
-        <div class="format-item"><strong>Philips Sierra XML</strong><span>Philips Sierra ECG format</span></div>
-        <div class="format-item"><strong>GE MUSE XML</strong><span>GE MUSE ECG management</span></div>
-        <div class="format-item"><strong>ISHNE Holter</strong><span>Holter &amp; Noninvasive ECG</span></div>
-        <div class="format-item"><strong>Mortara ELI</strong><span>Mortara ELI 250 / 280</span></div>
-        <div class="format-item"><strong>EDF/EDF+</strong><span>European Data Format</span></div>
-        <div class="format-item"><strong>SCP-ECG</strong><span>Standard Comms Protocol</span></div>
-        <div class="format-item"><strong>DICOM Waveform</strong><span>Medical imaging standard</span></div>
-        <div class="format-item"><strong>WFDB</strong><span>PhysioNet WaveForm DB</span></div>
-        <div class="format-item"><strong>MFER</strong><span>Medical waveform encoding</span></div>
-        <div class="format-item"><strong>EDAN ARC</strong><span>EDAN Holter recordings (experimental)</span></div>
-        <div class="format-item"><strong>AliveCor Kardia</strong><span>KardiaMobile JSON recordings</span></div>
-      </div>
-    </div>
-  </section>
-
-  {# ── Installation ── #}
-  <section class="home-section">
-    <div class="home-inner">
-      <h2 class="section-heading">Installation</h2>
-      <div class="highlight"><pre><code class="language-bash"><span class="c1"># From PyPI</span>
-pip install ecgdatakit
-
-<span class="c1"># From GitHub (package lives in lib/)</span>
-pip install <span class="s2">"ecgdatakit @ git+https://github.com/UMMISCO/ECGDataKit.git#subdirectory=lib"</span>
-
-<span class="c1"># With signal processing (scipy)</span>
-pip install <span class="s2">"ecgdatakit[processing]"</span>
-
-<span class="c1"># With plotting (matplotlib + plotly)</span>
-pip install <span class="s2">"ecgdatakit[plotting,plotting-interactive]"</span>
-
-<span class="c1"># ECG cleaning backends (BioSPPy + NeuroKit2)</span>
-pip install <span class="s2">"ecgdatakit[cleaning]"</span>
-
-<span class="c1"># DeepFADE neural-net denoising (requires torch)</span>
-pip install <span class="s2">"ecgdatakit[denoising]"</span>
-
-<span class="c1"># Everything (except torch — install separately)</span>
-pip install <span class="s2">"ecgdatakit[all]"</span></code></pre></div>
-    </div>
-  </section>
-
-  {# ── Footer ── #}
-  <footer class="site-footer">
-    <div class="footer-inner">
-      <span>ECGDataKit v{{ release }} &mdash; Apache-2.0</span>
-      <span>Built by <strong>Ahmad Fall</strong> &mdash; <a href="https://www.ummisco.fr">UMMISCO</a> / <a href="https://www.ird.fr">IRD</a></span>
-    </div>
-  </footer>
-</div>
-
-{% else %}
-{# ── Doc pages: header bar above the Furo layout ── #}
+{% set section = pagename.split('/')[0] %}
+{% macro site_header() %}
 <header class="docs-header">
   <div class="docs-header-inner">
     <label class="docs-icon-btn docs-menu-btn" for="__navigation" aria-label="Show navigation">
@@ -280,6 +67,145 @@ pip install <span class="s2">"ecgdatakit[all]"</span></code></pre></div>
     </a>
   </div>
 </header>
+{% endmacro %}
+{% if pagename == "index" %}
+{# ── Home page (Furo's layout is hidden on this page) ── #}
+<div class="landing home">
+{{ site_header() }}
+
+<main>
+  <section class="home-hero">
+    <div class="home-wrap home-hero-grid">
+      <div class="home-hero-text">
+        <h1>Parse, process and plot ECG files in Python</h1>
+        <p class="home-lead">ECGDataKit parses 12 ECG file formats into one data model, with filters, R-peak detection, heart-rate variability and plots on top. The format is detected from the file content and leads come out in millivolts.</p>
+        <div class="home-actions">
+          <a class="home-btn home-btn-primary" href="{{ pathto('guides/getting-started') }}">Get started</a>
+          <a class="home-btn" href="{{ pathto('guides/formats') }}">Supported formats</a>
+        </div>
+        <div class="home-install">
+          <code>pip install ecgdatakit</code>
+          <button type="button" aria-label="Copy" onclick="navigator.clipboard.writeText('pip install ecgdatakit');this.textContent='Copied';setTimeout(()=>this.textContent='Copy',1500)">Copy</button>
+        </div>
+      </div>
+      <div class="home-hero-code">
+        <div class="highlight"><pre><span class="kn">from</span> <span class="nn">ecgdatakit</span> <span class="kn">import</span> <span class="n">FileParser</span>
+<span class="kn">from</span> <span class="nn">ecgdatakit.processing</span> <span class="kn">import</span> <span class="n">diagnostic_filter</span><span class="p">,</span> <span class="n">detect_r_peaks</span><span class="p">,</span> <span class="n">heart_rate</span>
+<span class="kn">from</span> <span class="nn">ecgdatakit.plotting</span> <span class="kn">import</span> <span class="n">plot_12lead</span>
+
+<span class="c1"># Any supported format, detected from the content</span>
+<span class="n">record</span> <span class="o">=</span> <span class="n">FileParser</span><span class="p">()</span><span class="o">.</span><span class="n">parse</span><span class="p">(</span><span class="s2">"ecg.xml"</span><span class="p">)</span>
+
+<span class="n">lead</span> <span class="o">=</span> <span class="n">diagnostic_filter</span><span class="p">(</span><span class="n">record</span><span class="o">.</span><span class="n">leads</span><span class="p">[</span><span class="mi">1</span><span class="p">])</span>
+<span class="n">peaks</span> <span class="o">=</span> <span class="n">detect_r_peaks</span><span class="p">(</span><span class="n">lead</span><span class="p">)</span>
+<span class="nb">print</span><span class="p">(</span><span class="n">heart_rate</span><span class="p">(</span><span class="n">lead</span><span class="p">,</span> <span class="n">peaks</span><span class="p">))</span>
+
+<span class="n">plot_12lead</span><span class="p">(</span><span class="n">record</span><span class="p">)</span></pre></div>
+      </div>
+    </div>
+  </section>
+
+  <section class="home-section">
+    <div class="home-wrap">
+      <div class="home-features">
+        <a class="home-feature" href="{{ pathto('api/parsing') }}">
+          <svg class="home-feature-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6M8 13h8M8 17h5"/></svg>
+          <h2>Parsing</h2>
+          <p>12 ECG formats parsed into one data model, with leads in millivolts.</p>
+          <span class="home-feature-more">Docs</span>
+        </a>
+        <a class="home-feature" href="{{ pathto('api/processing') }}">
+          <svg class="home-feature-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12h4l3-8 4 16 3-8h4"/></svg>
+          <h2>Processing</h2>
+          <p>Filters, R-peak detection, heart-rate variability and signal quality.</p>
+          <span class="home-feature-more">Docs</span>
+        </a>
+        <a class="home-feature" href="{{ pathto('api/plotting') }}">
+          <svg class="home-feature-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><path d="M7 15l4-4 3 3 5-6"/></svg>
+          <h2>Plotting</h2>
+          <p>12-lead grids, R-peaks, beats, spectra and ECG reports, static or interactive.</p>
+          <span class="home-feature-more">Docs</span>
+        </a>
+        <a class="home-feature" href="{{ pathto('api/anonymization') }}">
+          <svg class="home-feature-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l8 3v6c0 4.5-3.4 8.3-8 9-4.6-.7-8-4.5-8-9V6z"/><path d="M9 12l2 2 4-4"/></svg>
+          <h2>Anonymization</h2>
+          <p>Anonymizes ECG files in any supported format, with a catalog linking each file to its pseudonyms.</p>
+          <span class="home-feature-more">Docs</span>
+        </a>
+      </div>
+    </div>
+  </section>
+
+  <section class="home-section home-section-alt">
+    <div class="home-wrap home-two-col">
+      <div>
+        <h2 class="home-h2">Supported formats</h2>
+        <p>Resting ECGs, Holter recordings and research databases. Each format is detected from the file content.</p>
+        <a class="home-link" href="{{ pathto('guides/formats') }}">Details per format</a>
+      </div>
+      <table class="home-formats">
+        <tbody>
+          <tr><td>HL7 aECG</td><td><code>.xml</code></td></tr>
+          <tr><td>GE MUSE XML</td><td><code>.xml</code></td></tr>
+          <tr><td>Philips Sierra XML</td><td><code>.xml</code></td></tr>
+          <tr><td>Mortara ELI XML</td><td><code>.xml</code></td></tr>
+          <tr><td>SCP-ECG</td><td><code>.scp</code></td></tr>
+          <tr><td>DICOM Waveform</td><td><code>.dcm</code></td></tr>
+          <tr><td>EDF / EDF+</td><td><code>.edf</code></td></tr>
+          <tr><td>WFDB (PhysioNet)</td><td><code>.hea</code> + <code>.dat</code></td></tr>
+          <tr><td>MFER</td><td><code>.mwf</code></td></tr>
+          <tr><td>ISHNE Holter</td><td><code>.ecg</code></td></tr>
+          <tr><td>AliveCor Kardia</td><td><code>.json</code></td></tr>
+          <tr><td>EDAN Holter (experimental)</td><td><code>.arc</code>, folder</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <section class="home-section">
+    <div class="home-wrap home-two-col">
+      <div>
+        <h2 class="home-h2">Installation</h2>
+        <p>Python 3.10 or later. The core needs only NumPy; optional parts are installed as extras.</p>
+        <a class="home-link" href="{{ pathto('guides/getting-started') }}">Getting started</a>
+      </div>
+      <div class="highlight"><pre>pip install ecgdatakit                 <span class="c1"># parsing</span>
+pip install <span class="s2">"ecgdatakit[processing]"</span>   <span class="c1"># filters, peaks, HRV</span>
+pip install <span class="s2">"ecgdatakit[plotting]"</span>     <span class="c1"># plots</span>
+pip install <span class="s2">"ecgdatakit[dicom]"</span>        <span class="c1"># DICOM files</span>
+pip install <span class="s2">"ecgdatakit[anonymize]"</span>    <span class="c1"># anonymization</span>
+pip install <span class="s2">"ecgdatakit[all]"</span>          <span class="c1"># everything except torch</span></pre></div>
+    </div>
+  </section>
+</main>
+
+<footer class="home-footer">
+  <div class="home-wrap home-footer-grid">
+    <div class="home-footer-about">
+      <img src="{{ pathto('_static/ummisco_logo.png', 1) }}" alt="UMMISCO" class="home-footer-logo">
+      <p>Developed by Ahmad Fall at <a href="https://www.ummisco.fr">UMMISCO</a> / <a href="https://www.ird.fr">IRD</a>.<br>Apache-2.0 license.</p>
+    </div>
+    <div>
+      <h3>Documentation</h3>
+      <a href="{{ pathto('guides/getting-started') }}">Getting started</a>
+      <a href="{{ pathto('guides/formats') }}">Supported formats</a>
+      <a href="{{ pathto('api/reference') }}">API reference</a>
+      <a href="{{ pathto('guides/whats-new') }}">What's new</a>
+    </div>
+    <div>
+      <h3>Project</h3>
+      <a href="{{ pathto('releases') }}">Releases</a>
+      <a href="{{ pathto('activity') }}">Activity</a>
+      <a href="https://pypi.org/project/ecgdatakit/">PyPI</a>
+      <a href="https://github.com/UMMISCO/ECGDataKit">GitHub</a>
+      <a href="https://git.ummisco.fr/open/ecgdatakit">GitLab</a>
+    </div>
+  </div>
+  <div class="home-wrap home-footer-bottom">ECGDataKit v{{ release }}</div>
+</footer>
+</div>
+{% else %}
+{{ site_header() }}
 {{ super() }}
 {% endif %}
 {% endblock %}

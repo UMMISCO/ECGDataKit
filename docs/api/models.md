@@ -118,7 +118,7 @@ convert those counts back to physical voltage values.
 | `adc_resolution` | `153.0` | Raw value from the file (e.g. 153 nV/count for ISHNE) |
 | `adc_resolution_unit` | `"nV"` | Unit of `adc_resolution` as defined by the source format |
 | `resolution` | `0.153` | Scale factor normalised to `resolution_unit` (153 nV → 0.153 µV) |
-| `resolution_unit` | `"uV"` | Unit of the `resolution` scale factor — the unit samples will be in after `to_physical()` |
+| `resolution_unit` | `"uV"` | Unit of the `resolution` scale factor: the unit samples will be in after `to_physical()` |
 | `offset` | `0.0` | Additive offset: `physical = samples × resolution + offset` |
 | `units` | `""` or `"uV"` | **Current** unit of `samples`. Empty when `is_raw=True`; set after conversion |
 | `is_raw` | `True` / `False` | `True` → samples are dimensionless ADC counts. `False` → already in `units` |

@@ -75,7 +75,7 @@ decoding a recognised file are raised as `CorruptedFileError`, and a missing
 optional dependency (pydicom for DICOM) raises `ImportError`.
 
 ```python
-# Default — leads with scaling metadata are converted to mV
+# Default: leads with scaling metadata are converted to mV
 record = fp.parse("ecg_file.xml")
 
 # Raw ADC values, no conversion

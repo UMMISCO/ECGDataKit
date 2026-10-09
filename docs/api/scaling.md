@@ -29,7 +29,7 @@ When `FileParser.parse()` is called with `auto_scale=True` (the default), leads 
 
 ### Formats with scaling metadata
 
-These formats provide per-lead scaling information — leads are auto-converted to mV when `auto_scale=True`:
+These formats provide per-lead scaling information: leads are auto-converted to mV when `auto_scale=True`:
 
 | Format | Scaling source | Native unit |
 |--------|---------------|-------------|
@@ -93,7 +93,7 @@ lead = lead.convert_units("mV")   # uV → mV
 ```
 
 ```{note}
-Both methods return **new** objects — the originals are never modified.
+Both methods return **new** objects: the originals are never modified.
 ```
 
 ### Accepted unit strings

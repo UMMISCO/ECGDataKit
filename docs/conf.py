@@ -16,7 +16,7 @@ sys.path.insert(0, str(LIB_SRC))
 # Project metadata
 # ---------------------------------------------------------------------------
 project = "ECGDataKit"
-copyright = "2026, Ahmad Fall — UMMISCO / IRD"
+copyright = "2026, Ahmad Fall, UMMISCO / IRD"
 author = "Ahmad Fall"
 
 # Single source of truth: read the version from the package (LIB_SRC is on
@@ -297,7 +297,7 @@ def _generate_activity_page(app):
         date_counts[c["date"]] += 1
 
     # Build weeks as columns: each week = list of 7 cells [Sun … Sat].
-    # The last (current) week may be partial — pad with None so every
+    # The last (current) week may be partial: pad with None so every
     # column has exactly 7 entries for a correct CSS grid.
     heatmap_weeks = []
     current = start
@@ -384,7 +384,7 @@ def _generate_activity_page(app):
         lines.append("    </div>")
     lines.append("  </div>")
 
-    # Contribution heatmap — rendered as SVG (like GitHub)
+    # Contribution heatmap, rendered as SVG (like GitHub)
     cell = 13
     gap = 3
     step = cell + gap
