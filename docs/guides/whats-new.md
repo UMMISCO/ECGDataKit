@@ -1,10 +1,53 @@
-# What changed in 1.1.0
+# What's new
+
+## 1.1.1
+
+### New format: AliveCor Kardia JSON
+
+- ECG recordings exported from the Kardia API (KardiaMobile and
+  KardiaMobile 6L) can now be read. The library reads 12 formats (see
+  {doc}`formats`).
+- The unfiltered signal goes to `record.leads`. The signal filtered by
+  AliveCor goes to the new `record.leads_enhanced` field, which other
+  formats leave empty.
+- Samples are scaled with `amplitudeResolution` (nanovolts per count), as
+  described in the Kardia API documentation.
+- The AliveCor algorithm result (for example `afib`) is a machine
+  interpretation.
+- Kardia 12L recordings use another layout and raise
+  `UnsupportedFormatError`.
+
+### Detected format and parser
+
+`record.file_format.name` holds the name of the detected format and
+`record.file_format.parser` the parser that read the file. They are filled
+in when the file is read through `FileParser` or `parse_batch`.
+
+### Annotations
+
+These changes rename or remove annotation keys. Code that reads them may
+need updating.
+
+- A value with a field in `record.measurements` is stored only there, not
+  also in `record.annotations` (Sierra and Mortara repeated some values).
+- Each wave boundary has its own key. HL7 aECG and SCP-ECG no longer write
+  them into one `wave_boundaries_ms` text.
+- Boundaries of the representative beat start with `median_`, for example
+  `median_p_onset_ms` or `median_q_onset` (HL7 aECG, SCP-ECG, Mortara,
+  GE MUSE, Sierra).
+- Keys end with their unit when the format states it: `_ms`, `_samples`
+  or `_s`.
+- DICOM time-referenced annotations moved from
+  `raw_metadata["waveform_annotations"]` to `record.annotations`, one key
+  per wave type, for example `p_onset_samples`.
+
+## 1.1.0
 
 This release makes the library stricter and more honest about what it
 reads. Some code that worked with 1.0 may now raise an error or give a
 different result. This page lists every change you may notice.
 
-## Reading files
+### Reading files
 
 - **Two formats removed.** GE MAC 2000 and Mindray BeneHeart R12 are no
   longer supported. These files now raise `UnsupportedFormatError`. The
@@ -39,7 +82,7 @@ different result. This page lists every change you may notice.
   with the reason. A missing optional package (for example pydicom for
   DICOM) raises `ImportError` with the install command.
 
-## Records and leads
+### Records and leads
 
 - `lead.to_physical()` raises `RawSamplesError` when the file gives no
   unit for the samples: uncalibrated counts cannot be turned into volts.
@@ -47,7 +90,7 @@ different result. This page lists every change you may notice.
   are written as `null`, never `NaN`. For long recordings, write directly
   to a file with `record.to_json(fp=f)` to avoid building a huge string.
 
-## Parsing many files
+### Parsing many files
 
 - `parse_batch(..., on_error="warn")` skips files that fail and reports
   each one as a `BatchParseWarning`; `on_error="ignore"` skips them
@@ -57,7 +100,7 @@ different result. This page lists every change you may notice.
   processes; on macOS and Windows call it under
   `if __name__ == "__main__":`.
 
-## Signal processing
+### Signal processing
 
 - Filters, resampling, peak detection, spectra, quality and cleaning raise
   `ValueError` for signals that contain NaN or infinite values and for 2-D
@@ -80,7 +123,7 @@ different result. This page lists every change you may notice.
   clinical use, and refuses leads that are still in raw counts: convert
   them to volts first.
 
-## Plotting
+### Plotting
 
 - Time axes are exact (`sample / sampling rate`). Beat plots show time
   relative to the R-peak, so 0 ms is the R-peak.
