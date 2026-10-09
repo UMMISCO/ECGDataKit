@@ -446,8 +446,8 @@ class TestMeasurementsAndStatements:
         assert m.heart_rate == 72  # stored ventricular rate
         # Section 7 stores wave boundaries: intervals are not computed from them
         assert (m.pr_interval, m.qrs_duration, m.qt_interval) == (None, None, None)
-        assert {k: record.annotations[k] for k in (
-            "p_onset", "p_offset", "qrs_onset", "qrs_offset", "t_offset")} == {
+        names = ("p_onset", "p_offset", "qrs_onset", "qrs_offset", "t_offset")
+        assert {n: record.annotations[f"median_{n}_ms"] for n in names} == {
             "p_onset": "100", "p_offset": "200", "qrs_onset": "260",
             "qrs_offset": "350", "t_offset": "650"}
         assert m.qtc_bazett == 410  # formula code 1 = Bazett

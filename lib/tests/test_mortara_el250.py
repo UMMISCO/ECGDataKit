@@ -135,7 +135,7 @@ class TestMortaraEL250Parser:
         assert m.qtc_bazett == 469 and m.qtc_fridericia == 464
         assert (m.p_axis, m.qrs_axis, m.t_axis) == (57, -35, 40)
         assert record.raw_metadata["qtc"] == 463
-        assert record.annotations["q_onset"] == "-45"
+        assert record.annotations["median_q_onset"] == "-45"
         assert record.annotations["comment"] == "Chest pain"
 
     def test_machine_statements(self, mortara_file: Path):

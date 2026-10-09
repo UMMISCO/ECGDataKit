@@ -66,6 +66,14 @@ _MEASUREMENT_MAP = {
     "TAxis": "t_axis",
     "QRSCount": "qrs_count",
 }
+# Median beat wave boundaries, unit not stated in the file
+_BOUNDARY_KEYS = {
+    "POnset": "median_p_onset",
+    "POffset": "median_p_offset",
+    "QOnset": "median_q_onset",
+    "QOffset": "median_q_offset",
+    "TOffset": "median_t_offset",
+}
 
 
 
@@ -433,7 +441,7 @@ class GEMuseXMLParser(Parser):
                 if field and number is not None:
                     setattr(gm, field, int(round(number)))
                 elif child.tag not in ("ECGSampleBase", "ECGSampleExponent"):
-                    record.annotations[child.tag] = value
+                    record.annotations[_BOUNDARY_KEYS.get(child.tag, child.tag)] = value
         if current is not None and original is not None:
             orig = {c.tag: _text(c) for c in original if _text(c)}
             cur = {c.tag: _text(c) for c in current if _text(c)}

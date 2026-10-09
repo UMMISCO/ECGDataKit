@@ -1040,7 +1040,7 @@ class SCPECGParser(Parser):
             names = ("p_onset", "p_offset", "qrs_onset", "qrs_offset", "t_offset")
             for name, value in zip(names, (p_on, p_off, qrs_on, qrs_off, t_off)):
                 if ok(value):
-                    record.annotations[name] = str(value)
+                    record.annotations[f"median_{name}_ms"] = str(value)
             raw["measurement_blocks"] = [
                 dict(zip(("p_onset", "p_offset", "qrs_onset", "qrs_offset", "t_offset",
                           "p_axis", "qrs_axis", "t_axis"), b))

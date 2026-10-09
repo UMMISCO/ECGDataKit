@@ -195,11 +195,8 @@ class TestDICOM12Lead:
         record = DICOMWaveformParser().parse(dicom_12lead_file)
         assert record.interpretation.statements == [("Sinus rhythm", ""), ("Normal ECG", "")]
         assert record.interpretation.source == "machine"
-        fiducials = record.raw_metadata["waveform_annotations"]
-        assert fiducials == [{
-            "concept": "QRS onset", "ReferencedSamplePositions": "120",
-            "code": "2:15844", "channels": ["group 1"],
-        }]
+        assert record.annotations["qrs_onset_samples"] == "120"
+        assert "waveform_annotations" not in record.raw_metadata
 
 
 class TestDICOMSampleDecoding:

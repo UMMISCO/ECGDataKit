@@ -72,6 +72,15 @@ _SEX_MAP = {"male": "M", "m": "M", "female": "F", "f": "F"}
 # <pacestatus> values; "Unknown" and anything else leave has_pacemaker unset
 _PACED = {"yes", "paced", "pacemaker", "true"}
 _NOT_PACED = {"no", "notpaced", "not paced", "nopacemaker", "no pacemaker", "false"}
+# Median beat wave boundaries in the global measurements, unit not documented
+_BOUNDARY_KEYS = {
+    "ponset": "median_p_onset",
+    "poffset": "median_p_offset",
+    "qonset": "median_q_onset",
+    "qoffset": "median_q_offset",
+    "tonset": "median_t_onset",
+    "toffset": "median_t_offset",
+}
 
 _LIMB_LEADS = list(STANDARD_LEADS[:6])
 
@@ -949,7 +958,7 @@ class SierraXMLParser(Parser):
             node_id = id(_first(node))
             for key, value in _flatten(node).items():
                 if key not in ("editedflag", "arrhyflag") and (node_id, key) not in used:
-                    annotations.setdefault(key, value)
+                    annotations.setdefault(_BOUNDARY_KEYS.get(key, key), value)
         code = _attr(_get(interp_node, "severity"), "code")
         if code:
             annotations["severity_code"] = code

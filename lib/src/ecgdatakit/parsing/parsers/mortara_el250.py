@@ -70,6 +70,8 @@ _ROOT_MEASUREMENTS = {"VENT_RATE": "heart_rate", "AVERAGE_RR": "rr_interval",
 _CYCLE_MEASUREMENTS = {"PR_DURATION": "pr_interval", "QRS_DURATION": "qrs_duration",
                        "QT": "qt_interval", "QTB": "qtc_bazett", "QTF": "qtc_fridericia",
                        "P_AXIS": "p_axis", "QRS_AXIS": "qrs_axis", "T_AXIS": "t_axis"}
+# Median beat wave boundaries, unit not documented
+_CYCLE_BOUNDARIES = {"R_PEAK", "P_ONSET", "P_OFFSET", "Q_ONSET", "Q_OFFSET", "T_OFFSET"}
 
 
 def _number(value: str | None) -> float | None:
@@ -458,8 +460,8 @@ class MortaraEL250Parser(Parser):
         if qtc is not None:
             raw["qtc"] = qtc
 
-        # Measurements go to the model, everything else (fiducials in ms
-        # relative to the median beat, unreadable values) to annotations
+        # Measurements go to the model, everything else (fiducials, whose
+        # unit is not documented, and unreadable values) to annotations
         root_values = {key: root.get(key, "") for key in _ROOT_MEASUREMENTS}
         cycle_values = {key: value for key, value in tc.items()
                         if key not in _CYCLE_FORMAT_KEYS}
@@ -469,6 +471,8 @@ class MortaraEL250Parser(Parser):
             number = _rounded(value) if key in fields else None
             if number is not None:
                 setattr(m, fields[key], number)
+            elif value and key in _CYCLE_BOUNDARIES:
+                annotations[f"median_{key.lower()}"] = value
             elif value:
                 annotations[key.lower()] = value
         comment = root.get("COMMENT", "").strip()

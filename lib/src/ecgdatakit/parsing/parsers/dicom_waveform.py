@@ -12,6 +12,7 @@ to NaN.
 
 from __future__ import annotations
 
+import re
 import warnings
 from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
@@ -105,6 +106,14 @@ _LEAD_CODES: dict[int, str] = {
 # reference ids and LOINC heart rate. SCPECG codes number the byte offset in
 # the SCP-ECG section (code meanings as written by a cart in pydicom's
 # waveform_ecg.dcm). Unlisted codes are kept as annotations.
+# Key suffix for the way an annotation points into the recording: sample
+# positions (1-based, as stored), time offsets in seconds, or a date and time
+_POSITION_UNITS = {
+    "ReferencedSamplePositions": "_samples",
+    "ReferencedTimeOffsets": "_s",
+    "ReferencedDateTime": "_datetime",
+}
+
 _MEASUREMENT_CODES: dict[str, str] = {
     "2:16770": "heart_rate",
     "8867-4": "heart_rate",
@@ -733,7 +742,8 @@ class DICOMWaveformParser(Parser):
 
         statements: list[tuple[str, str]] = []
         measurements: dict[str, int] = {}
-        fiducials: list[dict] = []
+        # Time-referenced annotations, one key per concept, values in file order
+        fiducials: dict[str, list[str]] = {}
         for item in items:
             scheme, code, name = _code_parts(_first_code(item, "ConceptNameCodeSequence"))
             _, _, concept = _code_parts(_first_code(item, "ConceptCodeSequence"))
@@ -749,15 +759,13 @@ class DICOMWaveformParser(Parser):
                     positions = (attr, _text(item.get(attr)))
                     break
             if positions is not None:
-                entry = {"concept": concept or name or text, positions[0]: positions[1]}
-                if code:
-                    entry["code"] = code
+                base = re.sub(r"[^a-z0-9]+", "_", (concept or name or text or code).lower()).strip("_")
+                if channels and channels != ["group 1"]:
+                    base += "_" + "_".join(c.replace(" ", "") for c in channels)
+                unit_suffix = _POSITION_UNITS[positions[0]]
+                fiducials.setdefault(f"{base}{unit_suffix}", []).append(positions[1])
                 if numeric is not None:
-                    entry["value"] = numeric
-                    entry["unit"] = unit
-                if channels:
-                    entry["channels"] = channels
-                fiducials.append(entry)
+                    fiducials.setdefault(base, []).append(f"{numeric:g} {unit}".strip())
                 continue
 
             if numeric is not None:
@@ -784,7 +792,8 @@ class DICOMWaveformParser(Parser):
         if statements:
             record.interpretation = Interpretation(statements=statements, source="machine")
         if fiducials:
-            record.raw_metadata["waveform_annotations"] = fiducials
+            for key, values in fiducials.items():
+                record.annotations.setdefault(key, ", ".join(values))
         meas = GlobalMeasurements()
         for field_name, value in measurements.items():
             setattr(meas, field_name, value)

@@ -766,7 +766,7 @@ class HL7aECGParser(Parser):
             return
         record.raw_metadata["fiducials_ms"] = dict(fid)
         for name, value in fid.items():
-            record.annotations[name] = f"{value:g}"
+            record.annotations[f"median_{name}_ms"] = f"{value:g}"
 
     def _convert(self, value: str, unit: str, quantity: str, code: str) -> float | None:
         v = _float(value)

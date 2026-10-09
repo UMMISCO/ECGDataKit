@@ -443,8 +443,10 @@ class TestAnnotations:
         # Wave boundaries are reported, intervals are not computed from them
         assert (m.pr_interval, m.qrs_duration, m.qt_interval) == (None, None, None)
         assert {k: record.annotations[k] for k in (
-            "p_onset", "qrs_onset", "qrs_offset", "t_offset")} == {
-            "p_onset": "300", "qrs_onset": "460", "qrs_offset": "545", "t_offset": "890"}
+            "median_p_onset_ms", "median_qrs_onset_ms", "median_qrs_offset_ms",
+            "median_t_offset_ms")} == {
+            "median_p_onset_ms": "300", "median_qrs_onset_ms": "460",
+            "median_qrs_offset_ms": "545", "median_t_offset_ms": "890"}
 
     def test_unknown_measurement_unit_warns(self, tmp_path: Path):
         aset = "<annotationSet>" + _annotation("MDC_ECG_TIME_PD_QT", '<value value="4" unit="furlong"/>') + "</annotationSet>"
