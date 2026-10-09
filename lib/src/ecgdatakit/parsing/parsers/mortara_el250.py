@@ -65,6 +65,11 @@ _FIDUCIALS = ("R_PEAK", "P_ONSET", "P_OFFSET", "Q_ONSET", "Q_OFFSET", "T_OFFSET"
 
 _CYCLE_FORMAT_KEYS = {"BITS", "FORMAT", "UNITS_PER_MV", "DURATION", "SAMPLE_FREQ",
                       "ENCODING"}
+_ROOT_MEASUREMENTS = {"VENT_RATE": "heart_rate", "AVERAGE_RR": "rr_interval",
+                      "NUM_QRS": "qrs_count"}
+_CYCLE_MEASUREMENTS = {"PR_DURATION": "pr_interval", "QRS_DURATION": "qrs_duration",
+                       "QT": "qt_interval", "QTB": "qtc_bazett", "QTF": "qtc_fridericia",
+                       "P_AXIS": "p_axis", "QRS_AXIS": "qrs_axis", "T_AXIS": "t_axis"}
 
 
 def _number(value: str | None) -> float | None:
@@ -448,31 +453,24 @@ class MortaraEL250Parser(Parser):
         annotations: dict[str, str] = {}
         tc = dict(cycle.attrib) if cycle is not None else {}
 
-        m.heart_rate = _rounded(root.get("VENT_RATE"))
-        m.rr_interval = _rounded(root.get("AVERAGE_RR"))
-        m.qrs_count = _rounded(root.get("NUM_QRS"))
-        m.pr_interval = _rounded(tc.get("PR_DURATION"))
-        m.qrs_duration = _rounded(tc.get("QRS_DURATION"))
-        m.qt_interval = _rounded(tc.get("QT"))
-        m.qtc_bazett = _rounded(tc.get("QTB"))
-        m.qtc_fridericia = _rounded(tc.get("QTF"))
-        m.p_axis = _rounded(tc.get("P_AXIS"))
-        m.qrs_axis = _rounded(tc.get("QRS_AXIS"))
-        m.t_axis = _rounded(tc.get("T_AXIS"))
-
         # QTC uses an undocumented correction (neither Bazett nor Fridericia)
         qtc = _rounded(tc.get("QTC"))
         if qtc is not None:
             raw["qtc"] = qtc
 
-        for key in ("VENT_RATE", "AVERAGE_RR", "NUM_QRS"):
-            value = root.get(key, "").strip()
-            if value:
+        # Measurements go to the model, everything else (fiducials in ms
+        # relative to the median beat, unreadable values) to annotations
+        root_values = {key: root.get(key, "") for key in _ROOT_MEASUREMENTS}
+        cycle_values = {key: value for key, value in tc.items()
+                        if key not in _CYCLE_FORMAT_KEYS}
+        fields = {**_ROOT_MEASUREMENTS, **_CYCLE_MEASUREMENTS}
+        for key, value in {**root_values, **cycle_values}.items():
+            value = value.strip()
+            number = _rounded(value) if key in fields else None
+            if number is not None:
+                setattr(m, fields[key], number)
+            elif value:
                 annotations[key.lower()] = value
-        # Fiducials in ms relative to the median beat, as written
-        for key, value in tc.items():
-            if key not in _CYCLE_FORMAT_KEYS and value.strip():
-                annotations[key.lower()] = value.strip()
         comment = root.get("COMMENT", "").strip()
         if comment:
             annotations["comment"] = comment

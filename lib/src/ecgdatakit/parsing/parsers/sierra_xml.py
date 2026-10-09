@@ -336,9 +336,9 @@ class SierraXMLParser(Parser):
         record.recording.device = self._read_device(acquisition, signal_node)
         record.recording.acquisition.filters = self._read_filters(parsed, signal_node)
         record.recording.acquisition.signal = self._read_signal(parsed, signal_node, rhythm)
-        record.measurements, qtc_extra = self._read_measurements(interp_node, meas_node)
+        record.measurements, qtc_extra, used = self._read_measurements(interp_node, meas_node)
         record.interpretation, machine_lines = self._read_interpretation(root, interp_node)
-        record.annotations = self._read_annotations(interp_node)
+        record.annotations = self._read_annotations(interp_node, used)
         record.annotations.update(qtc_extra)
         if machine_lines and record.interpretation.source != "machine":
             record.annotations["machine_interpretation"] = "\n".join(machine_lines)
@@ -760,13 +760,15 @@ class SierraXMLParser(Parser):
 
     def _read_measurements(
         self, interp_node: object, meas_node: object,
-    ) -> tuple[GlobalMeasurements, dict[str, str]]:
+    ) -> tuple[GlobalMeasurements, dict[str, str], set[tuple[int, str]]]:
         """Global measurements in ms, bpm and degrees.
 
         1.04 keeps them in ``interpretation/globalmeasurements`` and
         ``internalmeasurements/crossleadmeasurements``; 1.03 in
         ``interpretation/interpretationmeasurements`` and
         ``measurements/globalmeasurements`` (``mean*`` names).
+        Also returns the (node, key) pairs read, so they are not repeated
+        in the annotations.
         """
         sources = [
             _get(interp_node, "globalmeasurements"),
@@ -774,12 +776,14 @@ class SierraXMLParser(Parser):
             _get(meas_node, "crossleadmeasurements"),
             _get(meas_node, "globalmeasurements"),
         ]
+        used: set[tuple[int, str]] = set()
 
         def pick(*keys: str) -> int | None:
             for node in sources:
                 for key in keys:
                     value = _to_int(_text(_get(node, key)))
                     if value is not None:
+                        used.add((id(_first(node)), key))
                         return value
             return None
 
@@ -800,7 +804,7 @@ class SierraXMLParser(Parser):
         if mean_qtc is not None:
             # 1.03 files do not state the QTc formula
             extra["qtc"] = f"{mean_qtc} ms (formula not stated)"
-        return m, extra
+        return m, extra, used
 
     # ── Interpretation ───────────────────────────────────────────
 
@@ -928,7 +932,9 @@ class SierraXMLParser(Parser):
 
     # ── Annotations ──────────────────────────────────────────────
 
-    def _read_annotations(self, interp_node: object) -> dict[str, str]:
+    def _read_annotations(
+        self, interp_node: object, used: set[tuple[int, str]],
+    ) -> dict[str, str]:
         annotations: dict[str, str] = {}
         if interp_node is None:
             return annotations
@@ -940,8 +946,9 @@ class SierraXMLParser(Parser):
             _get(interp_node, "globalmeasurements"),
             _get(interp_node, "interpretationmeasurements"),
         ):
+            node_id = id(_first(node))
             for key, value in _flatten(node).items():
-                if key not in ("editedflag", "arrhyflag"):
+                if key not in ("editedflag", "arrhyflag") and (node_id, key) not in used:
                     annotations.setdefault(key, value)
         code = _attr(_get(interp_node, "severity"), "code")
         if code:
