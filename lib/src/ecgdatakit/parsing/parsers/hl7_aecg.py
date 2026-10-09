@@ -765,9 +765,8 @@ class HL7aECGParser(Parser):
         if not fid:
             return
         record.raw_metadata["fiducials_ms"] = dict(fid)
-        record.annotations["wave_boundaries_ms"] = ", ".join(
-            f"{name}={value:g}" for name, value in fid.items()
-        )
+        for name, value in fid.items():
+            record.annotations[name] = f"{value:g}"
 
     def _convert(self, value: str, unit: str, quantity: str, code: str) -> float | None:
         v = _float(value)

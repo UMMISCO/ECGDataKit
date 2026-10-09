@@ -1038,9 +1038,9 @@ class SCPECGParser(Parser):
             p_on, p_off, qrs_on, qrs_off, t_off, p_ax, qrs_ax, t_ax = blocks[0]
             gm.p_axis, gm.qrs_axis, gm.t_axis = axis(p_ax), axis(qrs_ax), axis(t_ax)
             names = ("p_onset", "p_offset", "qrs_onset", "qrs_offset", "t_offset")
-            record.annotations["wave_boundaries_ms"] = ", ".join(
-                f"{n}={v}" for n, v in zip(names, (p_on, p_off, qrs_on, qrs_off, t_off)) if ok(v)
-            )
+            for name, value in zip(names, (p_on, p_off, qrs_on, qrs_off, t_off)):
+                if ok(value):
+                    record.annotations[name] = str(value)
             raw["measurement_blocks"] = [
                 dict(zip(("p_onset", "p_offset", "qrs_onset", "qrs_offset", "t_offset",
                           "p_axis", "qrs_axis", "t_axis"), b))
