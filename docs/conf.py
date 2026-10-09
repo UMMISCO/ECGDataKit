@@ -106,8 +106,10 @@ html_theme = "furo"
 html_title = "ECGDataKit"
 html_static_path = ["_static"]
 html_css_files = ["custom.css"]
+html_js_files = ["docs.js"]
 templates_path = ["_templates"]
-pygments_dark_style = "monokai"
+pygments_style = "default"
+pygments_dark_style = "github-dark"
 html_favicon = "_static/logo.svg"
 html_theme_options = {
     "light_logo": "logo.svg",
@@ -126,13 +128,13 @@ html_theme_options = {
     "source_branch": "main",
     "source_directory": "docs/",
     "light_css_variables": {
-        "color-brand-primary": "#059669",
-        "color-brand-content": "#059669",
-        "color-admonition-background": "#ecfdf5",
+        "color-brand-primary": "#1565c0",
+        "color-brand-content": "#1565c0",
+        "color-admonition-background": "#f3f8fd",
     },
     "dark_css_variables": {
-        "color-brand-primary": "#6ee7b7",
-        "color-brand-content": "#6ee7b7",
+        "color-brand-primary": "#64b5f6",
+        "color-brand-content": "#64b5f6",
     },
 }
 

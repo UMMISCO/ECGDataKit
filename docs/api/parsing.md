@@ -1,4 +1,4 @@
-# Parsing API Reference
+# Parsing
 
 Import: `from ecgdatakit import FileParser, parse_batch, BatchParseWarning`
 

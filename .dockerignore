@@ -1,0 +1,9 @@
+**/__pycache__
+**/*.egg-info
+**/.pytest_cache
+**/.ruff_cache
+lib/build
+lib/dist
+docs/_build
+.git
+.idea

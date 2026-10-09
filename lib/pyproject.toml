@@ -52,6 +52,8 @@ denoising = ["torch>=2.0"]
 # R-peak, spectrum and quality plots use scipy
 plotting = ["matplotlib>=3.7", "scipy>=1.10"]
 plotting-interactive = ["plotly>=5.15", "scipy>=1.10"]
+# watchdog: file-system events for the anonymization daemon
+anonymize = ["shortuuid>=1.0", "watchdog>=3.0"]
 all = [
     "pydicom>=2.4",
     "scipy>=1.10",
@@ -60,6 +62,8 @@ all = [
     "biosppy",
     "peakutils",
     "neurokit2",
+    "shortuuid>=1.0",
+    "watchdog>=3.0",
 ]
 dev = ["pytest>=9.0", "pytest-cov>=7.0", "ruff>=0.15"]
 docs = [
@@ -71,6 +75,9 @@ docs = [
     "sphinx-sitemap>=2.6",
     "sphinxext-opengraph>=0.9",
 ]
+
+[project.scripts]
+ecgdatakit = "ecgdatakit.cli:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]

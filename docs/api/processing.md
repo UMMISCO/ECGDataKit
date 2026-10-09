@@ -1,4 +1,4 @@
-# Processing API Reference
+# Processing
 
 Import: `from ecgdatakit.processing import ...`
 

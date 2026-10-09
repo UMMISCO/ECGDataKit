@@ -21,12 +21,13 @@ guides/whats-new
 ```{toctree}
 :maxdepth: 2
 :hidden:
-:caption: API Reference
+:caption: Docs
 
 api/parsing
 api/exceptions
 api/processing
 api/plotting
+api/anonymization
 api/reference
 ```
 

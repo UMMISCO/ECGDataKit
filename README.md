@@ -65,6 +65,14 @@ Parsers report what the file stores. They never compute clinical values (interva
 | **Reports** | Signal quality per lead, ECG report page with patient info and the standard 3 x 4 layout (2.5 s per column) plus a 10 s rhythm strip |
 | **Interactive** | Plotly versions (zoom, pan, hover) of single lead, multi-lead, 12-lead, R-peaks, spectrum, RR tachogram, Poincaré plot and report. Beat, spectrogram, HRV summary and quality plots are static only |
 
+### Anonymization
+
+`ecgdatakit anonymize` copies the ECG files of a source folder into an `ANONYMIZED` folder with the patient's name and ID and the ECG ID replaced by pseudonyms, and keeps the link in a CSV catalog. Raw files are only read. Each copy is read back and must give the same samples and fields before it is published. It runs once or as a daemon that follows new files. See [Anonymization](https://ecgdatakit.ummisco.fr/api/anonymization.html) in the docs.
+
+```bash
+ecgdatakit anonymize run /path/to/source
+```
+
 ## Installation
 
 ```bash
@@ -85,6 +93,9 @@ pip install "ecgdatakit[cleaning]"
 
 # With DICOM waveform support (pydicom)
 pip install "ecgdatakit[dicom]"
+
+# With anonymization (ecgdatakit anonymize)
+pip install "ecgdatakit[anonymize]"
 
 # With the experimental DeepFADE denoising autoencoder (requires torch)
 pip install "ecgdatakit[denoising]"

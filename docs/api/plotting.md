@@ -1,4 +1,4 @@
-# Plotting API Reference
+# Plotting
 
 Import: `from ecgdatakit.plotting import ...`
 

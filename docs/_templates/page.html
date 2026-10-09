@@ -1,16 +1,13 @@
 {% extends "!page.html" %}
 
 {% block content %}
-{% if parents %}
-<nav class="breadcrumbs" aria-label="Breadcrumb">
-  <a href="{{ pathto(master_doc) }}">Home</a>
-  {% for parent in parents %}
-  <span class="bc-sep">›</span>
-  <a href="{{ parent.link }}">{{ parent.title }}</a>
-  {% endfor %}
-  <span class="bc-sep">›</span>
-  <span class="bc-current">{{ title | striptags }}</span>
-</nav>
-{% endif %}
 {{ super() }}
+{% if pagename != master_doc and page_source_suffix %}
+<div class="page-actions">
+  <a href="https://github.com/UMMISCO/ECGDataKit/edit/main/docs/{{ pagename }}{{ page_source_suffix }}" target="_blank" rel="noopener">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 013 3L7 19l-4 1 1-4z"/></svg>Edit this page</a>
+  <a href="https://github.com/UMMISCO/ECGDataKit/issues/new?title={{ ('Docs: ' ~ (title | striptags)) | urlencode }}&amp;body={{ ('Page: ' ~ pagename ~ '.html') | urlencode }}" target="_blank" rel="noopener">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M12 8v5M12 16h.01"/></svg>Report an issue</a>
+</div>
+{% endif %}
 {% endblock %}
