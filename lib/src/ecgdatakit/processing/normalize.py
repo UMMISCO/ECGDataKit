@@ -206,6 +206,7 @@ def _normalize_record(record: ECGRecord, fn: _LeadFn) -> ECGRecord:
         record,
         leads=[fn(ld) for ld in record.leads],
         median_beats=[fn(mb) for mb in record.median_beats],
+        leads_enhanced=[fn(ld) for ld in record.leads_enhanced],
     )
 
 

@@ -833,13 +833,20 @@ class ECGRecord:
     median_beats: list[Lead] = field(default_factory=list)
     """Median/template beats if available."""
     annotations: dict[str, str] = field(default_factory=dict)
-    """Additional key-value annotations."""
+    """Values the file stores that have no field in the model, one value per
+    key. A value that fits ``measurements`` is stored there, not here. Wave
+    boundaries of the representative beat start with ``median_`` (for example
+    ``median_p_onset_ms``). Keys end with their unit when the file or its
+    specification states it (``_ms``, ``_samples``, ``_s``)."""
     source_format: str = ""
     """Parser identifier (e.g. ``"hl7_aecg"``, ``"dicom"``)."""
     raw_metadata: dict = field(default_factory=dict)
     """Original format-specific metadata from the source file."""
     file_format: FileFormatInfo = field(default_factory=FileFormatInfo)
     """Source file format version and creation date."""
+    leads_enhanced: list[Lead] = field(default_factory=list)
+    """The same leads as filtered by the device, when the file also stores
+    that version (AliveCor ``enhanced``). Empty for other formats."""
 
     def __repr__(self) -> str:
         lines = ["ECGRecord:"]
@@ -908,6 +915,15 @@ class ECGRecord:
                     f"    - {lead.label}: {n} samples, {sr} Hz{dur}, {status}"
                 )
 
+        if self.leads_enhanced:
+            lines.append("  leads_enhanced:")
+            for lead in self.leads_enhanced:
+                status = "raw" if lead.is_raw else (lead.units or "physical")
+                lines.append(
+                    f"    - {lead.label}: {len(lead.samples)} samples, "
+                    f"{lead.sampling_rate} Hz, {status}"
+                )
+
         # Median beats
         if self.median_beats:
             lines.append("  median_beats:")
@@ -928,13 +944,18 @@ class ECGRecord:
 
         return "\n".join(lines)
 
-    def _with_signals(self, leads: list[Lead], median_beats: list[Lead]) -> ECGRecord:
+    def _with_signals(
+        self, leads: list[Lead], median_beats: list[Lead], leads_enhanced: list[Lead],
+    ) -> ECGRecord:
         """Return a copy with new lead lists and its own copy of the metadata."""
-        meta = copy.deepcopy(dataclasses.replace(self, leads=[], median_beats=[]))
-        return dataclasses.replace(meta, leads=leads, median_beats=median_beats)
+        meta = copy.deepcopy(dataclasses.replace(
+            self, leads=[], median_beats=[], leads_enhanced=[]))
+        return dataclasses.replace(
+            meta, leads=leads, median_beats=median_beats, leads_enhanced=leads_enhanced)
 
     def to_physical(self) -> ECGRecord:
-        """Convert all leads and median beats from raw ADC to physical units.
+        """Convert all leads, median beats and enhanced leads from raw ADC to
+        physical units.
 
         Returns a new :class:`ECGRecord` with its own copy of the metadata.
         Leads already in physical units keep their sample array (it is
@@ -951,16 +972,18 @@ class ECGRecord:
 
         leads = [convert(lead) for lead in self.leads]
         beats = [convert(beat) for beat in self.median_beats]
+        enhanced = [convert(lead) for lead in self.leads_enhanced]
         if skipped:
             warnings.warn(
                 f"Leads {skipped} have no physical unit in the file and were "
                 "left as raw counts.",
                 stacklevel=2,
             )
-        return self._with_signals(leads, beats)
+        return self._with_signals(leads, beats, enhanced)
 
     def convert_units(self, target: str) -> ECGRecord:
-        """Convert all leads and median beats to the specified voltage unit.
+        """Convert all leads, median beats and enhanced leads to the specified
+        voltage unit.
 
         Returns a new :class:`ECGRecord` with its own copy of the metadata.
         Leads already in *target* keep their sample array (shared with this
@@ -979,6 +1002,7 @@ class ECGRecord:
         return self._with_signals(
             [lead.convert_units(target) for lead in self.leads],
             [beat.convert_units(target) for beat in self.median_beats],
+            [lead.convert_units(target) for lead in self.leads_enhanced],
         )
 
     def plot(
@@ -1030,6 +1054,9 @@ class ECGRecord:
             "interpretation": self.interpretation.to_dict(),
             "measurements": self.measurements.to_dict(),
             "median_beats": [b.to_dict(include_samples=include_samples) for b in self.median_beats],
+            "leads_enhanced": [
+                lead.to_dict(include_samples=include_samples) for lead in self.leads_enhanced
+            ],
             "annotations": dict(self.annotations),
         })
 
@@ -1069,10 +1096,11 @@ class ECGRecord:
             if i:
                 fp.write(",")
             fp.write(dump(key) + ":")
-            if key not in ("leads", "median_beats") or not include_samples:
+            if key not in ("leads", "median_beats", "leads_enhanced") or not include_samples:
                 fp.write(dump(value))
                 continue
-            signals = self.leads if key == "leads" else self.median_beats
+            signals = {"leads": self.leads, "median_beats": self.median_beats,
+                       "leads_enhanced": self.leads_enhanced}[key]
             fp.write("[")
             for j, (lead_meta, lead) in enumerate(zip(value, signals)):
                 if j:

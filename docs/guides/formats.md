@@ -1,6 +1,6 @@
 # Supported Formats
 
-ECGDataKit parses 11 ECG file formats via content-based detection, not file extensions. Parsers with a reliable magic number are tried first and loose sniffers last (`Parser.PRIORITY`).
+ECGDataKit parses 12 ECG file formats via content-based detection, not file extensions. Parsers with a reliable magic number are tried first and loose sniffers last (`Parser.PRIORITY`).
 
 | Format | File Types | Parser Class | Detection |
 |--------|-----------|--------------|-----------|
@@ -15,6 +15,7 @@ ECGDataKit parses 11 ECG file formats via content-based detection, not file exte
 | WFDB (PhysioNet) | `.hea` + `.dat` | `WFDBParser` | valid `.hea` header, or a `.dat` with a sibling `.hea` |
 | MFER | `.mwf`, `.mfer`, `.mfr` | `MFERParser` | `MFR ` preamble or a chain of known MFER tags |
 | EDAN ARC Holter (experimental) | recording folder, `patient.hea` + `ecgraw.dat`, `.arc` | `EDANARCHolterParser` | `patient.hea` with sibling `ecgraw.dat`, or an `.arc` with a known signature |
+| AliveCor Kardia JSON | `.json` | `AliveCorKardiaParser` | JSON object with Kardia recording keys (`recordedAt`, `algorithmDetermination`, ...) |
 
 ## HL7 aECG
 
@@ -87,5 +88,11 @@ EDAN support is experimental. EDAN does not publish this format: the parser foll
 ```
 
 Holter recordings from EDAN devices, either as a recording folder (`patient.hea` with a sibling `ecgraw.dat`) or as a single `.arc` archive. The format is not publicly documented and the file does not state the count to voltage factor, so samples stay in raw counts (`is_raw=True`, no unit). "NEUTRAL" `.arc` archives are reverse engineered (`raw_metadata["reverse_engineered"]` is `True`) and their 250 Hz rate is not read from the file (`raw_metadata["sampling_rate_stated"]` is `False`).
+
+**Dependencies:** None.
+
+## AliveCor Kardia JSON
+
+ECG recordings from KardiaMobile (single lead) and KardiaMobile 6L devices, as returned by the [Kardia API](https://developers.kardia.com) (`GET /v1/recordings/:id`). The file holds the signal twice: `raw` goes to `record.leads` and `enhanced` (filtered by AliveCor) to `record.leads_enhanced`. Samples are scaled with `amplitudeResolution` (nanovolts per count). `algorithmDetermination` is the device's automatic analysis (`interpretation.source` is `"machine"`). Kardia 12L recordings use another layout and raise `UnsupportedFormatError`.
 
 **Dependencies:** None.

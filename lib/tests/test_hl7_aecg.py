@@ -141,7 +141,7 @@ class TestHL7aECGParser:
         d = HL7aECGParser().parse(hl7_aecg_file).to_dict()
         assert set(d.keys()) == {
             "source_format", "file_format", "patient", "recording",
-            "leads", "interpretation", "measurements", "median_beats",
+            "leads", "interpretation", "measurements", "median_beats", "leads_enhanced",
             "annotations",
         }
 

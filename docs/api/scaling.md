@@ -43,6 +43,7 @@ These formats provide per-lead scaling information — leads are auto-converted 
 | GE MUSE XML | `LeadAmplitudeUnitsPerBit` and `LeadAmplitudeUnits` (a lead without `LeadAmplitudeUnits` stays raw, with a warning) | per lead |
 | Mortara ELI | `UNITS_PER_MV` per channel | uV |
 | Philips Sierra XML | `resolution` attribute | uV |
+| AliveCor Kardia JSON | `amplitudeResolution` (nanovolts per count) | uV |
 
 ### Formats without scaling metadata
 

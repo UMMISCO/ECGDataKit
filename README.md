@@ -18,7 +18,7 @@ Developed at [UMMISCO](https://www.ummisco.fr) / [IRD](https://www.ird.fr) by Ah
 
 ## Features
 
-### Parsing - 11 ECG formats, one unified data model
+### Parsing - 12 ECG formats, one unified data model
 
 Formats are detected from the file content, not the extension.
 
@@ -35,6 +35,7 @@ Formats are detected from the file content, not the extension.
 | WFDB (PhysioNet) | `.hea` + `.dat` | valid `.hea` header, or a `.dat` with a sibling `.hea` |
 | MFER | `.mwf`, `.mfer`, `.mfr` | `MFR ` preamble or a chain of known MFER tags |
 | EDAN ARC Holter (experimental) | `patient.hea` + `ecgraw.dat`, `.arc` | `patient.hea` with sibling `ecgraw.dat`, or an `.arc` with a known signature |
+| AliveCor Kardia JSON | `.json` | JSON object with Kardia recording keys (`recordedAt`, `algorithmDetermination`, ...) |
 
 Parsers report what the file stores. They never compute clinical values (intervals, heart rate, QTc, axes, pacemaker status) or invent dates. The only derived values are those a format requires (duration from the sample count, age from the birth date when no age is stored), and a default taken from a format specification is flagged with a warning and in `raw_metadata`.
 
@@ -162,6 +163,7 @@ ECGRecord
   measurements     GlobalMeasurements      HR, PR, QRS, QT, QTc (Bazett/Fridericia), P/QRS/T axes, RR interval
   interpretation   Interpretation          statements, severity, source, interpreter
   median_beats     list[Lead]              median/template beats, when available
+  leads_enhanced   list[Lead]              the same leads filtered by the device, when the file stores them (AliveCor)
   annotations      dict[str, str]          additional key-value annotations
   source_format    str                     parser identifier (e.g. "sierra_xml")
   file_format      FileFormatInfo          file format version and creation date

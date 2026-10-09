@@ -18,7 +18,7 @@ dependencies = [
     # 1.0.0 drops entity references and 1.0.1 raises on them with disable_entities
     "xmltodict>=1.0.2",
 ]
-keywords = ["ecg", "electrocardiogram", "signal-processing", "medical", "waveform", "hl7", "dicom", "edf", "scp-ecg", "wfdb", "cardiology", "ecg-parser", "ecg-processing", "mfer", "muse", "physionet", "heart-rate", "hrv"]
+keywords = ["ecg", "electrocardiogram", "signal-processing", "medical", "waveform", "hl7", "dicom", "edf", "scp-ecg", "wfdb", "cardiology", "ecg-parser", "ecg-processing", "mfer", "muse", "physionet", "heart-rate", "hrv", "alivecor", "kardia"]
 classifiers = [
     "Development Status :: 5 - Production/Stable",
     "Intended Audience :: Science/Research",

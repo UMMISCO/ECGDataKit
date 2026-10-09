@@ -287,7 +287,7 @@ class TestECGRecord:
         d = record.to_dict()
         assert set(d.keys()) == {
             "source_format", "file_format", "patient", "recording",
-            "leads", "interpretation", "measurements", "median_beats",
+            "leads", "interpretation", "measurements", "median_beats", "leads_enhanced",
             "annotations",
         }
         assert d["source_format"] == "test"
@@ -318,7 +318,7 @@ class TestECGRecord:
         d = record.to_dict()
         assert list(d.keys()) == [
             "source_format", "file_format", "patient", "recording",
-            "leads", "interpretation", "measurements", "median_beats",
+            "leads", "interpretation", "measurements", "median_beats", "leads_enhanced",
             "annotations",
         ]
 

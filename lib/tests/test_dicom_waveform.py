@@ -89,7 +89,7 @@ class TestDICOMWaveformParser:
         record = DICOMWaveformParser().parse(dicom_file)
         assert set(record.to_dict().keys()) == {
             "source_format", "file_format", "patient", "recording",
-            "leads", "interpretation", "measurements", "median_beats",
+            "leads", "interpretation", "measurements", "median_beats", "leads_enhanced",
             "annotations",
         }
         parsed = json.loads(record.to_json())
