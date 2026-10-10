@@ -366,7 +366,7 @@ class TestSourceModes:
         with pytest.raises(ValueError):
             Anonymizer(hl7_aecg_file, datasets=True)
 
-    def test_same_patient_id_in_two_folders_without_patients_dir(self, hl7_aecg_file, tmp_path):
+    def test_same_patient_id_without_patient_folders_not_grouped(self, hl7_aecg_file, tmp_path):
         source = tmp_path / "export"
         for folder in ("a", "b/c"):
             (source / folder).mkdir(parents=True)
@@ -375,7 +375,8 @@ class TestSourceModes:
         assert r.ok and r.found == 2
         with open(source / "anonymization_catalog.csv", newline="") as f:
             rows = list(csv.DictReader(f))
-        assert len({x["patient_code"] for x in rows}) == 1
+        # Without patient folders, files are never grouped by the ID they hold
+        assert len({x["patient_code"] for x in rows}) == 2
         assert len({x["ecg_code"] for x in rows}) == 2
 
 
@@ -453,7 +454,7 @@ class TestPatientFolders:
         (dataset / "P1").mkdir(parents=True)
         shutil.copy2(hl7_aecg_file, dataset / "P1" / "ecg.xml")
         Anonymizer(dataset).run()  # grouped by patient ID
-        with pytest.raises(ValueError, match="grouped by patient IDs"):
+        with pytest.raises(ValueError, match="other patient folders"):
             Anonymizer(dataset, anonymize_patient_folders=True).run()
 
     def test_switching_on_and_off_moves_the_copies(self, hl7_aecg_file, tmp_path):
@@ -567,7 +568,7 @@ class TestGroupingSettingKept:
         dataset = base / "dataset-a"
         [r] = Anonymizer(dataset).run()
         assert r.ok
-        with pytest.raises(ValueError, match="grouped by patient IDs"):
+        with pytest.raises(ValueError, match="other patient folders"):
             Anonymizer(dataset, patients_dir_name="RAW").run()
         assert main(["anonymize", "run", str(dataset), "--patients-dir-name", "RAW"]) == 2
         [r] = Anonymizer(dataset).run()  # the same setting still works
@@ -577,7 +578,7 @@ class TestGroupingSettingKept:
         base = _source(tmp_path, [hl7_aecg_file])
         dataset = base / "dataset-a"
         Anonymizer(dataset, patients_dir_name="RAW").run()
-        with pytest.raises(ValueError, match="grouped by patient folders"):
+        with pytest.raises(ValueError, match="other patient folders"):
             Anonymizer(dataset).run()
 
     def test_starting_again_after_deleting_outputs(self, hl7_aecg_file, tmp_path):
@@ -622,3 +623,24 @@ class TestPatientFoldersWithoutPatientsDirName:
         assert main(["anonymize", "daemon", str(root), "--datasets",
                      "--anonymize-patient-folders", "--no-watch"]) == 0
         assert seen == {"folders": True, "by_folder": True}
+
+
+class TestNoGroupingOutsidePatientFolders:
+    def test_loose_files_with_the_same_id_are_separate(self, hl7_aecg_file, tmp_path):
+        dataset = tmp_path / "dataset"
+        dataset.mkdir()
+        for name in ("a.xml", "b.xml"):
+            shutil.copy2(hl7_aecg_file, dataset / name)  # same patient ID and name
+        [r] = Anonymizer(dataset, anonymize_patient_folders=True).run()
+        assert r.ok and r.patients == 2 and r.patient_codes == 2
+
+    def test_catalog_grouped_by_id_by_an_older_version_is_refused(self, hl7_aecg_file, tmp_path):
+        dataset = tmp_path / "dataset"
+        dataset.mkdir()
+        shutil.copy2(hl7_aecg_file, dataset / "a.xml")
+        Anonymizer(dataset).run()
+        catalog = dataset / "anonymization_catalog.csv"
+        text = catalog.read_text().replace("file:a.xml", "id:subj-001")
+        catalog.write_text(text)
+        with pytest.raises(ValueError, match="older version"):
+            Anonymizer(dataset).run()

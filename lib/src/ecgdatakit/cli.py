@@ -18,7 +18,8 @@ def _anonymizer_options(p: argparse.ArgumentParser) -> None:
                    help="name of the folder holding the patient folders, the same in "
                         "every dataset (e.g. RAW): only "
                         "files under it are read, one pseudonym per patient folder; "
-                        "default: every file, patients grouped by their patient ID")
+                        "default: every file, each file its own patient unless "
+                        "--anonymize-patient-folders is given")
     p.add_argument("--anonymize-patient-folders", action="store_true",
                    help="name each patient folder after the patient pseudonym in the "
                         "output and replace its name in the files; patient folders are the "

@@ -28,7 +28,7 @@ from ecgdatakit import __version__
 from ecgdatakit.anonymize._catalog import ACTIVE, SEPARATOR, Catalog
 from ecgdatakit.anonymize._codes import new_code, new_ecg_code
 from ecgdatakit.anonymize._filenames import new_file_name, new_part_name, split_name
-from ecgdatakit.anonymize._identity import Identity, Replacer, looks_like_date, norm
+from ecgdatakit.anonymize._identity import Identity, Replacer, looks_like_date
 from ecgdatakit.anonymize._verify import VerificationError, verify
 from ecgdatakit.anonymize.formats import HANDLERS, Codes, Handler, Spliced
 from ecgdatakit.anonymize.formats._base import is_data
@@ -85,7 +85,8 @@ class Report:
     ecg_codes: int = 0
     """Distinct ECG pseudonyms of these files."""
     patients: int = 0
-    """Distinct patients of these files (patient folders, or patient IDs)."""
+    """Distinct patients of these files (patient folders, plus files
+    outside a patient folder, each counted as one patient)."""
     patient_codes: int = 0
     """Distinct patient pseudonyms of these files."""
     errors: list[str] = field(default_factory=list)
@@ -143,8 +144,9 @@ class Anonymizer:
         dataset (for example ``"RAW"``). Only files under this folder are
         read, and each of its sub-folders is one patient: its files share one
         patient pseudonym. When ``None``, every file of every folder is read
-        (except the output folder) and a file's patient pseudonym follows
-        its patient ID, or its name when it has no ID.
+        (except the output folder). A file outside a patient folder gets its
+        own patient pseudonym: files are never grouped by an ID read in
+        them, which may be wrong.
     anonymize_patient_folders : bool
         ``False`` (default): folder names are copied as they are. ``True``:
         the patient folders are the sub-folders of the *patients_dir_name*
@@ -502,7 +504,9 @@ class Anonymizer:
         # kept as is and not used to group patients
         kept_dates = [v for v in identity.patient_ids if looks_like_date(v)]
         identity.patient_ids = [v for v in identity.patient_ids if v not in kept_dates]
-        key = entry.patient_folder or _identity_key(identity) or f"file:{entry.rel}"
+        # Only a patient folder groups files; a file outside one is its own
+        # patient (an ID read in the file may be wrong, a date for example)
+        key = _patient_key(entry)
         with state.lock:
             patient_code = state.patient_codes.get(key)
             if patient_code is None:
@@ -683,30 +687,27 @@ class Anonymizer:
 
     def _check_same_grouping(self, dataset: Path, catalog: Catalog,
                              entries: dict[str, Entry]) -> None:
-        """Refuse to mix two ways of grouping patients in one catalog.
+        """Refuse to continue a catalog that grouped patients differently.
 
-        Patients are grouped by patient folder (with ``patients_dir_name``
-        or ``anonymize_patient_folders``) or by patient ID or name (with
-        neither). A catalog written with the other grouping would give the
-        same patient two pseudonyms.
+        Files are grouped by patient folder (``patients_dir_name``,
+        ``anonymize_patient_folders``); a file outside a patient folder is
+        its own patient. Continuing a catalog written with other patient
+        folders, or by an older version that grouped files by patient ID,
+        would change pseudonyms.
         """
-        start_again = (f"or delete its {self.out_dir} folder and {self.catalog_name} "
-                       "to start again")
         for rel, entry in entries.items():
             old = catalog.get(rel)
             if old is None or not old["patient_folder"]:
                 continue
-            by_identity = old["patient_folder"].startswith(("id:", "name:", "file:"))
-            if entry.patient_folder and by_identity or not self.by_folder and not by_identity:
-                was = "patient IDs" if by_identity else "patient folders"
-                raise ValueError(
-                    f"{dataset.name} was anonymized with patients grouped by {was} "
-                    "(--patients-dir-name and --anonymize-patient-folders decide it): "
-                    f"run it with the same options, {start_again}")
-            if entry.patient_folder and old["patient_folder"] != entry.patient_folder:
-                raise ValueError(
-                    f"{dataset.name} was anonymized with other patient folders "
-                    f"(another --patients-dir-name): run it with the same options, {start_again}")
+            if old["patient_folder"] == _patient_key(entry):
+                continue
+            if old["patient_folder"].startswith(("id:", "name:")):
+                why = "by an older version that grouped files by patient ID"
+            else:
+                why = "with other patient folders (--patients-dir-name, --anonymize-patient-folders)"
+            raise ValueError(
+                f"{dataset.name} was anonymized {why}: run it with the same options, or "
+                f"delete its {self.out_dir} folder and {self.catalog_name} to start again")
 
     @staticmethod
     def _count(dataset: Path, catalog: Catalog, entries: dict[str, Entry], report: Report) -> None:
@@ -793,12 +794,10 @@ class _State:
         return name
 
 
-def _identity_key(identity: Identity) -> str:
-    if identity.patient_ids:
-        return "id:" + norm(identity.patient_ids[0])
-    if identity.last_names or identity.first_names:
-        return "name:" + norm(" ".join(identity.last_names + identity.first_names))
-    return ""
+def _patient_key(entry: Entry) -> str:
+    """What groups the patient's files: the patient folder, or the file
+    itself when it is not in a patient folder."""
+    return entry.patient_folder or f"file:{entry.rel}"
 
 
 def _outputs(row: dict) -> list[str]:

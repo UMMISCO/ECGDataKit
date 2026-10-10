@@ -36,20 +36,24 @@ depends on two options:
 
 | Options | Files of one patient | Replaced by the patient pseudonym |
 |---------|----------------------|-----------------------------------|
-| none | Files with the same patient ID, or the same name when the file has no ID, wherever they are | The patient's name and ID from the fields of each format |
+| none | Each file on its own: two files never share a patient pseudonym | The patient's name and ID from the fields of each format |
 | `--patients-dir-name NAME` | Files of the same patient folder: each sub-folder of the folders called `NAME` is one patient | The same as above |
 | `--anonymize-patient-folders` | Files of the same patient folder: each folder directly inside the dataset is one patient | The same as above, plus the patient folder name, wherever it appears |
 | `--patients-dir-name NAME` and `--anonymize-patient-folders` | Files of the same patient folder: each sub-folder of the folders called `NAME` is one patient | The same as above, plus the patient folder name, wherever it appears |
 
-With neither option, folders play no part: a patient is known only from
-the identity values stored in their files.
+Only a patient folder groups files. Files are never grouped by the
+patient ID or name read in them: some devices store something else in
+that field (a date, a study code), and grouping by it would merge the
+recordings of different patients. So:
 
-With either option, patients are grouped by patient folder: the folder
-decides, even for a file whose ID is missing or different. Files placed
-directly in the dataset, outside any patient folder, are grouped by their
-patient ID. Use `--patients-dir-name` when the patient folders are deeper
-in the dataset (for example under `xml/RAW/`), and
-`--anonymize-patient-folders` alone when they are directly inside it.
+- with either option, all the files of a patient folder share one patient
+  pseudonym, even when their ID is missing or different;
+- a file outside a patient folder (with neither option, or a file placed
+  directly in the dataset) gets its own patient pseudonym.
+
+Use `--patients-dir-name` when the patient folders are deeper in the
+dataset (for example under `xml/RAW/`), and `--anonymize-patient-folders`
+alone when they are directly inside it.
 
 `--anonymize-patient-folders` treats the patient folder name as one more
 identifier of the patient, for folders named after the patient or their
@@ -95,10 +99,9 @@ named after the patient shows that name. The catalog column
 **Dates in the patient ID field.** Some devices store a date in the
 patient ID field (for example `28 11 23`). A value of that field written
 as a date (`28 11 23`, `28/11/2023`, `2023-11-28`) is not an identifier:
-it is kept as is in the file and in the file name, it is not used to tell
-patients apart, and the catalog row is marked as risk with the reason so
-the file can be reviewed. A number without separators (`20231128`) is
-still treated as an ID.
+it is kept as is in the file and in the file name, and the catalog row is
+marked as risk with the reason so the file can be reviewed. A number
+without separators (`20231128`) is still treated as an ID.
 
 **Format kept.** Only the bytes of the identity values change: an XML
 file keeps its encoding, indentation and line endings, binary headers keep
@@ -144,7 +147,7 @@ again after a change keeps its pseudonyms.
 | `status` | `anonymized`, `copied` (no identity value in the file), `changed` (anonymized again after the raw file changed), `deleted` (raw file removed, its copy deleted), `failed` (see `message`) |
 | `risk`, `risk_reason` | `TRUE` when something should be reviewed, and why |
 | `raw_path`, `anonymized_path` | Paths relative to the dataset folder |
-| `patient_folder` | What groups the patient's files: the patient folder with `--patients-dir-name`, otherwise the patient ID (`id:...`) or name (`name:...`) found in the file |
+| `patient_folder` | What groups the patient's files: the patient folder, or `file:` followed by the file's path when it is not in a patient folder |
 | `format` | Parser that read the file |
 | `patient_code`, `ecg_code` | The pseudonyms |
 | `original_patient_id`, `original_last_name`, `original_first_name`, `original_ecg_id`, `original_file_name` | The values replaced (several values are separated by a vertical bar) |
