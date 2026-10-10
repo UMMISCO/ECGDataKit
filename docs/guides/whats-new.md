@@ -1,5 +1,40 @@
 # What's new
 
+## 2.0.0
+
+### Anonymization
+
+- **New `ecgdatakit.anonymize` package and `ecgdatakit anonymize`
+  command.** ECG files are copied into an `ANONYMIZED` folder with the
+  patient's name, the ECG ID and, when it can be trusted, the patient ID
+  replaced by pseudonyms, in the file and in its name. Raw files are only
+  read. A CSV catalog links every raw file to its anonymized copy. See
+  {doc}`../api/anonymization`.
+- Every format ecgdatakit reads is supported, except EDAN Holter. Only the
+  bytes of the identity values change: each file keeps its format, and
+  each copy is read back and must give the same samples and fields before
+  it is kept.
+- A single file, a folder, or several datasets (`--datasets`) can be
+  anonymized. Runs only process new, changed and deleted files.
+- Patients are grouped only by patient folder
+  (`--group-by-patient-folders`, `--patients-dir-name`), never by an ID
+  read in the files. Patient folders can be renamed to their pseudonyms
+  (`--anonymize-patient-folders`).
+- `ecgdatakit anonymize daemon` keeps a folder anonymized as files arrive,
+  `ecgdatakit anonymize shell` shows what it is doing, and a Dockerfile
+  runs it in a container.
+- Install with `pip install "ecgdatakit[anonymize]"` (also part of
+  `[all]`).
+
+### Documentation
+
+- New layout: header bar with search, grouped sidebar, "On this page"
+  panel, and edit and report links on every page.
+- "API Reference" is renamed "Docs". The function reference becomes
+  "API Reference", with Parsing, Processing, Plotting and Anonymization
+  pages.
+- New Anonymization and Usage pages.
+
 ## 1.1.1
 
 ### New format: AliveCor Kardia JSON

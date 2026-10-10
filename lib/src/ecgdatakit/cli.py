@@ -16,15 +16,18 @@ def _anonymizer_options(p: argparse.ArgumentParser) -> None:
                         "output folder and catalog (default: SOURCE is one dataset)")
     p.add_argument("--patients-dir-name", default=None, metavar="NAME",
                    help="name of the folder holding the patient folders, the same in "
-                        "every dataset (e.g. RAW): only "
-                        "files under it are read, one pseudonym per patient folder; "
-                        "default: every file, each file its own patient unless "
-                        "--anonymize-patient-folders is given")
+                        "every dataset (e.g. RAW): only files under it are read "
+                        "(default: every file is read)")
+    p.add_argument("--group-by-patient-folders", action="store_true",
+                   help="each patient folder is one patient: its files share one patient "
+                        "pseudonym, and the patient ID is replaced only when it matches "
+                        "the folder name; patient folders are the sub-folders of "
+                        "--patients-dir-name, or without it the folders directly inside "
+                        "the dataset (default: no grouping, the patient ID is not replaced)")
     p.add_argument("--anonymize-patient-folders", action="store_true",
-                   help="name each patient folder after the patient pseudonym in the "
-                        "output and replace its name in the files; patient folders are the "
-                        "sub-folders of --patients-dir-name, or without it the folders "
-                        "directly inside the dataset (default: folder names are kept)")
+                   help="with --group-by-patient-folders: name each patient folder after the "
+                        "patient pseudonym in the output and replace its name in the files "
+                        "(default: folder names are kept)")
     p.add_argument("--out-dir", default="ANONYMIZED",
                    help="output folder created in each dataset (default: ANONYMIZED)")
     p.add_argument("--catalog", default="anonymization_catalog.csv",
@@ -38,6 +41,7 @@ def _anonymizer(args, **extra):
     from ecgdatakit.anonymize import Anonymizer
 
     return Anonymizer(args.source, datasets=args.datasets, patients_dir_name=args.patients_dir_name,
+                      group_by_patient_folders=args.group_by_patient_folders,
                       anonymize_patient_folders=args.anonymize_patient_folders,
                       out_dir=args.out_dir, catalog_name=args.catalog, threads=args.threads,
                       **extra)

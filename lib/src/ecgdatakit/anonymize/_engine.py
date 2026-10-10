@@ -13,6 +13,7 @@ file loses its anonymized copy.
 from __future__ import annotations
 
 import hashlib
+import re
 import logging
 import os
 import shutil
@@ -28,7 +29,7 @@ from ecgdatakit import __version__
 from ecgdatakit.anonymize._catalog import ACTIVE, SEPARATOR, Catalog
 from ecgdatakit.anonymize._codes import new_code, new_ecg_code
 from ecgdatakit.anonymize._filenames import new_file_name, new_part_name, split_name
-from ecgdatakit.anonymize._identity import Identity, Replacer, looks_like_date
+from ecgdatakit.anonymize._identity import Identity, Replacer, looks_like_date, norm
 from ecgdatakit.anonymize._verify import VerificationError, verify
 from ecgdatakit.anonymize.formats import HANDLERS, Codes, Handler, Spliced
 from ecgdatakit.anonymize.formats._base import is_data
@@ -142,19 +143,24 @@ class Anonymizer:
     patients_dir_name : str, optional
         Name of the folder that holds the patient folders, the same in every
         dataset (for example ``"RAW"``). Only files under this folder are
-        read, and each of its sub-folders is one patient: its files share one
-        patient pseudonym. When ``None``, every file of every folder is read
-        (except the output folder). A file outside a patient folder gets its
-        own patient pseudonym: files are never grouped by an ID read in
-        them, which may be wrong.
-    anonymize_patient_folders : bool
-        ``False`` (default): folder names are copied as they are. ``True``:
-        the patient folders are the sub-folders of the *patients_dir_name*
+        read. When ``None``, every file of every folder is read (except the
+        output folder).
+    group_by_patient_folders : bool
+        ``False`` (default): files are not grouped; each file gets its own
+        patient pseudonym, and the patient ID field is not replaced (it may
+        hold something else than a patient ID). ``True``: each patient
+        folder is one patient and its files share one patient pseudonym.
+        The patient folders are the sub-folders of the *patients_dir_name*
         folders, or without *patients_dir_name* the folders directly inside
-        the dataset. Each one groups one patient, is named after the patient
-        pseudonym in the output, and its name is replaced wherever it
-        appears in the files, file names and sub-folder names. Folders above
-        the patient folders keep their names.
+        the dataset. The patient ID field is replaced only when it matches
+        the patient folder name; otherwise it is kept and the file is
+        marked as risk.
+    anonymize_patient_folders : bool
+        ``False`` (default): folder names are copied as they are. ``True``
+        (needs *group_by_patient_folders*): each patient folder is named
+        after the patient pseudonym in the output, and its name is replaced
+        wherever it appears in the files, file names and sub-folder names.
+        Folders above the patient folders keep their names.
     out_dir : str
         Output folder created in each dataset, with the same sub-folders
         as the dataset.
@@ -172,7 +178,8 @@ class Anonymizer:
     """
 
     def __init__(self, source: str | Path, datasets: bool = False,
-                 patients_dir_name: str | None = None, anonymize_patient_folders: bool = False,
+                 patients_dir_name: str | None = None, group_by_patient_folders: bool = False,
+                 anonymize_patient_folders: bool = False,
                  out_dir: str = "ANONYMIZED", catalog_name: str = "anonymization_catalog.csv",
                  threads: int = 8, settle_seconds: float = 0.0,
                  lock_stale_seconds: float = 12 * 3600, dry_run: bool = False) -> None:
@@ -187,10 +194,12 @@ class Anonymizer:
         self.source = source
         self.multi = datasets
         self.patients_dir_name = patients_dir_name or None
+        self.by_folder = bool(group_by_patient_folders)
         self.folders = bool(anonymize_patient_folders)
-        # Patients are grouped by folder with patients_dir_name, or with
-        # anonymized patient folders (then the dataset's own sub-folders)
-        self.by_folder = self.patients_dir_name is not None or self.folders
+        if self.folders and not self.by_folder:
+            raise ValueError("Renaming patient folders needs group_by_patient_folders "
+                             "(--group-by-patient-folders): without it there are no "
+                             "patient folders")
         self.out_dir = out_dir
         self.catalog_name = catalog_name
         self.threads = max(1, int(threads))
@@ -500,10 +509,13 @@ class Anonymizer:
             return row
 
         identity = handler.identity(entry.path)
-        # A date stored in a patient ID field is not an identifier: it is
-        # kept as is and not used to group patients
-        kept_dates = [v for v in identity.patient_ids if looks_like_date(v)]
-        identity.patient_ids = [v for v in identity.patient_ids if v not in kept_dates]
+        # The patient ID field may hold something else than a patient ID (a
+        # date, a study code): it is replaced only with patient folder
+        # grouping, and only when it matches the patient folder name
+        folder = Path(entry.patient_folder).name if entry.patient_folder else ""
+        kept_ids = [v for v in identity.patient_ids
+                    if not self.by_folder or looks_like_date(v) or not _matches_folder(v, folder)]
+        identity.patient_ids = [v for v in identity.patient_ids if v not in kept_ids]
         # Only a patient folder groups files; a file outside one is its own
         # patient (an ID read in the file may be wrong, a date for example)
         key = _patient_key(entry)
@@ -522,7 +534,14 @@ class Anonymizer:
         # With anonymized patient folders, the folder name identifies the
         # patient: it is replaced wherever it appears in the file and its name
         folder_ids = folder_names if self.folders else []
-        risks: list[str] = [f"patient ID field holds a date ({v}), kept as is" for v in kept_dates]
+        risks: list[str] = []
+        if self.by_folder:
+            for v in kept_ids:
+                if looks_like_date(v):
+                    risks.append(f"patient ID field holds a date ({v}), kept as is")
+                else:
+                    risks.append(f"patient ID field ({v}) does not match the patient folder "
+                                 f"name, kept as is")
         if isinstance(handler, WFDBHandler) and handler.is_multi_segment(entry.path):
             new_name = entry.path.name
             if new_file_name(entry.path.name, identity, patient_code, ecg_code, folder_names,
@@ -543,7 +562,7 @@ class Anonymizer:
         out_path = out_dir / new_name
 
         replacer = Replacer(identity, patient_code, ecg_code, extra_ids=folder_ids)
-        codes = Codes(patient_code, ecg_code, frozenset(kept_dates))
+        codes = Codes(patient_code, ecg_code, frozenset(kept_ids))
         rewrite = handler.rewrite(entry.path, out_path, identity, codes, replacer)
         risks += rewrite.notes
 
@@ -578,7 +597,7 @@ class Anonymizer:
         staging = out_dir / _STAGING / ecg_code
         try:
             staged = self._stage(rewrite.outputs, staging)
-            verify(entry.path, staged[out_path], replacer, patient_code, kept=kept_dates)
+            verify(entry.path, staged[out_path], replacer, patient_code, kept=kept_ids)
             values = handler.free_text(_head(rewrite.outputs[out_path]))
             left = sum(1 for v in values if replacer.replace_value(v, is_data(v)) != v)
             if left:
@@ -792,6 +811,24 @@ class _State:
             out_rel = str(Path(out_rel).parent / name)
         self.taken[out_rel] = raw_rel
         return name
+
+
+def _matches_folder(value: str, folder: str) -> bool:
+    """True when a patient ID matches the patient folder name: equal
+    ignoring case, accents and separators, or found as whole words in the
+    folder name (IDs of 4 characters or more)."""
+    if not folder:
+        return False
+    v, f = _words(value), _words(folder)
+    if not v:
+        return False
+    if v == f:
+        return True
+    return len(v.replace(" ", "")) >= 4 and f" {v} " in f" {f} "
+
+
+def _words(text: str) -> str:
+    return " ".join(re.findall(r"[^\W_]+", norm(text)))
 
 
 def _patient_key(entry: Entry) -> str:

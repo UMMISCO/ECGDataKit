@@ -54,7 +54,14 @@ def _source(tmp_path: Path, files: list[Path], patient: str = "PATIENT-001",
 
 
 def _anonymizer(source: Path, **kwargs) -> Anonymizer:
+    """Several datasets, patient folders under RAW, grouped by patient folder."""
+    kwargs.setdefault("group_by_patient_folders", True)
     return Anonymizer(source, datasets=True, patients_dir_name="RAW", **kwargs)
+
+
+def _patient_id(path: Path) -> str:
+    """Patient ID stored in an ECG file (to name its patient folder after it)."""
+    return _parse(path).patient.patient_id or "PATIENT-001"
 
 
 def _rows(source: Path, dataset: str = "dataset-a") -> list[dict]:
@@ -76,7 +83,7 @@ class TestFormats:
     @pytest.mark.parametrize("fixture", FORMAT_FIXTURES)
     def test_format(self, fixture, request, tmp_path):
         src = request.getfixturevalue(fixture)
-        base = _source(tmp_path, [src])
+        base = _source(tmp_path, [src], patient=_patient_id(src))
         raw_file = next((base / "dataset-a").rglob(src.name))
         raw_hash = _sha(raw_file)
 
@@ -139,7 +146,7 @@ class TestFormats:
             "Doe_rec 1 100 20\n"
             "Doe_rec.dat 16 200 16 0 0 0 0 II\n"
             "# name: John Doe\n# id: PX-4521\n# age: 60\n# seen by John's doctor\n")
-        base = _source(tmp_path, [record / "Doe_rec.hea", record / "Doe_rec.dat"])
+        base = _source(tmp_path, [record / "Doe_rec.hea", record / "Doe_rec.dat"], patient="PX-4521")
         [report] = _anonymizer(base).run()
         assert report.ok, report.errors
         [row] = _rows(base)
@@ -162,7 +169,7 @@ class TestFormats:
                                 "samples": {"leadI": [1, 2, 3]}}}}
         src = tmp_path / "PAT7d9s8f7d9s8_rec.json"
         src.write_text(json.dumps(doc, indent=2))
-        base = _source(tmp_path, [src])
+        base = _source(tmp_path, [src], patient="PAT7d9s8f7d9s8")
         _anonymizer(base).run()
         [row] = _rows(base)
         out = base / "dataset-a" / row["anonymized_path"]
@@ -270,7 +277,7 @@ class TestRuns:
         assert r.found == 1 and len(_rows(base)) == 1
 
     def test_catalog_columns(self, hl7_aecg_file, tmp_path):
-        base = _source(tmp_path, [hl7_aecg_file])
+        base = _source(tmp_path, [hl7_aecg_file], patient="SUBJ-001")
         _anonymizer(base).run()
         with open(base / "dataset-a" / "anonymization_catalog.csv", newline="") as f:
             assert next(csv.reader(f)) == COLUMNS
@@ -305,7 +312,8 @@ class TestRuns:
 class TestCommandLine:
     def test_run(self, hl7_aecg_file, tmp_path, capsys):
         base = _source(tmp_path, [hl7_aecg_file])
-        assert main(["anonymize", "run", str(base), "--datasets", "--patients-dir-name", "RAW"]) == 0
+        assert main(["anonymize", "run", str(base), "--datasets", "--patients-dir-name", "RAW",
+                     "--group-by-patient-folders"]) == 0
         assert "1 anonymized" in capsys.readouterr().out
 
     def test_missing_path(self, tmp_path, capsys):
@@ -436,7 +444,8 @@ class TestPatientFolders:
             (dataset / patient / "V1").mkdir(parents=True)
             shutil.copy2(hl7_aecg_file, dataset / patient / "V1" / "ecg.xml")
         shutil.copy2(hl7_aecg_file, dataset / "loose.xml")  # no patient folder
-        [r] = Anonymizer(dataset, anonymize_patient_folders=True).run()
+        [r] = Anonymizer(dataset, group_by_patient_folders=True,
+                         anonymize_patient_folders=True).run()
         assert r.ok and r.found == 3
         with open(dataset / "anonymization_catalog.csv", newline="") as f:
             rows = {x["raw_path"]: x for x in csv.DictReader(f)}
@@ -446,16 +455,17 @@ class TestPatientFolders:
         assert a["anonymized_path"] == f"ANONYMIZED/{a['patient_code']}/V1/ecg.xml"
         assert rows["loose.xml"]["anonymized_path"].startswith("ANONYMIZED/")
         assert not any((dataset / "ANONYMIZED").rglob("DOE Jane"))
-        [r] = Anonymizer(dataset, anonymize_patient_folders=True).run()
+        [r] = Anonymizer(dataset, group_by_patient_folders=True,
+                         anonymize_patient_folders=True).run()
         assert r.unchanged == 3
 
     def test_switching_grouping_on_a_dataset_is_refused(self, hl7_aecg_file, tmp_path):
         dataset = tmp_path / "dataset"
         (dataset / "P1").mkdir(parents=True)
         shutil.copy2(hl7_aecg_file, dataset / "P1" / "ecg.xml")
-        Anonymizer(dataset).run()  # grouped by patient ID
+        Anonymizer(dataset).run()  # not grouped
         with pytest.raises(ValueError, match="other patient folders"):
-            Anonymizer(dataset, anonymize_patient_folders=True).run()
+            Anonymizer(dataset, group_by_patient_folders=True).run()
 
     def test_switching_on_and_off_moves_the_copies(self, hl7_aecg_file, tmp_path):
         base = _source(tmp_path, [hl7_aecg_file], patient="DOE Ann")
@@ -489,7 +499,7 @@ class TestDateInPatientIdField:
 
     def test_date_kept_in_file_and_name(self, tmp_path):
         self._file(tmp_path, "PATIENT-001")
-        [r] = Anonymizer(tmp_path / "export").run()
+        [r] = Anonymizer(tmp_path / "export", group_by_patient_folders=True).run()
         assert r.ok
         with open(tmp_path / "export" / "anonymization_catalog.csv", newline="") as f:
             [row] = list(csv.DictReader(f))
@@ -507,7 +517,7 @@ class TestDateInPatientIdField:
         other.parent.mkdir(parents=True)
         other.write_text(HL7_AECG_XML.replace("SUBJ-001", "28 11 23").replace("Doe", "Roe"),
                          encoding="utf-8")
-        [r] = Anonymizer(tmp_path / "export").run()
+        [r] = Anonymizer(tmp_path / "export", group_by_patient_folders=True).run()
         assert r.ok and r.patients == 2 and r.patient_codes == 2
 
 
@@ -518,7 +528,8 @@ class TestSummaryCounts:
         [r] = _anonymizer(base).run()
         assert (r.raw_files, r.anonymized_files, r.ecg_codes) == (3, 3, 3)
         assert (r.patients, r.patient_codes) == (2, 2)
-        assert main(["anonymize", "run", str(base), "--datasets", "--patients-dir-name", "RAW"]) == 0
+        assert main(["anonymize", "run", str(base), "--datasets", "--patients-dir-name", "RAW",
+                     "--group-by-patient-folders"]) == 0
         out = capsys.readouterr().out
         assert "3 raw file(s) -> 3 anonymized, 3 ECG pseudonym(s); 2 patient(s) -> 2 patient pseudonym(s)" in out
 
@@ -563,23 +574,24 @@ class TestPatientFolderNameAsIdentifier:
 
 
 class TestGroupingSettingKept:
-    def test_adding_patients_dir_name_later_is_refused(self, hl7_aecg_file, tmp_path):
+    def test_turning_grouping_on_later_is_refused(self, hl7_aecg_file, tmp_path):
         base = _source(tmp_path, [hl7_aecg_file])
         dataset = base / "dataset-a"
-        [r] = Anonymizer(dataset).run()
+        [r] = Anonymizer(dataset, patients_dir_name="RAW").run()
         assert r.ok
         with pytest.raises(ValueError, match="other patient folders"):
-            Anonymizer(dataset, patients_dir_name="RAW").run()
-        assert main(["anonymize", "run", str(dataset), "--patients-dir-name", "RAW"]) == 2
-        [r] = Anonymizer(dataset).run()  # the same setting still works
+            Anonymizer(dataset, patients_dir_name="RAW", group_by_patient_folders=True).run()
+        assert main(["anonymize", "run", str(dataset), "--patients-dir-name", "RAW",
+                     "--group-by-patient-folders"]) == 2
+        [r] = Anonymizer(dataset, patients_dir_name="RAW").run()  # same setting works
         assert r.ok and r.unchanged == 1
 
-    def test_dropping_patients_dir_name_later_is_refused(self, hl7_aecg_file, tmp_path):
+    def test_turning_grouping_off_later_is_refused(self, hl7_aecg_file, tmp_path):
         base = _source(tmp_path, [hl7_aecg_file])
         dataset = base / "dataset-a"
-        Anonymizer(dataset, patients_dir_name="RAW").run()
+        Anonymizer(dataset, patients_dir_name="RAW", group_by_patient_folders=True).run()
         with pytest.raises(ValueError, match="other patient folders"):
-            Anonymizer(dataset).run()
+            Anonymizer(dataset, patients_dir_name="RAW").run()
 
     def test_starting_again_after_deleting_outputs(self, hl7_aecg_file, tmp_path):
         base = _source(tmp_path, [hl7_aecg_file])
@@ -587,7 +599,8 @@ class TestGroupingSettingKept:
         Anonymizer(dataset).run()
         shutil.rmtree(dataset / "ANONYMIZED")
         (dataset / "anonymization_catalog.csv").unlink()
-        [r] = Anonymizer(dataset, patients_dir_name="RAW", anonymize_patient_folders=True).run()
+        [r] = Anonymizer(dataset, patients_dir_name="RAW", group_by_patient_folders=True,
+                         anonymize_patient_folders=True).run()
         assert r.ok and r.anonymized == 1
 
 
@@ -602,7 +615,8 @@ class TestPatientFoldersWithoutPatientsDirName:
 
     def test_several_datasets(self, hl7_aecg_file, tmp_path):
         root = self._datasets(hl7_aecg_file, tmp_path)
-        reports = Anonymizer(root, datasets=True, anonymize_patient_folders=True).run()
+        reports = Anonymizer(root, datasets=True, group_by_patient_folders=True,
+                             anonymize_patient_folders=True).run()
         assert all(r.ok and r.found == 2 and r.patient_codes == 2 for r in reports)
         for ds in ("dataset-a", "dataset-b"):
             out = root / ds / "ANONYMIZED"
@@ -611,7 +625,8 @@ class TestPatientFoldersWithoutPatientsDirName:
 
     def test_command_line_run_and_daemon_accept_it(self, hl7_aecg_file, tmp_path, monkeypatch):
         root = self._datasets(hl7_aecg_file, tmp_path)
-        assert main(["anonymize", "run", str(root), "--datasets", "--anonymize-patient-folders"]) == 0
+        assert main(["anonymize", "run", str(root), "--datasets", "--group-by-patient-folders",
+                     "--anonymize-patient-folders"]) == 0
         from ecgdatakit.anonymize import _daemon
         seen = {}
 
@@ -620,7 +635,7 @@ class TestPatientFoldersWithoutPatientsDirName:
             seen["by_folder"] = self.anonymizer.by_folder
 
         monkeypatch.setattr(_daemon.Daemon, "serve_forever", fake_serve)
-        assert main(["anonymize", "daemon", str(root), "--datasets",
+        assert main(["anonymize", "daemon", str(root), "--datasets", "--group-by-patient-folders",
                      "--anonymize-patient-folders", "--no-watch"]) == 0
         assert seen == {"folders": True, "by_folder": True}
 
@@ -631,7 +646,7 @@ class TestNoGroupingOutsidePatientFolders:
         dataset.mkdir()
         for name in ("a.xml", "b.xml"):
             shutil.copy2(hl7_aecg_file, dataset / name)  # same patient ID and name
-        [r] = Anonymizer(dataset, anonymize_patient_folders=True).run()
+        [r] = Anonymizer(dataset, group_by_patient_folders=True).run()
         assert r.ok and r.patients == 2 and r.patient_codes == 2
 
     def test_catalog_grouped_by_id_by_an_older_version_is_refused(self, hl7_aecg_file, tmp_path):
@@ -644,3 +659,136 @@ class TestNoGroupingOutsidePatientFolders:
         catalog.write_text(text)
         with pytest.raises(ValueError, match="older version"):
             Anonymizer(dataset).run()
+
+
+class TestPatientIdField:
+    def test_not_replaced_without_grouping(self, hl7_aecg_file, tmp_path):
+        dataset = tmp_path / "dataset"
+        (dataset / "SUBJ-001").mkdir(parents=True)
+        shutil.copy2(hl7_aecg_file, dataset / "SUBJ-001" / "SUBJ-001_ecg.xml")
+        [r] = Anonymizer(dataset).run()
+        assert r.ok
+        with open(dataset / "anonymization_catalog.csv", newline="") as f:
+            [row] = list(csv.DictReader(f))
+        out = (dataset / row["anonymized_path"]).read_text()
+        assert 'extension="SUBJ-001"' in out           # patient ID field kept
+        assert "SUBJ-001_" in row["anonymized_file_name"]
+        assert "Doe" not in out                         # the name is still replaced
+        assert row["original_patient_id"] == "" and row["risk"] == "FALSE"
+
+    def test_replaced_when_it_matches_the_patient_folder(self, hl7_aecg_file, tmp_path):
+        dataset = tmp_path / "dataset"
+        (dataset / "subj 001").mkdir(parents=True)     # same ID, other case and separator
+        shutil.copy2(hl7_aecg_file, dataset / "subj 001" / "ecg.xml")
+        [r] = Anonymizer(dataset, group_by_patient_folders=True).run()
+        assert r.ok
+        with open(dataset / "anonymization_catalog.csv", newline="") as f:
+            [row] = list(csv.DictReader(f))
+        out = (dataset / row["anonymized_path"]).read_text()
+        assert "SUBJ-001" not in out and row["original_patient_id"] == "SUBJ-001"
+
+    def test_kept_and_flagged_when_it_does_not_match(self, hl7_aecg_file, tmp_path):
+        dataset = tmp_path / "dataset"
+        (dataset / "PATIENT-007").mkdir(parents=True)
+        shutil.copy2(hl7_aecg_file, dataset / "PATIENT-007" / "ecg.xml")
+        [r] = Anonymizer(dataset, group_by_patient_folders=True).run()
+        assert r.ok
+        with open(dataset / "anonymization_catalog.csv", newline="") as f:
+            [row] = list(csv.DictReader(f))
+        out = (dataset / row["anonymized_path"]).read_text()
+        assert 'extension="SUBJ-001"' in out
+        assert row["risk"] == "TRUE" and "does not match the patient folder" in row["risk_reason"]
+
+    def test_renaming_folders_needs_grouping(self, hl7_aecg_file, tmp_path):
+        with pytest.raises(ValueError, match="group_by_patient_folders"):
+            Anonymizer(tmp_path, anonymize_patient_folders=True)
+        tmp_path.joinpath("a").mkdir()
+        assert main(["anonymize", "run", str(tmp_path), "--anonymize-patient-folders"]) == 2
+
+
+ALL_FORMATS = ["hl7_aecg_file", "mortara_file", "ishne_file", "edf_file", "scp_ecg_file",
+               "ge_muse_xml_file", "dicom_12lead_file", "mfer_file", "sierra", "wfdb", "alivecor"]
+
+
+def _any_format_file(name: str, request, tmp_path: Path) -> list[Path]:
+    """Files of one ECG in the given format, each with a patient ID."""
+    if name == "sierra":
+        from tests.test_sierra_xml import repbeats_104, sierra_104, stored_residuals, \
+            true_leads, xli_b64, LABELS
+        leads = true_leads()
+        beats = {lead: (leads[k][:600] // 2) for k, lead in enumerate(LABELS)}
+        path = tmp_path / "make" / "sierra.xml"
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(sierra_104(xli_b64(stored_residuals(leads)),
+                                   repbeats=repbeats_104(beats, 1200)), encoding="utf-8")
+        return [path]
+    if name == "wfdb":
+        folder = tmp_path / "make"
+        folder.mkdir(parents=True, exist_ok=True)
+        (folder / "rec.dat").write_bytes(np.arange(20, dtype="<i2").tobytes())
+        (folder / "rec.hea").write_text("rec 1 100 20\nrec.dat 16 200 16 0 0 0 0 II\n"
+                                        "# name: John Doe\n# id: PX-4521\n")
+        return [folder / "rec.hea", folder / "rec.dat"]
+    if name == "alivecor":
+        doc = {"id": "rec8f3kd92jd83", "patientID": "PAT7d9s8f7d9s8", "duration": 1000,
+               "recordedAt": "2021-04-16T15:19:09+05:30", "algorithmDetermination": "normal",
+               "data": {"raw": {"frequency": 300, "amplitudeResolution": 500, "numLeads": 1,
+                                "samples": {"leadI": [1, 2, 3]}}}}
+        path = tmp_path / "make" / "rec.json"
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps(doc))
+        return [path]
+    return [request.getfixturevalue(name)]
+
+
+def _main_id(files: list[Path]) -> str:
+    return _parse(files[0]).patient.patient_id
+
+
+def _has(text: str, value: str) -> bool:
+    return bool(re.search(rf"(?<![^\W_]){re.escape(value)}(?![^\W_])", text, re.IGNORECASE))
+
+
+class TestPatientIdAllFormats:
+    """The three patient ID cases, in every format the anonymizer handles."""
+
+    def _run(self, name, request, tmp_path, folder, **options):
+        files = _any_format_file(name, request, tmp_path)
+        patient_id = _main_id(files)
+        assert patient_id, f"{name}: the test file has no patient ID"
+        dataset = tmp_path / "dataset"
+        (dataset / folder).mkdir(parents=True)
+        for f in files:
+            shutil.copy2(f, dataset / folder / f.name)
+        [r] = Anonymizer(dataset, **options).run()
+        assert r.ok, (name, r.errors)
+        with open(dataset / "anonymization_catalog.csv", newline="") as fh:
+            [row] = list(csv.DictReader(fh))
+        out = dataset / row["anonymized_path"]
+        return patient_id, row, _parse(out), out.read_bytes().decode("latin-1")
+
+    @pytest.mark.parametrize("name", ALL_FORMATS)
+    def test_without_grouping_the_id_is_kept(self, name, request, tmp_path):
+        pid, row, after, text = self._run(name, request, tmp_path, "OTHER-FOLDER")
+        assert after.patient.patient_id == pid
+        assert _has(text, pid)
+        assert row["original_patient_id"] == ""
+
+    @pytest.mark.parametrize("name", ALL_FORMATS)
+    def test_with_grouping_a_matching_id_is_replaced(self, name, request, tmp_path):
+        files = _any_format_file(name, request, tmp_path)
+        pid = _main_id(files)
+        pid2, row, after, text = self._run(name, request, tmp_path / "run", pid,
+                                           group_by_patient_folders=True)
+        assert pid2 == pid
+        assert after.patient.patient_id in ("", row["patient_code"])
+        assert not _has(text, pid)
+        assert pid in row["original_patient_id"]
+
+    @pytest.mark.parametrize("name", ALL_FORMATS)
+    def test_with_grouping_another_id_is_kept_and_flagged(self, name, request, tmp_path):
+        pid, row, after, text = self._run(name, request, tmp_path, "OTHER-FOLDER",
+                                          group_by_patient_folders=True)
+        assert after.patient.patient_id == pid
+        assert _has(text, pid)
+        assert row["risk"] == "TRUE" and "does not match the patient folder" in row["risk_reason"]

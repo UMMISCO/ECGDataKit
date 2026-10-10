@@ -13,7 +13,7 @@
 #   docker exec -it ecg-anonymizer ecgdatakit anonymize shell
 #
 # Extra options are passed after the image name, for example:
-#   ... ecgdatakit-anonymizer --datasets --patients-dir-name RAW --interval 3600 --threads 4
+#   ... ecgdatakit-anonymizer --datasets --patients-dir-name RAW --group-by-patient-folders --interval 3600
 
 FROM python:3.12-slim
 

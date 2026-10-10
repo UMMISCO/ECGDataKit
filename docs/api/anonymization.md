@@ -1,10 +1,10 @@
 # Anonymization
 
 ECGDataKit anonymizes ECG files in any supported format. Each file is
-copied into an `ANONYMIZED` folder with the patient's name and ID and the
-ECG ID replaced by pseudonyms, in the file and in its name. A CSV catalog
-links every raw file to its anonymized copy. Raw files are only read,
-never modified.
+copied into an `ANONYMIZED` folder with the patient's name, the ECG ID
+and, when it can be trusted, the patient ID replaced by pseudonyms, in
+the file and in its name. A CSV catalog links every raw file to its
+anonymized copy. Raw files are only read, never modified.
 
 To run it, see {doc}`anonymization/usage`.
 
@@ -16,11 +16,13 @@ To run it, see {doc}`anonymization/usage`.
    not supported.
 2. **Read the identity values.** The patient's name and ID and the ECG ID
    are read from the fields of each format (see
-   [What is replaced](#what-is-replaced)). With
+   [What is replaced](#what-is-replaced)). The patient ID is kept unless
+   it matches the patient folder name (see [Patients](#patients)). With
    `--anonymize-patient-folders`, the name of the patient folder is added
-   to them (see [Patients](#patients)).
-3. **Choose the pseudonyms.** Each patient gets one pseudonym, shared by
-   all their files, and each file gets its own ECG pseudonym.
+   to the values to replace.
+3. **Choose the pseudonyms.** Each file gets its own ECG pseudonym. Each
+   patient gets one patient pseudonym: a patient folder with
+   `--group-by-patient-folders`, otherwise each file.
 4. **Write the copy.** Only the bytes of the identity values change, then
    the copy gets its new file name.
 5. **Check the copy.** It is read back with ecgdatakit and must give the
@@ -31,33 +33,50 @@ To run it, see {doc}`anonymization/usage`.
 (anonymization-patients)=
 ## Patients
 
-How files are grouped into patients, and which values identify a patient,
-depends on two options:
+Three options decide how patients are handled. They are independent and
+all off by default:
 
-| Options | Files of one patient | Replaced by the patient pseudonym |
-|---------|----------------------|-----------------------------------|
-| none | Each file on its own: two files never share a patient pseudonym | The patient's name and ID from the fields of each format |
-| `--patients-dir-name NAME` | Files of the same patient folder: each sub-folder of the folders called `NAME` is one patient | The same as above |
-| `--anonymize-patient-folders` | Files of the same patient folder: each folder directly inside the dataset is one patient | The same as above, plus the patient folder name, wherever it appears |
-| `--patients-dir-name NAME` and `--anonymize-patient-folders` | Files of the same patient folder: each sub-folder of the folders called `NAME` is one patient | The same as above, plus the patient folder name, wherever it appears |
+| Option | What it does |
+|--------|--------------|
+| `--patients-dir-name NAME` | Only reads files under the folders called `NAME` (for example `RAW`), and says the patient folders are their sub-folders. It does not group anything by itself. |
+| `--group-by-patient-folders` | Each patient folder is one patient: all its files share one patient pseudonym. The patient folders are the sub-folders of the `NAME` folders, or without `--patients-dir-name` the folders directly inside the dataset. |
+| `--anonymize-patient-folders` | Renames each patient folder to its patient pseudonym. Needs `--group-by-patient-folders`. |
 
-Only a patient folder groups files. Files are never grouped by the
-patient ID or name read in them: some devices store something else in
-that field (a date, a study code), and grouping by it would merge the
-recordings of different patients. So:
+### Grouping
 
-- with either option, all the files of a patient folder share one patient
-  pseudonym, even when their ID is missing or different;
-- a file outside a patient folder (with neither option, or a file placed
-  directly in the dataset) gets its own patient pseudonym.
+Files are only grouped by patient folder, never by the patient ID or name
+read in them: some devices store something else in that field (a date, a
+study code), and grouping by it would merge the recordings of different
+patients.
 
-Use `--patients-dir-name` when the patient folders are deeper in the
-dataset (for example under `xml/RAW/`), and `--anonymize-patient-folders`
-alone when they are directly inside it.
+| | Patient pseudonym |
+|-|-------------------|
+| Without `--group-by-patient-folders` | each file has its own, even files of the same folder |
+| With it, file in a patient folder | shared by all the files of that folder |
+| With it, file outside a patient folder | its own |
 
-`--anonymize-patient-folders` treats the patient folder name as one more
-identifier of the patient, for folders named after the patient or their
-hospital number:
+### The patient ID field
+
+For the same reason, the patient ID field of a file is only replaced when
+it can be trusted to be the patient's ID:
+
+| | Patient ID field |
+|-|------------------|
+| Without `--group-by-patient-folders` | never replaced: kept as is in the file, its free text and its name |
+| With it, the ID matches the patient folder name | replaced by the patient pseudonym |
+| With it, the ID does not match (or the file is outside a patient folder) | kept as is, and the catalog row is marked as risk with the reason |
+
+The ID matches the folder name when both are equal ignoring case, accents
+and separators (`DEEP-001-0001` and `deep 001 0001`), or when the ID
+appears as whole words in the folder name and has at least 4 characters
+(`001-0003` in `QuTe_001_0003_AB_CD`). The patient's name and the ECG ID
+are always replaced, whatever the options.
+
+### Renaming patient folders
+
+With `--anonymize-patient-folders`, the patient folder name is treated as
+one more identifier of the patient, for folders named after the patient
+or their hospital number:
 
 - the patient folder is named after the patient pseudonym in `ANONYMIZED`;
 - the folder name is replaced by the pseudonym wherever it appears in the
@@ -87,8 +106,9 @@ named after the patient shows that name. The catalog column
 | WFDB | `# name:` comment | `# id:` comment | none |
 | AliveCor Kardia JSON | none | `patientID` | `id` |
 
-- The last name and the patient ID take the patient pseudonym; the first
-  name is emptied.
+- The last name takes the patient pseudonym and the first name is
+  emptied. The patient ID takes the patient pseudonym only as described
+  in [The patient ID field](#the-patient-id-field).
 - The ECG ID takes the ECG pseudonym.
 - The patient's name and ID (and, with `--anonymize-patient-folders`, the
   patient folder name) are also replaced inside comments and other
@@ -97,11 +117,10 @@ named after the patient shows that name. The catalog column
   visit labels are kept.
 
 **Dates in the patient ID field.** Some devices store a date in the
-patient ID field (for example `28 11 23`). A value of that field written
-as a date (`28 11 23`, `28/11/2023`, `2023-11-28`) is not an identifier:
-it is kept as is in the file and in the file name, and the catalog row is
-marked as risk with the reason so the file can be reviewed. A number
-without separators (`20231128`) is still treated as an ID.
+patient ID field (for example `28 11 23`). A value written as a date
+(`28 11 23`, `28/11/2023`, `2023-11-28`) is never replaced, even with
+`--group-by-patient-folders`: it is kept as is in the file and in the
+file name, and the catalog row is marked as risk with the reason.
 
 **Format kept.** Only the bytes of the identity values change: an XML
 file keeps its encoding, indentation and line endings, binary headers keep
@@ -110,9 +129,9 @@ original one was valid. DICOM files are written back with pydicom.
 
 ## File names
 
-Parts of the file name equal to the patient's name, patient ID or ECG ID
-(ignoring case and accents) are replaced; dates, visits and other parts are
-kept:
+Parts of the file name equal to the patient's name, the ECG ID or the
+patient ID when it is replaced in the file (ignoring case and accents)
+are replaced; dates, visits and other parts are kept:
 
 ```text
 R^ECG^F^0^PID-0042^DOE_20240109083645_V1.xml
@@ -121,8 +140,8 @@ R^ECG^F^0^Hh3kQ9sLm2Xa^Hh3kQ9sLm2Xa_20240109083645_V1.xml
 
 - With `--anonymize-patient-folders`, the patient folder name is replaced
   in file names too.
-- With `--patients-dir-name`, a file that has no name field also has the
-  words of its patient folder name replaced in its file name.
+- With `--group-by-patient-folders`, a file that has no name field also
+  has the words of its patient folder name replaced in its file name.
 - Parts that may still identify the patient, such as initials or long
   random identifiers, are kept and the catalog row is marked `risk` with
   the reason. Review these rows.

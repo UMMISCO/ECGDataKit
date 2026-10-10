@@ -67,7 +67,7 @@ Parsers report what the file stores. They never compute clinical values (interva
 
 ### Anonymization
 
-`ecgdatakit anonymize` copies the ECG files of a source folder into an `ANONYMIZED` folder with the patient's name and ID and the ECG ID replaced by pseudonyms, and keeps the link in a CSV catalog. Raw files are only read. Each copy is read back and must give the same samples and fields before it is published. It runs once or as a daemon that follows new files. See [Anonymization](https://ecgdatakit.ummisco.fr/api/anonymization.html) in the docs.
+`ecgdatakit anonymize` copies the ECG files of a source folder into an `ANONYMIZED` folder with the patient's name, the ECG ID and, when it can be trusted, the patient ID replaced by pseudonyms, and keeps the link in a CSV catalog. Raw files are only read. Each copy is read back and must give the same samples and fields before it is published. It runs once or as a daemon that follows new files. See [Anonymization](https://ecgdatakit.ummisco.fr/api/anonymization.html) in the docs.
 
 ```bash
 ecgdatakit anonymize run /path/to/source
