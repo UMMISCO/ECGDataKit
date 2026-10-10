@@ -73,9 +73,11 @@ class DICOMHandler(Handler):
         result = Rewrite()
         for keyword in _DICOM_PATIENT_TAGS:
             if keyword in ds and ds.data_element(keyword).value:
+                if str(ds.data_element(keyword).value).strip() in codes.keep:
+                    continue
                 ds.data_element(keyword).value = codes.patient
         for item in ds.get("OtherPatientIDsSequence", []) or []:
-            if item.get("PatientID"):
+            if item.get("PatientID") and str(item.PatientID).strip() not in codes.keep:
                 item.PatientID = codes.patient
         old_uid = str(ds.get("SOPInstanceUID", "") or "")
         if old_uid:
@@ -84,7 +86,6 @@ class DICOMHandler(Handler):
             meta = getattr(ds, "file_meta", None)
             if meta is not None and str(meta.get("MediaStorageSOPInstanceUID", "")) == old_uid:
                 meta.MediaStorageSOPInstanceUID = new_uid
-            result.ecg_written.append(new_uid)
         if replacer:
             def walk(dataset):
                 for element in dataset:

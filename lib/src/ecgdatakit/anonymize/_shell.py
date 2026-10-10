@@ -54,7 +54,10 @@ class Shell(cmd.Cmd):
         if reports:
             print()
             print(_table(reports, ["dataset", "found", "anonymized", "copied", "changed",
-                                   "unchanged", "deleted", "failed", "risks"]))
+                                   "unchanged", "deleted", "failed", "risks", "waiting"]))
+            if any(r.get("waiting") for r in reports):
+                print("waiting: files changed less than --settle seconds ago, "
+                      "anonymized by a later pass")
 
     def do_datasets(self, arg: str) -> None:
         """datasets: datasets of the source with their catalog counts."""

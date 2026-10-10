@@ -41,8 +41,6 @@ class AliveCorHandler(Handler):
         exact = {v: codes.patient for v in identity.patient_ids}
         exact.update({v: codes.ecg for v in identity.ecg_ids})
         result = Rewrite()
-        if identity.ecg_ids:
-            result.ecg_written.append(codes.ecg)
 
         def edit(match: re.Match) -> str:
             if match.group(2):  # an object key

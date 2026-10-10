@@ -121,13 +121,12 @@ class MFERHandler(Handler):
             new = None
             if tag == MWF_PNM and text:
                 new = codes.patient
-            elif tag == MWF_PID and text:
+            elif tag == MWF_PID and text and text.split("^")[0].strip() not in codes.keep:
                 parts = text.split("^")
                 parts[0] = codes.patient
                 new = "^".join(parts)
             elif tag == MWF_UID and text:
                 new = codes.ecg
-                result.ecg_written.append(new)
             elif tag in _MFER_FREE_TEXT and text and replacer:
                 replaced = replacer.replace(text)
                 new = replaced if replaced != text else None

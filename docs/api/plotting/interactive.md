@@ -1,4 +1,4 @@
-# Interactive Plots (plotly)
+# Interactive Plots
 
 All interactive plot functions display the figure automatically by default (`show=True`). Pass `show=False` to get the `plotly.graph_objects.Figure` without displaying. Features: zoom, pan, hover with sample-level values, range sliders.
 

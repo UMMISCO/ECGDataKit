@@ -1726,3 +1726,13 @@ body[data-theme="dark"] .home-feature {
     box-shadow: none;
   }
 }
+
+/* Doc pages: headings line up with the text (Furo's .5rem side padding
+   is removed together with its negative margin) */
+article[role="main"] h1, article[role="main"] h2, article[role="main"] h3,
+article[role="main"] h4, article[role="main"] h5, article[role="main"] h6 {
+  margin-left: 0;
+  margin-right: 0;
+  padding-left: 0;
+  padding-right: 0;
+}

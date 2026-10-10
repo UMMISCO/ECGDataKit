@@ -1,9 +1,10 @@
 """Pseudonym codes.
 
-Codes are random 12-character shortuuid strings (57-letter alphabet, about
-71 bits), drawn again if already used in the dataset. ECG IDs that must keep
-their type get a value derived from the ECG code: a UUID (HL7 aECG) or a
-DICOM UID under the 2.25 root.
+Patient codes are random 12-character shortuuid strings (57-letter
+alphabet, about 71 bits). ECG codes are random UUIDs (version 4), written
+as is in place of the ECG ID; DICOM, which only accepts digits and dots,
+gets the same UUID in its standard UID form (``2.25.`` followed by the
+UUID as an integer). A code already used in the dataset is drawn again.
 """
 
 from __future__ import annotations
@@ -11,7 +12,6 @@ from __future__ import annotations
 import uuid
 
 CODE_LENGTH = 12
-_NAMESPACE = uuid.UUID("6f1c3c8e-2d4b-5a7e-9c1d-8b3e4f5a6b7c")
 
 
 def _shortuuid():
@@ -35,11 +35,16 @@ def new_code(used: set[str]) -> str:
     raise RuntimeError("Could not draw a unique pseudonym code")  # pragma: no cover
 
 
-def code_uuid(code: str) -> str:
-    """UUID written in place of an ECG ID that must stay a UUID."""
-    return str(uuid.uuid5(_NAMESPACE, code))
+def new_ecg_code(used: set[str]) -> str:
+    """A random UUID not in *used* (the UUID is added to *used*)."""
+    for _ in range(1000):
+        code = str(uuid.uuid4())
+        if code not in used:
+            used.add(code)
+            return code
+    raise RuntimeError("Could not draw a unique ECG code")  # pragma: no cover
 
 
 def code_dicom_uid(code: str) -> str:
-    """DICOM UID (2.25 + UUID as an integer) written in place of an ECG UID."""
-    return f"2.25.{uuid.uuid5(_NAMESPACE, code).int}"
+    """DICOM UID form of the ECG code (2.25 root + the UUID as an integer)."""
+    return f"2.25.{uuid.UUID(code).int}"

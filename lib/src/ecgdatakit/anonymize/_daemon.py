@@ -147,7 +147,7 @@ class Daemon:
         # and only inside a raw folder when one is configured
         if len(parts) < 2 or parts[0] == a.out_dir or any(p.startswith(".") for p in parts):
             return
-        if a.raw_dir is not None and a.raw_dir not in parts:
+        if a.patients_dir_name is not None and a.patients_dir_name not in parts:
             return
         with self._wake:
             self._pending[path] = time.time()

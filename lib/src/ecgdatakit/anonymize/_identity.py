@@ -20,6 +20,31 @@ MIN_ID_TOKEN = 4
 _SPLIT_RE = re.compile(r"[\s,;^_/\\.\-]+")
 
 
+_SEPARATED_DATE_RE = re.compile(
+    r"(?P<a>\d{1,4})(?P<s>[ ./-])(?P<b>\d{1,2})(?P=s)(?P<c>\d{2,4})")
+
+
+def looks_like_date(value: str) -> bool:
+    """True for a calendar date written with separators: ``28 11 23``,
+    ``28/11/2023``, ``2023-11-28``, ``11/28/2023``. Bare digit runs
+    (``20231128``) are not taken as dates: they may be real identifiers."""
+    m = _SEPARATED_DATE_RE.fullmatch(value.strip())
+    if m is None:
+        return False
+    a, b, c = m.group("a"), m.group("b"), m.group("c")
+    if len(a) == 4:
+        # year, month, day
+        return len(c) <= 2 and _valid_day_month(int(c), int(b))
+    if len(a) > 2 or len(c) not in (2, 4):
+        return False
+    # day, month, year, or month, day, year
+    return _valid_day_month(int(a), int(b)) or _valid_day_month(int(b), int(a))
+
+
+def _valid_day_month(day: int, month: int) -> bool:
+    return 1 <= month <= 12 and 1 <= day <= 31
+
+
 def norm(text: str) -> str:
     """Lowercase, strip and drop accents, for matching only."""
     text = unicodedata.normalize("NFKD", " ".join(text.split()).casefold())
@@ -85,12 +110,15 @@ class Replacer:
 
     def __init__(self, identity: Identity, patient_code: str, ecg_code: str,
                  extra_names: list[str] | None = None, min_name: int = MIN_NAME_TOKEN,
-                 min_id: int = MIN_ID_TOKEN) -> None:
+                 min_id: int = MIN_ID_TOKEN, extra_ids: list[str] | None = None) -> None:
+        # *extra_ids*: other values that identify the patient (the patient
+        # folder name), replaced as whole values like the patient IDs
+        patient_ids = list(identity.patient_ids) + [v for v in extra_ids or [] if v.strip()]
         pairs: list[tuple[str, str]] = []
         for value in identity.ecg_ids:
             if len(value) >= min_id:
                 pairs.append((value, ecg_code))
-        for value in identity.patient_ids:
+        for value in patient_ids:
             if len(value) >= min_id:
                 pairs.append((value, patient_code))
         for value in identity.full_names():
@@ -101,7 +129,7 @@ class Replacer:
             pairs.append((token, patient_code))
         # Whole values compared as is, also in fields that look like numbers
         self.exact: dict[str, str] = {}
-        for value in identity.patient_ids:
+        for value in patient_ids:
             self.exact[norm(value)] = patient_code
         for value in identity.ecg_ids:
             self.exact[norm(value)] = ecg_code

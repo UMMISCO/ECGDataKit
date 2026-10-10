@@ -13,7 +13,6 @@ from dataclasses import dataclass
 from pathlib import Path
 from xml.sax.saxutils import escape, unescape
 
-from ecgdatakit.anonymize._codes import code_uuid
 from ecgdatakit.anonymize._identity import Identity, Replacer
 from ecgdatakit.anonymize.formats._base import Codes, Handler, Rewrite, is_data
 
@@ -40,7 +39,6 @@ class Rule:
     attr: str | None = None
     anchored: bool = False
     when: tuple[str, str] | None = None
-    uuid: bool = False
 
     def matches(self, path: list[str], attrs: dict[str, str]) -> bool:
         n = len(self.path)
@@ -179,15 +177,14 @@ class XMLHandler(Handler):
             kind = value.rule.kind
             if kind == "skip" or not unescape(value.raw, _ENTITIES).strip():
                 continue
+            if kind == "patient_ids" and unescape(value.raw, _ENTITIES).strip() in codes.keep:
+                continue
             if kind in ("patient_ids", "last_names"):
                 new = codes.patient
             elif kind == "first_names":
                 new = ""
             else:  # ecg_ids
-                new = code_uuid(codes.ecg) if value.rule.uuid else codes.ecg
-                if value.raw.isupper() and value.rule.uuid:
-                    new = new.upper()
-                result.ecg_written.append(new)
+                new = codes.ecg.upper() if value.raw.isupper() else codes.ecg
             edits.append((value.start, value.end, escape(new, {'"': "&quot;"})))
         for value in free:
             new = replacer.replace_value(value.raw, is_data(value.raw))

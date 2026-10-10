@@ -77,6 +77,8 @@ class ISHNEHandler(Handler):
                              (_ISHNE_ID, codes.patient)):
             start, size = field
             original = _ishne_text(bytes(data), field)
+            if field is _ISHNE_ID and original in codes.keep:
+                continue
             if original or field is _ISHNE_LAST and identity.has_patient:
                 data[start:start + size] = fixed_width(value, size)
 

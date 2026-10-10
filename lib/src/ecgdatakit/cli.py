@@ -10,25 +10,32 @@ from ecgdatakit import __version__
 
 
 def _anonymizer_options(p: argparse.ArgumentParser) -> None:
-    p.add_argument("source", help="folder to anonymize")
+    p.add_argument("source", help="folder or single file to anonymize")
     p.add_argument("--datasets", action="store_true",
                    help="each sub-folder of SOURCE is a separate dataset, with its own "
                         "output folder and catalog (default: SOURCE is one dataset)")
-    p.add_argument("--raw-dir", default=None, metavar="NAME",
-                   help="only read files under folders with this name (the first folder "
-                        "under it is the patient folder); default: every file")
+    p.add_argument("--patients-dir-name", default=None, metavar="NAME",
+                   help="name of the folder holding the patient folders, the same in "
+                        "every dataset (e.g. RAW): only "
+                        "files under it are read, one pseudonym per patient folder; "
+                        "default: every file, patients grouped by their patient ID")
+    p.add_argument("--anonymize-patient-folders", action="store_true",
+                   help="with --patients-dir-name: name each patient folder after the "
+                        "patient pseudonym in the output (default: folder names are kept)")
     p.add_argument("--out-dir", default="ANONYMIZED",
                    help="output folder created in each dataset (default: ANONYMIZED)")
     p.add_argument("--catalog", default="anonymization_catalog.csv",
                    help="CSV catalog file name in each dataset")
     p.add_argument("--threads", type=int, default=8, help="parallel workers (default: 8)")
-    p.add_argument("-v", "--verbose", action="store_true", help="log every file")
+    p.add_argument("-v", "--verbose", action="store_true",
+                   help="print one line per file anonymized, changed or at risk")
 
 
 def _anonymizer(args, **extra):
     from ecgdatakit.anonymize import Anonymizer
 
-    return Anonymizer(args.source, datasets=args.datasets, raw_dir=args.raw_dir,
+    return Anonymizer(args.source, datasets=args.datasets, patients_dir_name=args.patients_dir_name,
+                      anonymize_patient_folders=args.anonymize_patient_folders,
                       out_dir=args.out_dir, catalog_name=args.catalog, threads=args.threads,
                       **extra)
 
@@ -40,6 +47,10 @@ def _print_reports(reports) -> bool:
               f"{r.changed} changed, {r.unchanged} unchanged, {r.deleted} deleted, "
               f"{r.failed} failed, {r.risks} with risks, "
               f"{r.skipped_unsupported} not ECG files (skipped)")
+        if r.raw_files:
+            print(f"  {r.raw_files} raw file(s) -> {r.anonymized_files} anonymized, "
+                  f"{r.ecg_codes} ECG pseudonym(s); {r.patients} patient(s) -> "
+                  f"{r.patient_codes} patient pseudonym(s)")
         for error in r.errors:
             print(f"  ERROR {error}")
         ok &= r.ok
@@ -57,6 +68,8 @@ def _daemon(args) -> int:
     from ecgdatakit.anonymize._daemon import Daemon
 
     anonymizer = _anonymizer(args, settle_seconds=args.settle)
+    if anonymizer.single_file is not None:
+        raise ValueError("the daemon watches a folder, not a single file")
     Daemon(anonymizer, interval=args.interval, settle=args.settle, host=args.host,
            port=args.port, watch=not args.no_watch).serve_forever()
     return 0

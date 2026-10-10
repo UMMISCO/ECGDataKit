@@ -5,8 +5,8 @@ Fields replaced (HL7 v3 Annotated ECG):
 - ``subjectDemographicPerson/name``: ``family`` and plain-text name become
   the patient code, ``given`` is emptied. ``prefix`` and ``suffix`` are kept.
 - ``trialSubject/id@extension``: patient code.
-- ``AnnotatedECG/id``: ``root`` becomes a UUID derived from the ECG code,
-  ``extension`` the ECG code.
+- ``AnnotatedECG/id``: ``root`` and ``extension`` become the ECG code (a
+  UUID).
 
 Waveform ``digits`` are never searched.
 """
@@ -26,7 +26,7 @@ class HL7Handler(XMLHandler):
         # A plain-text name (no parts) is read as the last name by the parser
         Rule(("subjectDemographicPerson", "name"), "last_names"),
         Rule(("trialSubject", "id"), "patient_ids", attr="extension"),
-        Rule(("AnnotatedECG", "id"), "ecg_ids", attr="root", anchored=True, uuid=True),
+        Rule(("AnnotatedECG", "id"), "ecg_ids", attr="root", anchored=True),
         Rule(("AnnotatedECG", "id"), "ecg_ids", attr="extension", anchored=True),
     )
     skip_elements = frozenset({"digits"})

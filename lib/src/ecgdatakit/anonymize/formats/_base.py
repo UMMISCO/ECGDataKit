@@ -23,6 +23,8 @@ def is_data(value: str) -> bool:
 class Codes:
     patient: str
     ecg: str
+    keep: frozenset[str] = frozenset()
+    """Values of patient ID fields that are not identifiers (dates): kept."""
 
 
 @dataclass(frozen=True)
@@ -41,8 +43,6 @@ class Rewrite:
     outputs: dict[Path, bytes | Spliced] = field(default_factory=dict)
     """Anonymized content by output path (bytes, or a header spliced onto
     the rest of the source for large files)."""
-    ecg_written: list[str] = field(default_factory=list)
-    """ECG ID values as written in the output (UUID, UID or code)."""
     notes: list[str] = field(default_factory=list)
     """Risks found while rewriting (kept as is, reported in the catalog)."""
 

@@ -7,8 +7,8 @@ Functions of ``ecgdatakit.plotting``.
 
 .. currentmodule:: ecgdatakit.plotting
 
-Static Plots (matplotlib)
-~~~~~~~~~~~~~~~~~~~~~~~~~
+Static Plots
+~~~~~~~~~~~~
 
 .. autofunction:: plot_lead
    :noindex:
@@ -37,8 +37,8 @@ Static Plots (matplotlib)
 .. autofunction:: plot_report
    :noindex:
 
-Interactive Plots (plotly)
-~~~~~~~~~~~~~~~~~~~~~~~~~~
+Interactive Plots
+~~~~~~~~~~~~~~~~~
 
 .. autofunction:: iplot_lead
    :noindex:

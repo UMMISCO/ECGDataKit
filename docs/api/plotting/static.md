@@ -1,4 +1,4 @@
-# Static Plots (matplotlib)
+# Static Plots
 
 All static plot functions display the figure automatically by default (`show=True`). Pass `show=False` to suppress display and get back the `matplotlib.figure.Figure` for saving or further customization. Functions with an `ax` parameter can render into an existing axes for composability; when `ax=None`, a new figure is created.
 

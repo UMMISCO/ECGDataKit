@@ -8,7 +8,7 @@ Import: `from ecgdatakit.anonymize import Anonymizer, Report, Catalog, DatasetLo
 ```python
 from ecgdatakit.anonymize import Anonymizer
 
-reports = Anonymizer("/path/to/source", datasets=True, raw_dir="RAW").run()
+reports = Anonymizer("/path/to/source", datasets=True, patients_dir_name="RAW").run()
 for report in reports:
     print(report.dataset, report.anonymized, report.failed, report.errors)
 ```

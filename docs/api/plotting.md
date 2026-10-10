@@ -30,7 +30,7 @@ All plotting functions accept raw **numpy arrays** in addition to `Lead` / `ECGR
 A `TypeError` is raised if `fs` is omitted with a numpy array. When passing `Lead` / `ECGRecord` objects, `fs` is ignored.
 ```
 
-## {doc}`Static Plots (matplotlib) <plotting/static>`
+## {doc}`Static Plots <plotting/static>`
 
 ### Lead Waveforms
 
@@ -70,7 +70,7 @@ A `TypeError` is raised if `fs` is omitted with a numpy array. When passing `Lea
 | {func}`~ecgdatakit.plotting.plot_quality` | Signal quality dashboard: SQI bar chart per lead |
 | {func}`~ecgdatakit.plotting.plot_report` | Comprehensive ECG report page |
 
-## {doc}`Interactive Plots (plotly) <plotting/interactive>`
+## {doc}`Interactive Plots <plotting/interactive>`
 
 ### Lead Waveforms
 

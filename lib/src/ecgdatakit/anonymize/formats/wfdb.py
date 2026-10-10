@@ -111,6 +111,8 @@ class WFDBHandler(Handler):
         comments: names and IDs replaced where they appear."""
         match = _COMMENT_RE.match(body)
         comment = _comment(body)
+        if (match and comment and comment[0] in _ID_KEYS and comment[1] in codes.keep):
+            return body
         if match and comment and comment[0] in _NAME_KEYS | _ID_KEYS and comment[1]:
             prefix, key, separator, _, trailing = match.groups()
             return prefix + key + separator + codes.patient + trailing

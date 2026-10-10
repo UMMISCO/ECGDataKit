@@ -55,7 +55,8 @@ def _same_signals(a: list, b: list, what: str) -> None:
             raise VerificationError(f"{what}: samples of lead {la.label} differ after anonymization")
 
 
-def verify(raw: Path, anonymized: Path, replacer: Replacer, patient_code: str) -> None:
+def verify(raw: Path, anonymized: Path, replacer: Replacer, patient_code: str,
+           kept: list[str] | None = None) -> None:
     """Raise VerificationError unless *anonymized* holds the same ECG as *raw*.
 
     Same parser, same samples bit for bit, patient name and ID fields hold
@@ -80,15 +81,30 @@ def verify(raw: Path, anonymized: Path, replacer: Replacer, patient_code: str) -
 
     old = before.to_dict(include_samples=False)
     new = after.to_dict(include_samples=False)
+    kept = set(kept or [])
     for key in _PATIENT_FIELDS:
         value = str(new["patient"].pop(key) or "")
         old["patient"].pop(key)
+        if key == "patient_id" and value.strip() in kept:
+            continue
         if value and set(value.replace("^", " ").split()) - {patient_code}:
             raise VerificationError(f"patient {key} still holds other text than the pseudonym")
+    # Values set by the library, not read from the file, must not change
+    library_set = [("source_format",), ("file_format", "name"), ("file_format", "parser")]
+    for path in library_set:
+        before_value, after_value = _pop(old, path), _pop(new, path)
+        if before_value != after_value:
+            raise VerificationError(f"{'.'.join(path)} changed after anonymization")
     expected = _replace_all(old, replacer)
     if expected != new:
         diff = _first_difference(expected, new)
         raise VerificationError(f"field changed beyond the identity values: {diff}")
+
+
+def _pop(data: dict, path: tuple[str, ...]):
+    for key in path[:-1]:
+        data = data.get(key, {})
+    return data.pop(path[-1], None)
 
 
 def _first_difference(a, b, path: str = "") -> str:

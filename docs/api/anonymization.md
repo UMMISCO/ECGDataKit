@@ -1,66 +1,72 @@
 # Anonymization
 
-`ecgdatakit anonymize` copies the ECG files of a source folder into an
-`ANONYMIZED` folder, with the patient's name and ID and the ECG ID replaced
-by pseudonyms, and records the link in a CSV catalog. Raw files are only
-read, never modified.
+ECGDataKit anonymizes ECG files in any supported format. Each file is
+copied into an `ANONYMIZED` folder with the patient's name and ID and the
+ECG ID replaced by pseudonyms, in the file and in its name. A CSV catalog
+links every raw file to its anonymized copy. Raw files are only read,
+never modified.
 
-```bash
-pip install "ecgdatakit[anonymize]"        # add [dicom] for DICOM files
-ecgdatakit anonymize run /path/to/source
-```
+To run it, see {doc}`anonymization/usage`.
 
-## Source and datasets
+## How it works
 
-By default the source folder is anonymized as a whole:
+1. **Find the files.** The source (a single file or a folder) is scanned
+   for files that ecgdatakit reads. Every other file (PDF, images,
+   unsupported formats) is skipped and not copied. EDAN Holter files are
+   not supported.
+2. **Read the identity values.** The patient's name and ID and the ECG ID
+   are read from the fields of each format (see
+   [What is replaced](#what-is-replaced)). With
+   `--anonymize-patient-folders`, the name of the patient folder is added
+   to them (see [Patients](#patients)).
+3. **Choose the pseudonyms.** Each patient gets one pseudonym, shared by
+   all their files, and each file gets its own ECG pseudonym.
+4. **Write the copy.** Only the bytes of the identity values change, then
+   the copy gets its new file name.
+5. **Check the copy.** It is read back with ecgdatakit and must give the
+   same samples, bit for bit, and the same fields apart from the replaced
+   values. A copy that fails is not kept and the catalog marks it `failed`.
+6. **Record it** in the catalog, with the original and anonymized values.
 
-```text
-source/
-  PATIENT-001/V1/ecg.xml              raw file (read only)
-  PATIENT-002/ecg.scp
-  ANONYMIZED/                         created by the anonymizer
-    PATIENT-001/V1/<new name>.xml
-    PATIENT-002/<new name>.scp
-  anonymization_catalog.csv           re-identification key
-```
+(anonymization-patients)=
+## Patients
 
-The first folder level under the source is the patient folder: all files
-below it share one patient pseudonym.
+How files are grouped into patients, and which values identify a patient,
+depends on two options:
 
-With `--datasets`, each sub-folder of the source is a separate dataset
-with its own `ANONYMIZED` folder and catalog, and new sub-folders are
-picked up automatically:
+| Options | Files of one patient | Replaced by the patient pseudonym |
+|---------|----------------------|-----------------------------------|
+| none | Files with the same patient ID, or the same name when the file has no ID, wherever they are | The patient's name and ID from the fields of each format |
+| `--patients-dir-name NAME` | Files of the same patient folder: each sub-folder of the folder called `NAME` is one patient | The same as above |
+| `--patients-dir-name NAME` and `--anonymize-patient-folders` | Files of the same patient folder | The same as above, plus the patient folder name, wherever it appears |
 
-```text
-source/
-  dataset-a/ ... ANONYMIZED/  anonymization_catalog.csv
-  dataset-b/ ... ANONYMIZED/  anonymization_catalog.csv
-```
+Without `--patients-dir-name`, folders play no part: a patient is known
+only from the identity values stored in their files.
 
-With `--raw-dir NAME`, only files under folders with that name are read,
-wherever they are in the dataset, and the first folder under it is the
-patient folder. Other folders (reports, previous exports) are ignored:
+With `--patients-dir-name`, the patient folder decides, even for a file
+whose ID is missing or different.
 
-```text
-dataset-a/
-  xml/RAW/PATIENT-001/V1/ecg.xml      read
-  pdf/report.pdf                      ignored
-  ANONYMIZED/xml/RAW/PATIENT-001/V1/<new name>.xml
-```
+`--anonymize-patient-folders` treats the patient folder name as one more
+identifier of the patient, for folders named after the patient or their
+hospital number:
 
-The anonymized copy keeps the same sub-folders. Folder names are not
-anonymized yet (`folder_anonymized` is `FALSE` in the catalog): a patient
-folder named after the patient keeps that name in `ANONYMIZED`.
+- the patient folder is named after the patient pseudonym in `ANONYMIZED`;
+- the folder name is replaced by the pseudonym wherever it appears in the
+  files (any field or free text, all formats), in the file names, and in
+  the names of the sub-folders of the patient folder;
+- it is matched as a whole, ignoring case, accents and spacing: a part of
+  it (such as a number alone) is not replaced;
+- folders above the patient folders keep their names.
 
-Only files that ecgdatakit reads are processed; every other file (PDF,
-images, unsupported formats) is skipped and not copied. EDAN Holter files
-are not supported.
+Without it, every folder keeps its name in `ANONYMIZED`, and a folder
+named after the patient shows that name. The catalog column
+`folder_anonymized` says which of the two was used for each file.
 
 ## What is replaced
 
 | Format | Patient name | Patient ID | ECG ID |
 |--------|--------------|------------|--------|
-| HL7 aECG | `subjectDemographicPerson/name` | `trialSubject/id@extension` | `AnnotatedECG/id` (UUID kept as a UUID) |
+| HL7 aECG | `subjectDemographicPerson/name` | `trialSubject/id@extension` | `AnnotatedECG/id` |
 | GE MUSE XML | `PatientLastName`, `PatientFirstName` | `PatientID`, `SecondaryID` | `PharmaUniqueECGID` |
 | Philips Sierra XML | `name/lastname`, `firstname`, `middlename` | `patientid`, `uniquepatientid`, `MRN` | `documentname` |
 | Mortara ELI XML | `SUBJECT` name attributes, demographic fields 1 and 7 | `SUBJECT@ID`, demographic field 2 | none |
@@ -72,24 +78,31 @@ are not supported.
 | WFDB | `# name:` comment | `# id:` comment | none |
 | AliveCor Kardia JSON | none | `patientID` | `id` |
 
-The last name and the ID take the patient pseudonym and the first name is
-emptied. The patient's name and IDs are also replaced inside comments and
-other free-text fields. Birth date, sex, clinician and operator names,
-acquisition dates and visit labels are kept.
+- The last name and the patient ID take the patient pseudonym; the first
+  name is emptied.
+- The ECG ID takes the ECG pseudonym.
+- The patient's name and ID (and, with `--anonymize-patient-folders`, the
+  patient folder name) are also replaced inside comments and other
+  free-text fields.
+- Birth date, sex, clinician and operator names, acquisition dates and
+  visit labels are kept.
 
-Only the bytes of these values change: an XML file keeps its encoding,
-indentation and line endings, binary headers keep their size, and a
-checksum (ISHNE, SCP-ECG) is computed again when the original one was
-valid. DICOM files are written back with pydicom.
+**Dates in the patient ID field.** Some devices store a date in the
+patient ID field (for example `28 11 23`). A value of that field written
+as a date (`28 11 23`, `28/11/2023`, `2023-11-28`) is not an identifier:
+it is kept as is in the file and in the file name, it is not used to tell
+patients apart, and the catalog row is marked as risk with the reason so
+the file can be reviewed. A number without separators (`20231128`) is
+still treated as an ID.
 
-Each anonymized file is read back with ecgdatakit before it is published.
-It must give the same samples, bit for bit, and the same fields apart from
-the replaced values; otherwise it is not published and the catalog marks it
-`failed`.
+**Format kept.** Only the bytes of the identity values change: an XML
+file keeps its encoding, indentation and line endings, binary headers keep
+their size, and a checksum (ISHNE, SCP-ECG) is computed again when the
+original one was valid. DICOM files are written back with pydicom.
 
 ## File names
 
-Parts of the file name equal to the file's name, patient ID or ECG ID
+Parts of the file name equal to the patient's name, patient ID or ECG ID
 (ignoring case and accents) are replaced; dates, visits and other parts are
 kept:
 
@@ -98,85 +111,67 @@ R^ECG^F^0^PID-0042^DOE_20240109083645_V1.xml
 R^ECG^F^0^Hh3kQ9sLm2Xa^Hh3kQ9sLm2Xa_20240109083645_V1.xml
 ```
 
-When a file has no name field, the words of its patient folder name are
-used. Parts that may still identify the patient, such as initials or long
-random identifiers, are kept and the catalog row is marked `risk` with the
-reason. Review these rows.
+- With `--anonymize-patient-folders`, the patient folder name is replaced
+  in file names too.
+- With `--patients-dir-name`, a file that has no name field also has the
+  words of its patient folder name replaced in its file name.
+- Parts that may still identify the patient, such as initials or long
+  random identifiers, are kept and the catalog row is marked `risk` with
+  the reason. Review these rows.
+
+## Pseudonyms
+
+- **Patient pseudonyms** are random 12-character codes, for example
+  `qifUPPHzDGKG`.
+- **ECG pseudonyms** are random UUIDs, written as is in place of the ECG
+  ID. DICOM only accepts digits and dots, so it gets the same UUID in its
+  standard UID form (`2.25.` followed by the UUID as a number).
+
+A code already used in the dataset is never given again. A file anonymized
+again after a change keeps its pseudonyms.
 
 ## Catalog
 
 `anonymization_catalog.csv` has one row per raw file:
 
-- `status`: `anonymized`, `copied` (no identity value in the file),
-  `changed` (anonymized again after the raw file changed), `deleted` (raw
-  file removed, its copy deleted), `failed` (see `message`).
-- `risk`, `risk_reason`.
-- `raw_path`, `anonymized_path` (relative to the dataset folder),
-  `patient_folder`, `format`.
-- `patient_code`, `ecg_code` and the original values
-  (`original_patient_id`, `original_last_name`, `original_first_name`,
-  `original_ecg_id`, `original_file_name`), `anonymized_ecg_id`,
-  `anonymized_file_name`.
-- `raw_sha256`, `anonymized_sha256`, `raw_size`, `raw_mtime_ns`.
-- `detected_at`, `anonymized_at`, `last_change_at`, `tool_version`.
+| Column | Content |
+|--------|---------|
+| `status` | `anonymized`, `copied` (no identity value in the file), `changed` (anonymized again after the raw file changed), `deleted` (raw file removed, its copy deleted), `failed` (see `message`) |
+| `risk`, `risk_reason` | `TRUE` when something should be reviewed, and why |
+| `raw_path`, `anonymized_path` | Paths relative to the dataset folder |
+| `patient_folder` | What groups the patient's files: the patient folder with `--patients-dir-name`, otherwise the patient ID (`id:...`) or name (`name:...`) found in the file |
+| `format` | Parser that read the file |
+| `patient_code`, `ecg_code` | The pseudonyms |
+| `original_patient_id`, `original_last_name`, `original_first_name`, `original_ecg_id`, `original_file_name` | The values replaced (several values are separated by a vertical bar) |
+| `anonymized_file_name` | New file name |
+| `folder_anonymized` | `TRUE` when the patient folder was renamed |
+| `companions` | Other files of the record (WFDB) |
+| `raw_size`, `raw_mtime_ns`, `raw_sha256`, `anonymized_sha256` | Used to detect changes and check copies |
+| `detected_at`, `anonymized_at`, `last_change_at` | Dates of the events |
+| `message`, `tool_version` | Failure message, ecgdatakit version |
 
 The catalog links pseudonyms to patients: keep it where only authorized
 people can read it.
 
-Pseudonyms are random 12-character codes. Each run checks that every
-patient folder has one code and every code one patient folder, that ECG
-codes and anonymized paths are unique, and that the number of files
-matches between raw and anonymized folders, in total and per patient.
+## Checks
 
-## Runs
+At the end of each run, for every dataset:
 
-```bash
-ecgdatakit anonymize run SOURCE                                   # the whole source
-ecgdatakit anonymize run SOURCE --datasets --raw-dir RAW          # each sub-folder, RAW folders only
-ecgdatakit anonymize run SOURCE --datasets --dataset dataset-a    # one dataset
-ecgdatakit anonymize run SOURCE SOURCE/PATIENT-001                # one folder (or file)
-ecgdatakit anonymize run SOURCE SOURCE/PATIENT-001 --no-recursive # without its sub-folders
-ecgdatakit anonymize run SOURCE --dry-run                         # report only
+- each patient has one pseudonym and each pseudonym one patient;
+- ECG pseudonyms and anonymized paths are unique;
+- every raw file has its anonymized copy (or is marked `failed`), in total
+  and per patient (when the whole dataset is processed, not only some of
+  its paths).
+
+A problem is reported and the run ends with exit code 1. The summary of
+the run shows the counts side by side:
+
+```text
+  120 raw file(s) -> 120 anonymized, 120 ECG pseudonym(s); 40 patient(s) -> 40 patient pseudonym(s)
 ```
 
-A run only reads files that are new or whose size or modification time
-changed since the catalog was written. A changed file is anonymized again
-with the same pseudonyms; a deleted file loses its anonymized copy. A
-dataset is locked while it is processed (`.anonymize.lock`).
+```{toctree}
+:hidden:
 
-From Python, see the {doc}`API reference <reference/anonymization>`.
-
-## Daemon
-
-```bash
-ecgdatakit anonymize daemon SOURCE --datasets --raw-dir RAW --interval 21600 --settle 60
-ecgdatakit anonymize shell
-```
-
-The daemon takes the same options as `run`. It runs a full pass at start
-and then every `--interval` seconds. In between, file-system events start a
-pass on the folders that changed, once no change arrived for `--settle`
-seconds (files still being copied are not read). Events need `watchdog` and
-a local disk: on a network mount, use the scheduled passes only
-(`--no-watch`).
-
-The shell talks to the daemon on `127.0.0.1:8765`:
-
-| Command | Effect |
-|---------|--------|
-| `status` | current activity, last and next pass, last results |
-| `datasets` | datasets with their catalog counts |
-| `catalog [TEXT] [--dataset NAME] [--status S] [--risk] [--limit N]` | browse a catalog |
-| `scan [DATASET]` | start a pass now |
-
-A single command can be run directly: `ecgdatakit anonymize shell status`.
-
-### Docker
-
-```bash
-docker build -f docker/anonymizer/Dockerfile -t ecgdatakit-anonymizer .
-docker run -d --name ecg-anonymizer --restart unless-stopped \
-  -v /path/to/source:/data -p 127.0.0.1:8765:8765 \
-  ecgdatakit-anonymizer --datasets --raw-dir RAW
-docker exec -it ecg-anonymizer ecgdatakit anonymize shell
+anonymization/usage
 ```

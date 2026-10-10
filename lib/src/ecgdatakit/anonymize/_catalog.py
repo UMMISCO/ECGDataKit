@@ -25,7 +25,6 @@ COLUMNS = [
     "original_last_name",
     "original_first_name",
     "original_ecg_id",
-    "anonymized_ecg_id",
     "original_file_name",
     "anonymized_file_name",
     "folder_anonymized",

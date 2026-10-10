@@ -72,7 +72,7 @@ class EDFHandler(Handler):
         result = Rewrite()
         if plus:
             parts = patient.split()
-            if parts and parts[0] != "X":
+            if parts and parts[0] != "X" and parts[0].replace("_", " ") not in codes.keep:
                 parts[0] = codes.patient
             if len(parts) >= 4 and parts[3] != "X":
                 parts[3] = codes.patient
@@ -81,11 +81,10 @@ class EDFHandler(Handler):
             rec = recording.split()
             if len(rec) >= 3 and rec[0] == "Startdate" and rec[2] != "X":
                 rec[2] = codes.ecg
-                result.ecg_written.append(codes.ecg)
             rec[3:] = [replacer.replace(p).replace(" ", "_") for p in rec[3:]]
             new_recording = " ".join(rec)
         else:
-            new_patient = codes.patient if patient.strip() else patient
+            new_patient = codes.patient if patient.strip() and patient.strip() not in codes.keep else patient
             new_recording = replacer.replace(recording)
         for (start, size), value in ((_EDF_PATIENT, new_patient), (_EDF_RECORDING, new_recording)):
             raw = value.encode("latin-1", errors="replace")

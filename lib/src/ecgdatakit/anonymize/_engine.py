@@ -2,7 +2,7 @@
 
 The source path is one dataset, or with ``datasets=True`` each of its
 sub-folders is one. In a dataset, files (only those under folders named
-``raw_dir`` when it is given) are detected with the ecgdatakit parsers,
+``patients_dir_name`` when it is given) are detected with the ecgdatakit parsers,
 anonymized by the format handler, checked (see ``_verify``), then moved
 into the dataset's output folder. The dataset's CSV catalog records every
 file. A file already in the catalog with the same size and modification
@@ -26,9 +26,9 @@ from pathlib import Path
 
 from ecgdatakit import __version__
 from ecgdatakit.anonymize._catalog import ACTIVE, SEPARATOR, Catalog
-from ecgdatakit.anonymize._codes import new_code
-from ecgdatakit.anonymize._filenames import new_file_name, split_name
-from ecgdatakit.anonymize._identity import Identity, Replacer, norm
+from ecgdatakit.anonymize._codes import new_code, new_ecg_code
+from ecgdatakit.anonymize._filenames import new_file_name, new_part_name, split_name
+from ecgdatakit.anonymize._identity import Identity, Replacer, looks_like_date, norm
 from ecgdatakit.anonymize._verify import VerificationError, verify
 from ecgdatakit.anonymize.formats import HANDLERS, Codes, Handler, Spliced
 from ecgdatakit.anonymize.formats._base import is_data
@@ -78,6 +78,16 @@ class Report:
     risks: int = 0
     skipped_unsupported: int = 0
     waiting: int = 0
+    raw_files: int = 0
+    """Raw files found by this run (the same as *found*)."""
+    anonymized_files: int = 0
+    """Of these, files with an anonymized copy on disk."""
+    ecg_codes: int = 0
+    """Distinct ECG pseudonyms of these files."""
+    patients: int = 0
+    """Distinct patients of these files (patient folders, or patient IDs)."""
+    patient_codes: int = 0
+    """Distinct patient pseudonyms of these files."""
     errors: list[str] = field(default_factory=list)
 
     @property
@@ -117,34 +127,67 @@ class _DatasetLock:
 class Anonymizer:
     """Anonymize the ECG files under a source path.
 
+    Raw files are only read, never modified.
+
     Parameters
     ----------
     source : path
-        Folder to anonymize.
+        Folder to anonymize, or a single file. A file is anonymized on its
+        own: its folder holds the output folder and the catalog.
     datasets : bool
         ``False`` (default): *source* is one dataset. ``True``: every
         sub-folder of *source* is a separate dataset, with its own output
         folder and catalog.
-    raw_dir : str, optional
-        When given, only files under folders with this name are read and the
-        first folder under it is the patient folder. When ``None``, every
-        file of the dataset is read (except the output folder) and the first
-        folder of the dataset is the patient folder.
-    out_dir, catalog_name : str
-        Output folder and CSV catalog created in each dataset.
-
-    Raw files are only read, never modified.
+    patients_dir_name : str, optional
+        Name of the folder that holds the patient folders, the same in every
+        dataset (for example ``"RAW"``). Only files under this folder are
+        read, and each of its sub-folders is one patient: its files share one
+        patient pseudonym. When ``None``, every file of every folder is read
+        (except the output folder) and a file's patient pseudonym follows
+        its patient ID, or its name when it has no ID.
+    anonymize_patient_folders : bool
+        ``False`` (default): folder names are copied as they are. ``True``
+        (needs *patients_dir_name*): in the output, each patient folder is
+        named after the patient pseudonym, and its sub-folders get the same
+        replacement as file names. Folders above the patient folders keep
+        their names. Turning it on or off for files already anonymized moves
+        their copies on the next run.
+    out_dir : str
+        Output folder created in each dataset, with the same sub-folders
+        as the dataset.
+    catalog_name : str
+        CSV catalog file created in each dataset.
+    threads : int
+        Parallel workers.
+    settle_seconds : float
+        Files modified less than this many seconds ago are left for a later
+        run (they may still be copied).
+    lock_stale_seconds : float
+        Age after which a lock left by a stopped run is ignored.
+    dry_run : bool
+        Report what would be done, write nothing.
     """
 
-    def __init__(self, source: str | Path, datasets: bool = False, raw_dir: str | None = None,
+    def __init__(self, source: str | Path, datasets: bool = False,
+                 patients_dir_name: str | None = None, anonymize_patient_folders: bool = False,
                  out_dir: str = "ANONYMIZED", catalog_name: str = "anonymization_catalog.csv",
                  threads: int = 8, settle_seconds: float = 0.0,
                  lock_stale_seconds: float = 12 * 3600, dry_run: bool = False) -> None:
-        self.source = Path(source).resolve()
-        if not self.source.is_dir():
-            raise FileNotFoundError(f"Source folder not found: {self.source}")
+        source = Path(source).resolve()
+        self.single_file: Path | None = None
+        if source.is_file():
+            if datasets:
+                raise ValueError("A single file cannot hold datasets")
+            self.single_file, source = source, source.parent
+        elif not source.is_dir():
+            raise FileNotFoundError(f"Source not found: {source}")
+        self.source = source
         self.multi = datasets
-        self.raw_dir = raw_dir or None
+        self.patients_dir_name = patients_dir_name or None
+        if anonymize_patient_folders and self.patients_dir_name is None:
+            raise ValueError("Anonymizing patient folders needs patients_dir_name: "
+                             "without it the patient folders are not known")
+        self.folders = bool(anonymize_patient_folders)
         self.out_dir = out_dir
         self.catalog_name = catalog_name
         self.threads = max(1, int(threads))
@@ -181,6 +224,8 @@ class Anonymizer:
     def run(self, paths: list[str | Path] | None = None, recursive: bool = True,
             datasets: list[str] | None = None) -> list[Report]:
         """Anonymize every dataset, the named *datasets*, or only *paths*."""
+        if not paths and self.single_file is not None:
+            paths = [self.single_file]
         if paths:
             by_dataset: dict[Path, list[Path]] = {}
             for p in paths:
@@ -215,8 +260,8 @@ class Anonymizer:
     def _raw_roots(self, dataset: Path, scope: list[Path] | None, recursive: bool):
         """Yield (folder to list, recursive, root of the patient folders)."""
         out_root = dataset / self.out_dir
-        if self.raw_dir is None:
-            # Every file of the dataset is read
+        if self.patients_dir_name is None:
+            # Every file of the dataset is read, patients follow their IDs
             for target in scope or [dataset]:
                 if target == out_root or out_root in target.parents:
                     raise ValueError(f"{target} is inside the anonymized output folder")
@@ -228,7 +273,7 @@ class Anonymizer:
                 if root_path == dataset:
                     dirs[:] = [d for d in dirs if d != self.out_dir]
                 dirs[:] = sorted(d for d in dirs if not _hidden(d))
-                if root_path.name == self.raw_dir and root_path != dataset:
+                if root_path.name == self.patients_dir_name and root_path != dataset:
                     dirs[:] = []
                     yield root_path, True, root_path
             return
@@ -236,20 +281,20 @@ class Anonymizer:
             if target == out_root or out_root in target.parents:
                 raise ValueError(f"{target} is inside the anonymized output folder")
             raw_root = next((p for p in [target, *target.parents]
-                             if p.name == self.raw_dir and dataset in p.parents), None)
+                             if p.name == self.patients_dir_name and dataset in p.parents), None)
             if raw_root is not None:
                 yield target, recursive, raw_root
                 continue
             if target.is_file():
-                raise ValueError(f"{target} is not inside a {self.raw_dir} folder")
+                raise ValueError(f"{target} is not inside a {self.patients_dir_name} folder")
             if not recursive:
-                raise ValueError(f"{target} is not inside a {self.raw_dir} folder "
+                raise ValueError(f"{target} is not inside a {self.patients_dir_name} folder "
                                  "(use recursion to look for one below it)")
             for root, dirs, _ in os.walk(target):
                 root_path = Path(root)
                 dirs[:] = sorted(d for d in dirs if not _hidden(d)
                                  and not (root_path == dataset and d == self.out_dir))
-                if root_path.name == self.raw_dir:
+                if root_path.name == self.patients_dir_name:
                     dirs[:] = []
                     yield root_path, True, root_path
 
@@ -342,7 +387,8 @@ class Anonymizer:
                     if (old and old["status"] in ACTIVE and old["raw_size"] == str(st.st_size)
                             and old["raw_mtime_ns"] == str(st.st_mtime_ns)
                             and not old["companions"]):
-                        entries[rel] = Entry(path, rel, old["patient_folder"], [],
+                        entries[rel] = Entry(path, rel,
+                                             self._patient_folder(dataset, raw_root, path), [],
                                              st.st_size, st.st_mtime_ns, None)
                         continue
                     handler = self._detect(path)
@@ -361,8 +407,10 @@ class Anonymizer:
                                          companions, size, mtime, handler)
         return entries, scanned
 
-    @staticmethod
-    def _patient_folder(dataset: Path, raw_root: Path, path: Path) -> str:
+    def _patient_folder(self, dataset: Path, raw_root: Path, path: Path) -> str:
+        """Patient folder of *path*, "" without ``patients_dir_name``."""
+        if self.patients_dir_name is None:
+            return ""
         rel = path.relative_to(raw_root)
         if len(rel.parts) > 1:
             return (raw_root / rel.parts[0]).relative_to(dataset).as_posix()
@@ -373,6 +421,7 @@ class Anonymizer:
     def _run_locked(self, dataset: Path, scope, recursive, report: Report) -> Report:
         catalog = Catalog(self.catalog_path(dataset))
         entries, scanned = self._scan(dataset, scope, recursive, catalog, report)
+        self._check_same_grouping(dataset, catalog, entries)
         report.found = len(entries)
         state = _State(catalog)
         work = []
@@ -380,7 +429,9 @@ class Anonymizer:
             old = catalog.get(rel)
             if entry.handler is None and old is not None:
                 # Unchanged on disk; re-done only when its output disappeared
-                if all((dataset / p).exists() for p in _outputs(old)):
+                # or the folder mode changed
+                if (all((dataset / p).exists() for p in _outputs(old))
+                        and old["folder_anonymized"] == self._folder_flag()):
                     report.unchanged += 1
                     continue
                 entry.handler = self._detect(entry.path)
@@ -388,7 +439,6 @@ class Anonymizer:
                     report.skipped_unsupported += 1
                     continue
                 entry.companions = entry.handler.companions(entry.path)
-                entry.patient_folder = old["patient_folder"] or entry.patient_folder
             work.append(entry)
 
         done = 0
@@ -411,8 +461,10 @@ class Anonymizer:
                     row["status"] = catalog.get(entry.rel)["status"]
                 else:
                     setattr(report, status, getattr(report, status) + 1)
+                    log.info("%s: %s -> %s", status, entry.rel, row.get("anonymized_path", ""))
                 if row.get("risk") == "TRUE":
                     report.risks += 1
+                    log.info("risk: %s (%s)", entry.rel, row.get("risk_reason", ""))
                 if not self.dry_run:
                     catalog.put(row)
                     done += 1
@@ -423,6 +475,7 @@ class Anonymizer:
             report.deleted = self._deleted(dataset, entries, scanned, catalog)
             catalog.save()
             report.errors = self.check(dataset, catalog, entries if scope is None else None)
+            self._count(dataset, catalog, entries, report)
         for error in report.errors:
             log.error("%s: %s", dataset.name, error)
         return report
@@ -435,12 +488,17 @@ class Anonymizer:
         sha = _sha256(files)
         now = _now()
         if (old and old["status"] in ACTIVE and old["raw_sha256"] == sha
+                and old["folder_anonymized"] == self._folder_flag()
                 and all((dataset / p).exists() for p in _outputs(old))):
             row = dict(old, raw_size=str(entry.size), raw_mtime_ns=str(entry.mtime_ns))
             row["status"] = "unchanged"
             return row
 
         identity = handler.identity(entry.path)
+        # A date stored in a patient ID field is not an identifier: it is
+        # kept as is and not used to group patients
+        kept_dates = [v for v in identity.patient_ids if looks_like_date(v)]
+        identity.patient_ids = [v for v in identity.patient_ids if v not in kept_dates]
         key = entry.patient_folder or _identity_key(identity) or f"file:{entry.rel}"
         with state.lock:
             patient_code = state.patient_codes.get(key)
@@ -451,28 +509,35 @@ class Anonymizer:
             if old and old["ecg_code"] and old["original_ecg_id"] == ecg_ids:
                 ecg_code = old["ecg_code"]
             else:
-                ecg_code = new_code(state.used)
+                ecg_code = new_ecg_code(state.used)
 
         folder_names = [Path(entry.patient_folder).name] if entry.patient_folder else []
-        risks: list[str] = []
+        # With anonymized patient folders, the folder name identifies the
+        # patient: it is replaced wherever it appears in the file and its name
+        folder_ids = folder_names if self.folders else []
+        risks: list[str] = [f"patient ID field holds a date ({v}), kept as is" for v in kept_dates]
         if isinstance(handler, WFDBHandler) and handler.is_multi_segment(entry.path):
             new_name = entry.path.name
-            if new_file_name(entry.path.name, identity, patient_code, ecg_code, folder_names)[0] != new_name:
+            if new_file_name(entry.path.name, identity, patient_code, ecg_code, folder_names,
+                             folder_ids)[0] != new_name:
                 risks.append("multi-segment WFDB record name kept (it may hold identity)")
         else:
             new_name, name_risks = new_file_name(entry.path.name, identity, patient_code,
-                                                 ecg_code, folder_names)
+                                                 ecg_code, folder_names, folder_ids)
             risks += name_risks
 
-        rel_dir = Path(entry.rel).parent
+        rel_dir, folder_risks = self._output_dir(entry, identity, patient_code, ecg_code,
+                                                 folder_names)
+        risks += folder_risks
         out_dir = dataset / self.out_dir / rel_dir
         with state.lock:
             new_name = state.reserve((self.out_dir / rel_dir / new_name).as_posix(), entry.rel,
                                      new_name, ecg_code)
         out_path = out_dir / new_name
 
-        replacer = Replacer(identity, patient_code, ecg_code)
-        rewrite = handler.rewrite(entry.path, out_path, identity, Codes(patient_code, ecg_code), replacer)
+        replacer = Replacer(identity, patient_code, ecg_code, extra_ids=folder_ids)
+        codes = Codes(patient_code, ecg_code, frozenset(kept_dates))
+        rewrite = handler.rewrite(entry.path, out_path, identity, codes, replacer)
         risks += rewrite.notes
 
         row = {
@@ -485,10 +550,9 @@ class Anonymizer:
             "original_last_name": SEPARATOR.join(identity.last_names),
             "original_first_name": SEPARATOR.join(identity.first_names),
             "original_ecg_id": ecg_ids,
-            "anonymized_ecg_id": SEPARATOR.join(rewrite.ecg_written),
             "original_file_name": entry.path.name,
             "anonymized_file_name": new_name,
-            "folder_anonymized": "FALSE",
+            "folder_anonymized": self._folder_flag(),
             "companions": SEPARATOR.join(
                 (Path(self.out_dir) / rel_dir / p.name).as_posix()
                 for p in rewrite.outputs if p != out_path),
@@ -507,7 +571,7 @@ class Anonymizer:
         staging = out_dir / _STAGING / ecg_code
         try:
             staged = self._stage(rewrite.outputs, staging)
-            verify(entry.path, staged[out_path], replacer, patient_code)
+            verify(entry.path, staged[out_path], replacer, patient_code, kept=kept_dates)
             values = handler.free_text(_head(rewrite.outputs[out_path]))
             left = sum(1 for v in values if replacer.replace_value(v, is_data(v)) != v)
             if left:
@@ -517,6 +581,7 @@ class Anonymizer:
                     target = dataset / p
                     if target.exists() and target not in staged:
                         target.unlink()
+                        _remove_empty_up_to(target.parent, dataset / self.out_dir)
             for final, temp in staged.items():
                 os.replace(temp, final)
             row["anonymized_sha256"] = _sha256([out_path])
@@ -526,7 +591,11 @@ class Anonymizer:
             shutil.rmtree(staging, ignore_errors=True)
             _remove_empty(staging.parent)
 
-        if old and old["status"] in ACTIVE | {"deleted", "failed"}:
+        if old and old["status"] in ACTIVE and old["raw_sha256"] == sha:
+            # Same raw file, only its output moved (folder mode changed)
+            status = old["status"]
+            row["last_change_at"] = old.get("last_change_at", "")
+        elif old and old["status"] in ACTIVE | {"deleted", "failed"}:
             status = "changed"
             row["last_change_at"] = now
         else:
@@ -535,6 +604,27 @@ class Anonymizer:
         row.update(status=status, anonymized_at=now, risk="TRUE" if risks else "FALSE",
                    risk_reason=SEPARATOR.join(dict.fromkeys(risks)), message="")
         return row
+
+    def _folder_flag(self) -> str:
+        return "TRUE" if self.folders else "FALSE"
+
+    def _output_dir(self, entry: Entry, identity: Identity, patient_code: str, ecg_code: str,
+                    folder_names: list[str]) -> tuple[Path, list[str]]:
+        """Output sub-folder of *entry*, with the patient folder renamed to
+        the pseudonym when patient folders are anonymized."""
+        rel_dir = Path(entry.rel).parent
+        if not self.folders or not entry.patient_folder:
+            return rel_dir, []
+        patient = Path(entry.patient_folder)
+        below = rel_dir.relative_to(patient).parts
+        risks: list[str] = []
+        parts = []
+        for part in below:
+            new, part_risks = new_part_name(part, identity, patient_code, ecg_code, folder_names,
+                                            folder_names)
+            parts.append(new)
+            risks += [f"folder {r}" for r in part_risks]
+        return patient.parent / patient_code / Path(*parts) if parts else patient.parent / patient_code, risks
 
     @staticmethod
     def _stage(outputs: dict, staging: Path) -> dict[Path, Path]:
@@ -579,6 +669,7 @@ class Anonymizer:
                 continue
             for p in _outputs(row):
                 (dataset / p).unlink(missing_ok=True)
+                _remove_empty_up_to((dataset / p).parent, dataset / self.out_dir)
             row.update(status="deleted", last_change_at=now, anonymized_path="",
                        anonymized_sha256="", companions="")
             catalog.put(row)
@@ -586,6 +677,43 @@ class Anonymizer:
         return count
 
     # -- consistency -------------------------------------------------------------
+
+    def _check_same_grouping(self, dataset: Path, catalog: Catalog,
+                             entries: dict[str, Entry]) -> None:
+        """Refuse to mix two ways of grouping patients in one catalog.
+
+        Patients are grouped by patient folder with ``patients_dir_name``
+        and by patient ID or name without it. A catalog written with the
+        other setting would give the same patient two pseudonyms.
+        """
+        for rel, entry in entries.items():
+            old = catalog.get(rel)
+            if old is None or not old["patient_folder"]:
+                continue
+            by_identity = old["patient_folder"].startswith(("id:", "name:", "file:"))
+            if entry.patient_folder and by_identity or not self.patients_dir_name and not by_identity:
+                raise ValueError(
+                    f"{dataset.name} was anonymized "
+                    f"{'without' if by_identity else 'with'} --patients-dir-name "
+                    "(patients_dir_name): run it with the same setting, or delete its "
+                    f"{self.out_dir} folder and {self.catalog_name} to start again")
+            if entry.patient_folder and old["patient_folder"] != entry.patient_folder:
+                raise ValueError(
+                    f"{dataset.name} was anonymized with another --patients-dir-name "
+                    "(patients_dir_name): run it with the same name, or delete its "
+                    f"{self.out_dir} folder and {self.catalog_name} to start again")
+
+    @staticmethod
+    def _count(dataset: Path, catalog: Catalog, entries: dict[str, Entry], report: Report) -> None:
+        """Counts of the raw files of this run and of their anonymized side."""
+        rows = [catalog.get(rel) for rel in entries]
+        done = [r for r in rows if r and r["status"] in ACTIVE
+                and (dataset / r["anonymized_path"]).exists()]
+        report.raw_files = len(entries)
+        report.anonymized_files = len(done)
+        report.ecg_codes = len({r["ecg_code"] for r in done})
+        report.patients = len({r["patient_folder"] for r in done})
+        report.patient_codes = len({r["patient_code"] for r in done})
 
     def check(self, dataset: Path, catalog: Catalog,
               entries: dict[str, Entry] | None = None) -> list[str]:
@@ -696,6 +824,16 @@ def _sha256(paths: list[Path]) -> str:
 
 def _head(content) -> bytes:
     return content.head if isinstance(content, Spliced) else content
+
+
+def _remove_empty_up_to(folder: Path, stop: Path) -> None:
+    """Remove *folder* and its parents while they are empty, never *stop*."""
+    while folder != stop and stop in folder.parents:
+        try:
+            folder.rmdir()
+        except OSError:
+            return
+        folder = folder.parent
 
 
 def _remove_empty(folder: Path) -> None:

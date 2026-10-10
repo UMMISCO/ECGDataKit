@@ -154,10 +154,10 @@ class SCPHandler(Handler):
             kind = _SCP_IDENTITY.get(tag)
             text = _scp_text(value, encoding) if tag != 255 else ""
             new_value = None
-            if kind and text:
+            if kind == "patient_ids" and text in codes.keep:
+                pass
+            elif kind and text:
                 new = {"first_names": ""}.get(kind, codes.ecg if kind == "ecg_ids" else codes.patient)
-                if kind == "ecg_ids":
-                    result.ecg_written.append(new)
                 new_value = _scp_encode(new, encoding)
             elif tag in _SCP_FREE_TEXT and text and replacer:
                 new = replacer.replace(text)
