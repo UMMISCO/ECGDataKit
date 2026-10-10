@@ -146,12 +146,13 @@ class Anonymizer:
         (except the output folder) and a file's patient pseudonym follows
         its patient ID, or its name when it has no ID.
     anonymize_patient_folders : bool
-        ``False`` (default): folder names are copied as they are. ``True``
-        (needs *patients_dir_name*): in the output, each patient folder is
-        named after the patient pseudonym, and its sub-folders get the same
-        replacement as file names. Folders above the patient folders keep
-        their names. Turning it on or off for files already anonymized moves
-        their copies on the next run.
+        ``False`` (default): folder names are copied as they are. ``True``:
+        the patient folders are the sub-folders of the *patients_dir_name*
+        folders, or without *patients_dir_name* the folders directly inside
+        the dataset. Each one groups one patient, is named after the patient
+        pseudonym in the output, and its name is replaced wherever it
+        appears in the files, file names and sub-folder names. Folders above
+        the patient folders keep their names.
     out_dir : str
         Output folder created in each dataset, with the same sub-folders
         as the dataset.
@@ -184,10 +185,10 @@ class Anonymizer:
         self.source = source
         self.multi = datasets
         self.patients_dir_name = patients_dir_name or None
-        if anonymize_patient_folders and self.patients_dir_name is None:
-            raise ValueError("Anonymizing patient folders needs patients_dir_name: "
-                             "without it the patient folders are not known")
         self.folders = bool(anonymize_patient_folders)
+        # Patients are grouped by folder with patients_dir_name, or with
+        # anonymized patient folders (then the dataset's own sub-folders)
+        self.by_folder = self.patients_dir_name is not None or self.folders
         self.out_dir = out_dir
         self.catalog_name = catalog_name
         self.threads = max(1, int(threads))
@@ -408,8 +409,10 @@ class Anonymizer:
         return entries, scanned
 
     def _patient_folder(self, dataset: Path, raw_root: Path, path: Path) -> str:
-        """Patient folder of *path*, "" without ``patients_dir_name``."""
-        if self.patients_dir_name is None:
+        """Patient folder of *path*: the first folder under *raw_root* (the
+        ``patients_dir_name`` folder, or the dataset). "" when patients are
+        not grouped by folder or *path* is directly in *raw_root*."""
+        if not self.by_folder:
             return ""
         rel = path.relative_to(raw_root)
         if len(rel.parts) > 1:
@@ -682,26 +685,28 @@ class Anonymizer:
                              entries: dict[str, Entry]) -> None:
         """Refuse to mix two ways of grouping patients in one catalog.
 
-        Patients are grouped by patient folder with ``patients_dir_name``
-        and by patient ID or name without it. A catalog written with the
-        other setting would give the same patient two pseudonyms.
+        Patients are grouped by patient folder (with ``patients_dir_name``
+        or ``anonymize_patient_folders``) or by patient ID or name (with
+        neither). A catalog written with the other grouping would give the
+        same patient two pseudonyms.
         """
+        start_again = (f"or delete its {self.out_dir} folder and {self.catalog_name} "
+                       "to start again")
         for rel, entry in entries.items():
             old = catalog.get(rel)
             if old is None or not old["patient_folder"]:
                 continue
             by_identity = old["patient_folder"].startswith(("id:", "name:", "file:"))
-            if entry.patient_folder and by_identity or not self.patients_dir_name and not by_identity:
+            if entry.patient_folder and by_identity or not self.by_folder and not by_identity:
+                was = "patient IDs" if by_identity else "patient folders"
                 raise ValueError(
-                    f"{dataset.name} was anonymized "
-                    f"{'without' if by_identity else 'with'} --patients-dir-name "
-                    "(patients_dir_name): run it with the same setting, or delete its "
-                    f"{self.out_dir} folder and {self.catalog_name} to start again")
+                    f"{dataset.name} was anonymized with patients grouped by {was} "
+                    "(--patients-dir-name and --anonymize-patient-folders decide it): "
+                    f"run it with the same options, {start_again}")
             if entry.patient_folder and old["patient_folder"] != entry.patient_folder:
                 raise ValueError(
-                    f"{dataset.name} was anonymized with another --patients-dir-name "
-                    "(patients_dir_name): run it with the same name, or delete its "
-                    f"{self.out_dir} folder and {self.catalog_name} to start again")
+                    f"{dataset.name} was anonymized with other patient folders "
+                    f"(another --patients-dir-name): run it with the same options, {start_again}")
 
     @staticmethod
     def _count(dataset: Path, catalog: Catalog, entries: dict[str, Entry], report: Report) -> None:

@@ -37,14 +37,19 @@ depends on two options:
 | Options | Files of one patient | Replaced by the patient pseudonym |
 |---------|----------------------|-----------------------------------|
 | none | Files with the same patient ID, or the same name when the file has no ID, wherever they are | The patient's name and ID from the fields of each format |
-| `--patients-dir-name NAME` | Files of the same patient folder: each sub-folder of the folder called `NAME` is one patient | The same as above |
-| `--patients-dir-name NAME` and `--anonymize-patient-folders` | Files of the same patient folder | The same as above, plus the patient folder name, wherever it appears |
+| `--patients-dir-name NAME` | Files of the same patient folder: each sub-folder of the folders called `NAME` is one patient | The same as above |
+| `--anonymize-patient-folders` | Files of the same patient folder: each folder directly inside the dataset is one patient | The same as above, plus the patient folder name, wherever it appears |
+| `--patients-dir-name NAME` and `--anonymize-patient-folders` | Files of the same patient folder: each sub-folder of the folders called `NAME` is one patient | The same as above, plus the patient folder name, wherever it appears |
 
-Without `--patients-dir-name`, folders play no part: a patient is known
-only from the identity values stored in their files.
+With neither option, folders play no part: a patient is known only from
+the identity values stored in their files.
 
-With `--patients-dir-name`, the patient folder decides, even for a file
-whose ID is missing or different.
+With either option, patients are grouped by patient folder: the folder
+decides, even for a file whose ID is missing or different. Files placed
+directly in the dataset, outside any patient folder, are grouped by their
+patient ID. Use `--patients-dir-name` when the patient folders are deeper
+in the dataset (for example under `xml/RAW/`), and
+`--anonymize-patient-folders` alone when they are directly inside it.
 
 `--anonymize-patient-folders` treats the patient folder name as one more
 identifier of the patient, for folders named after the patient or their
