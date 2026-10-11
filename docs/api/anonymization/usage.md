@@ -343,8 +343,9 @@ dataset-a: 120 file(s), 118 anonymized, 2 copied, 0 changed, 0 unchanged, 0 dele
 ```
 
 The first line gives what the run did. The second compares the raw side
-with the anonymized side: each raw file must have its anonymized copy and
-its own ECG pseudonym, and each patient (a patient folder, or a file
+with the anonymized side: each raw file must have its anonymized copy,
+each distinct ECG its ECG pseudonym (identical files share one), and each
+patient (a patient folder, or a file
 outside one) its own patient pseudonym.
 
 ### `ecgdatakit anonymize daemon`

@@ -19,6 +19,7 @@ import shutil
 import socket
 import threading
 import time
+import uuid
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
@@ -627,10 +628,14 @@ class Anonymizer:
                 patient_code = new_code(state.used)
                 state.patient_codes[key] = patient_code
             ecg_ids = SEPARATOR.join(identity.ecg_ids)
-            if old and old["anonymized_ecg_id"] and old["original_ecg_id"] == ecg_ids:
+            # Files with the same content are the same ECG: one ECG pseudonym
+            if sha in state.ecg_by_sha:
+                ecg_code = state.ecg_by_sha[sha]
+            elif old and old["anonymized_ecg_id"] and old["original_ecg_id"] == ecg_ids:
                 ecg_code = old["anonymized_ecg_id"]
             else:
                 ecg_code = new_ecg_code(state.used)
+            state.ecg_by_sha.setdefault(sha, ecg_code)
 
         folder_names = [Path(entry.patient_folder).name] if entry.patient_folder else []
         # With anonymized patient folders, the folder name identifies the
@@ -700,7 +705,8 @@ class Anonymizer:
                        risk="TRUE" if risks else "FALSE", risk_reason=SEPARATOR.join(risks))
             return row
 
-        staging = out_dir / _STAGING / ecg_code
+        # Duplicates share their ECG pseudonym: the staging folder is unique
+        staging = out_dir / _STAGING / uuid.uuid4().hex
         try:
             staged = self._stage(rewrite.outputs, staging)
             verify(entry.path, staged[out_path], replacer, patient_code, kept=kept_ids)
@@ -857,9 +863,11 @@ class Anonymizer:
                 errors.append(f"pseudonym {code} is shared by {len(folders)} patient folders")
         if len(by_folder) != len(by_code):
             errors.append(f"{len(by_folder)} patients but {len(by_code)} pseudonyms")
-        ecg = [r["anonymized_ecg_id"] for r in rows]
-        if len(ecg) != len(set(ecg)):
-            errors.append("an ECG pseudonym is used by more than one file")
+        contents: dict[str, set[str]] = {}
+        for r in rows:
+            contents.setdefault(r["anonymized_ecg_id"], set()).add(r["raw_sha256"])
+        if any(len(v) > 1 for v in contents.values()):
+            errors.append("an ECG pseudonym is used by files with different content")
         outputs = [r["anonymized_path"] for r in rows]
         if len(outputs) != len(set(outputs)):
             errors.append("two raw files map to the same anonymized file")
@@ -901,12 +909,19 @@ class _State:
         self.used = catalog.used_codes()
         self.patient_codes = catalog.patient_codes()
         self.taken = {r["anonymized_path"]: r["raw_path"] for r in catalog.active()}
+        self.ecg_by_sha: dict[str, str] = {}
+        for r in catalog.active():
+            if r["raw_sha256"] and r["anonymized_ecg_id"]:
+                self.ecg_by_sha.setdefault(r["raw_sha256"], r["anonymized_ecg_id"])
 
     def reserve(self, out_rel: str, raw_rel: str, name: str, ecg_code: str) -> str:
-        owner = self.taken.get(out_rel)
-        if owner is not None and owner != raw_rel:
-            stem, ext = split_name(name)
-            name = f"{stem}_{ecg_code}{ext}"
+        """*name*, or ``<stem>_2``, ``<stem>_3``... when another raw file
+        already has it (two copies of the same ECG in one folder)."""
+        stem, ext = split_name(name)
+        n = 1
+        while self.taken.get(out_rel) not in (None, raw_rel):
+            n += 1
+            name = f"{stem}_{n}{ext}"
             out_rel = str(Path(out_rel).parent / name)
         self.taken[out_rel] = raw_rel
         return name

@@ -20,7 +20,8 @@ To run it, see {doc}`anonymization/usage`.
    with `--group-by-patient-folders` (see [Patients](#patients)). With
    `--anonymize-patient-folders`, the name of the patient folder is added
    to the values to replace.
-3. **Choose the pseudonyms.** Each file gets its own ECG pseudonym. Each
+3. **Choose the pseudonyms.** Each ECG gets its own ECG pseudonym: files
+   with exactly the same content are the same ECG and share it. Each
    patient gets one patient pseudonym: a patient folder with
    `--group-by-patient-folders`, otherwise each file.
 4. **Write the copy.** Only the bytes of the identity values change, then
@@ -169,8 +170,10 @@ qifUPPHzDGKG_7c1e4b2a-93d0-4f6e-8a51-2b9d0c6e1f37.json
   ID. DICOM only accepts digits and dots, so it gets the same UUID in its
   standard UID form (`2.25.` followed by the UUID as a number).
 
-A code already used in the dataset is never given again. A file anonymized
-again after a change keeps its pseudonyms.
+A code already used in the dataset is never given to another patient or
+another ECG. Files with exactly the same content are the same ECG and
+share its ECG pseudonym, also when a copy arrives in a later run. A file
+anonymized again after a change keeps its pseudonyms.
 
 ## Catalog
 
@@ -192,7 +195,7 @@ again after a change keeps its pseudonyms.
 | `original_file_name`, `anonymized_file_name` | File name before and after |
 | `folder_anonymized` | `TRUE` when the patient folder was renamed |
 | `companions` | Other anonymized files of the same recording, for formats stored as several files: a WFDB record is a `.hea` header (the row) plus its `.dat` signal files (listed here). Empty for other formats |
-| `duplicate` | Raw paths of the other files with exactly the same content (several separated by a vertical bar), empty when the file is unique. Each copy is anonymized on its own, with its own ECG pseudonym; a copy in another patient folder gets that folder's patient pseudonym |
+| `duplicate` | Raw paths of the other files with exactly the same content (several separated by a vertical bar), empty when the file is unique. Copies are the same ECG: they share the ECG pseudonym, and each copy is still written in `ANONYMIZED` (a second copy in the same folder gets `_2` at the end of its name). A copy in another patient folder gets that folder's patient pseudonym |
 | `raw_size`, `raw_mtime_ns`, `raw_sha256`, `anonymized_sha256` | Used to detect changes and check copies |
 | `detected_at`, `anonymized_at`, `last_change_at` | Dates of the events |
 | `message`, `tool_version` | Failure message, ecgdatakit version |
@@ -207,7 +210,8 @@ them to `anonymization_stats.csv` next to the catalog.
 At the end of each run, for every dataset:
 
 - each patient has one pseudonym and each pseudonym one patient;
-- ECG pseudonyms and anonymized paths are unique;
+- anonymized paths are unique, and an ECG pseudonym is only shared by
+  files with the same content;
 - every raw file has its anonymized copy (or is marked `failed`), in total
   and per patient (when the whole dataset is processed, not only some of
   its paths);

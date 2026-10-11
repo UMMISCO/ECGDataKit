@@ -34,8 +34,9 @@ dataset-a
   ECG files with a patient ID                                    120         120  OK     same
   ECG files whose patient ID is not their patient folder's         3           0  OK     anonymized: 0
   distinct patient IDs in the files, dates aside                 236          40  OK     anonymized: one per patient folder
-  duplicate ECG files (same content as another)                    2           0  OK     anonymized: 0
-  distinct ECG IDs                                               118         120  OK     anonymized: one per ECG file
+  duplicate ECG files (same content as another)                    2           2  OK     anonymized: at most raw
+  distinct ECGs (duplicates counted once)                        118         118  OK     same: one ECG pseudonym per distinct ECG
+  distinct ECG IDs in the files                                  118         118  OK     anonymized: the ECG pseudonym of each file that has an ECG ID field
   patient folders without ECG files (2): RAW/SUBJ-0007, RAW/SUBJ-0019
 ```
 
@@ -51,8 +52,9 @@ Each line ends with `OK` when its check holds, `CHECK` when it does not. The pat
 | ECG files with a patient ID | Files whose patient ID field is not empty | The same | same |
 | ECG files whose patient ID is not their patient folder's | Files whose patient ID does not match the patient folder name, or holds a date | Files whose patient ID is not the one of their patient folder: the folder name when folders are renamed, otherwise the ID most files of the folder hold; dates are left aside | anonymized: 0 |
 | distinct patient IDs in the files, dates aside | Different values of the patient ID field (the same patient often has several: visit codes, typing errors) | Different values in the anonymized files | with grouping: one per patient folder, never shared by two folders; without: same |
-| duplicate ECG files (same content as another) | Files identical to another file, each extra copy counted | The same | anonymized: 0, since each copy gets its own ECG pseudonym |
-| distinct ECG IDs | Different ECG IDs | Different ECG IDs | anonymized: one per ECG file |
+| duplicate ECG files (same content as another) | Files identical to another file, each extra copy counted | The same, in `ANONYMIZED`: copies in the same patient folder stay identical (same pseudonyms), copies in two patient folders differ by their patient pseudonym | anonymized: at most raw |
+| distinct ECGs (duplicates counted once) | Different file contents | Different ECG pseudonyms, read from the anonymized file names | same: one ECG pseudonym per distinct ECG |
+| distinct ECG IDs in the files | Different ECG IDs stored in the files (0 for formats without an ECG ID field: Mortara, ISHNE, WFDB) | The same, in the anonymized files | anonymized: one per ECG pseudonym of the files that have an ECG ID field |
 
 ## Reading the counts
 
@@ -66,9 +68,13 @@ Each line ends with `OK` when its check holds, `CHECK` when it does not. The pat
 - **Distinct patient IDs**, raw side: devices often add a visit code to
   the ID (`SUBJ-0042 VISIT2`), so one patient gives several values.
   After anonymization each patient folder holds one pseudonym.
-- **Duplicate files and ECG IDs**: identical raw files (a `- Copie` next
-  to its original, the same file in two folders) give fewer raw ECG IDs
-  than anonymized ones. The catalog column `duplicate` lists, for each
-  file, the other files with the same content.
+- **Duplicate files**: identical raw files (a `- Copie` next to its
+  original, the same file in two folders) are the same ECG and share one
+  ECG pseudonym; each copy is still written in `ANONYMIZED`. The catalog
+  column `duplicate` lists, for each file, the other files with the same
+  content.
+- **Distinct ECG IDs at 0**: the format has no ECG ID field (Mortara,
+  ISHNE, WFDB) or it is empty. The ECG pseudonym is then only in the
+  catalog and the file name; "distinct ECGs" still counts them.
 - **Dates in the patient ID field** are kept as they are, so they are left
   aside in the patient ID lines.

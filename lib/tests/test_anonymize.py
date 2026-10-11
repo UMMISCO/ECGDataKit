@@ -366,7 +366,8 @@ class TestSourceModes:
             rows = list(csv.DictReader(f))
         # Without patient folders, files are never grouped by the ID they hold
         assert len({x["anonymized_patient_id"] for x in rows}) == 2
-        assert len({x["anonymized_ecg_id"] for x in rows}) == 2
+        # the same file twice: one ECG, so one ECG pseudonym
+        assert len({x["anonymized_ecg_id"] for x in rows}) == 1
 
 
 class TestECGCode:
@@ -510,12 +511,13 @@ class TestSummaryCounts:
         base = _source(tmp_path, [hl7_aecg_file, mortara_file], patient="P1")
         _source(tmp_path, [hl7_aecg_file], patient="P2")
         [r] = _anonymizer(base).run()
-        assert (r.raw_files, r.anonymized_files, r.ecg_codes) == (3, 3, 3)
+        # the HL7 file is in both patient folders: the same ECG, one pseudonym
+        assert (r.raw_files, r.anonymized_files, r.ecg_codes) == (3, 3, 2)
         assert (r.patients, r.patient_codes) == (2, 2)
         assert main(["anonymize", "run", str(base), "--datasets", "--patients-dir-name", "RAW",
                      "--group-by-patient-folders"]) == 0
         out = capsys.readouterr().out
-        assert "3 raw file(s) -> 3 anonymized, 3 ECG pseudonym(s); 2 patient(s) -> 2 patient pseudonym(s)" in out
+        assert "3 raw file(s) -> 3 anonymized, 2 ECG pseudonym(s); 2 patient(s) -> 2 patient pseudonym(s)" in out
 
 
 class TestPatientFolderNameAsIdentifier:
@@ -884,8 +886,17 @@ class TestStats:
         assert got["ECG files whose patient ID is not their patient folder's"] == (2, 0)
         # 3 spellings before (the date set aside); after: one pseudonym per folder
         assert got["distinct patient IDs in the files, dates aside"] == (3, 2)
-        assert got["duplicate ECG files (same content as another)"] == (1, 0)
-        assert got["distinct ECG IDs"] == (4, 5)
+        # b.xml and its copy are one ECG: one ECG pseudonym, two files
+        assert got["duplicate ECG files (same content as another)"] == (1, 1)
+        assert got["distinct ECGs (duplicates counted once)"] == (4, 4)
+        assert got["distinct ECG IDs in the files"] == (4, 4)
+        rows = {r["raw_path"]: r for r in _catalog_rows(dataset)}
+        b = rows["RAW/PATIENT-001/visit-2/b.xml"]
+        copy = rows["RAW/PATIENT-001/visit-2/b - copy.xml"]
+        assert b["anonymized_ecg_id"] == copy["anonymized_ecg_id"]
+        assert b["anonymized_path"] != copy["anonymized_path"]
+        assert copy["anonymized_file_name"].endswith("_2.xml") or \
+            b["anonymized_file_name"].endswith("_2.xml")
 
     def test_anonymized_files_read_independently(self, hl7_aecg_file, tmp_path):
         dataset = self._dataset(hl7_aecg_file, tmp_path)
@@ -894,6 +905,34 @@ class TestStats:
         out = dataset / "ANONYMIZED" / "RAW" / "PATIENT-001"
         ids = {_parse(p).patient.patient_id for p in out.rglob("*.xml")}
         assert len(ids) == 1 and "PATIENT" not in ids.pop()
+
+    def test_duplicates_in_two_patient_folders(self, hl7_aecg_file, tmp_path):
+        dataset = tmp_path / "dataset"
+        for folder in ("SUBJ-0001", "SUBJ-0002"):
+            (dataset / folder).mkdir(parents=True)
+            shutil.copy2(hl7_aecg_file, dataset / folder / "ecg.xml")
+        a = Anonymizer(dataset, group_by_patient_folders=True)
+        [r] = a.run()
+        assert r.ok, r.errors
+        rows = _catalog_rows(dataset)
+        # one ECG, two patients: the ECG pseudonym is shared, not the patient one
+        assert len({x["anonymized_ecg_id"] for x in rows}) == 1
+        assert len({x["anonymized_patient_id"] for x in rows}) == 2
+        stats = {x.what: x for x in a.stats(dataset)}
+        assert all(x.ok for x in stats.values()), [x for x in stats.values() if not x.ok]
+
+    def test_ecg_pseudonym_kept_on_a_second_run(self, hl7_aecg_file, tmp_path):
+        dataset = self._dataset(hl7_aecg_file, tmp_path)
+        a = Anonymizer(dataset, patients_dir_name="RAW", group_by_patient_folders=True)
+        assert a.run()[0].ok
+        before = {r["raw_path"]: r["anonymized_ecg_id"] for r in _catalog_rows(dataset)}
+        # a third copy arrives later: it gets the same ECG pseudonym
+        b = dataset / "RAW" / "PATIENT-001" / "visit-2" / "b.xml"
+        shutil.copy2(b, b.with_name("b - copy 2.xml"))
+        assert a.run()[0].ok
+        after = {r["raw_path"]: r["anonymized_ecg_id"] for r in _catalog_rows(dataset)}
+        assert after["RAW/PATIENT-001/visit-2/b - copy 2.xml"] == before["RAW/PATIENT-001/visit-2/b.xml"]
+        assert all(after[k] == v for k, v in before.items())
 
     def test_a_wrong_anonymized_file_is_flagged(self, hl7_aecg_file, tmp_path):
         dataset = self._dataset(hl7_aecg_file, tmp_path)

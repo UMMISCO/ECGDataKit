@@ -50,6 +50,13 @@ def _duplicates(records: list[FileRecord]) -> int:
     return sum(n - 1 for n in Counter(r.sha256 for r in records).values())
 
 
+def _name_pseudonym(r: FileRecord) -> str:
+    """ECG pseudonym written in an anonymized file name
+    (``<patient>_<ecg>[_<n>].<ext>``), without hyphens (WFDB form)."""
+    parts = PurePosixPath(r.path).name.split(".")[0].split("_")
+    return parts[1].replace("-", "") if len(parts) >= 2 else ""
+
+
 def _ids(records: list[FileRecord]) -> set[str]:
     """Patient ID values of *records*, without dates (kept in the field,
     they do not name a patient)."""
@@ -102,8 +109,10 @@ def compare(raw: list[FileRecord], anon: list[FileRecord], grouped: bool,
     anon_with_id = sum(1 for r in anon if r.patient_ids)
     raw_not = sum(1 for r in raw_in if _not_folder_raw(r)) if grouped else 0
     anon_not = _not_folder_anonymized(anon, renamed) if grouped else 0
-    anon_ecg = sum(1 for r in anon if r.ecg_ids)
+    raw_ecgs = len({r.sha256 for r in raw})
+    anon_ecgs = len({_name_pseudonym(r) for r in anon})
     anon_ecg_ids = len({v for r in anon for v in r.ecg_ids})
+    anon_with_ecg_id = len({_name_pseudonym(r) for r in anon if r.ecg_ids})
     if grouped:
         # One ID per patient folder (folders whose files only hold dates
         # have none), and no ID shared by two folders
@@ -133,9 +142,13 @@ def compare(raw: list[FileRecord], anon: list[FileRecord], grouped: bool,
              anon_not == 0, "anonymized: 0"),
         ids_line,
         Stat("duplicate ECG files (same content as another)", _duplicates(raw),
-             _duplicates(anon), _duplicates(anon) == 0, "anonymized: 0"),
-        Stat("distinct ECG IDs", len({v for r in raw for v in r.ecg_ids}), anon_ecg_ids,
-             anon_ecg_ids == anon_ecg, "anonymized: one per ECG file"),
+             _duplicates(anon), _duplicates(anon) <= _duplicates(raw),
+             "anonymized: at most raw"),
+        Stat("distinct ECGs (duplicates counted once)", raw_ecgs, anon_ecgs,
+             raw_ecgs == anon_ecgs, "same: one ECG pseudonym per distinct ECG"),
+        Stat("distinct ECG IDs in the files", len({v for r in raw for v in r.ecg_ids}),
+             anon_ecg_ids, anon_ecg_ids == anon_with_ecg_id,
+             "anonymized: the ECG pseudonym of each file that has an ECG ID field"),
     ]
 
 
