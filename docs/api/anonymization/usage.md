@@ -213,8 +213,7 @@ The folder name is then one more identifier of the patient:
 |-------|--------------------|-----------------|
 | Patient folder in `ANONYMIZED` | same name as the raw folder | patient pseudonym |
 | Folder name inside the files (any field, free text) | kept | replaced by the patient pseudonym |
-| Folder name in file names | kept (replaced only when the file has no name field) | replaced by the patient pseudonym |
-| Sub-folders of the patient folder (`V1`, dates...) | kept | kept, except parts equal to the patient's name, ID or folder name |
+| Sub-folders of the patient folder (`V1`, dates...) | kept | kept |
 | Folders above the patient folders (`xml`, `RAW`) | kept | kept |
 
 The folder name is matched as a whole, ignoring case, accents and spacing:

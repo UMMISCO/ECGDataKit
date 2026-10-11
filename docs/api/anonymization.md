@@ -2,8 +2,8 @@
 
 ECGDataKit anonymizes ECG files in any supported format. Each file is
 copied into an `ANONYMIZED` folder with the patient's name, the ECG ID
-and, when it can be trusted, the patient ID replaced by pseudonyms, in
-the file and in its name. A CSV catalog links every raw file to its
+and, when it can be trusted, the patient ID replaced by pseudonyms, and
+gets a new file name made of the pseudonyms. A CSV catalog links every raw file to its
 anonymized copy. Raw files are only read, never modified.
 
 To run it, see {doc}`anonymization/usage`.
@@ -67,21 +67,21 @@ the patient is known from the patient folder:
 | With it, file outside a patient folder | kept as is, and the catalog row is marked as risk |
 
 When the ID does not match the patient folder name (a typing error such as
-`PAT-002-003-AB` in folder `PAT-01-003-AB`, or the ID of another patient),
+`SUBJ-0024` in folder `SUBJ-0042`, or the ID of another patient),
 it is still replaced, and the catalog row is marked as risk with the ID
-read in the file, for example `patient ID field (PAT-002-003-AB) does not
+read in the file, for example `patient ID field (SUBJ-0024) does not
 match the patient folder name, replaced`. These rows can be reviewed with
 the clinicians: a file may be in the wrong patient folder.
 
 Matching only decides whether the row is flagged; it does not change what
 is replaced. The ID matches the folder name when both have the same words,
 ignoring case and accents, with any separator between them
-(`SITE-001-0001` and `site 001 0001`; but `003GM` is one word and does not
-match `003-GM`), or when one appears
+(`SUBJ-0042` and `subj 0042`; but `0042XY` is one word and does not
+match `0042-XY`), or when one appears
 as whole words in the other and has at least 4 characters: the ID inside
-the folder name (`001-0003` in folder `SITE_001_0003_AB_CD`), or the
-folder name inside the ID (folder `PAT-01-0015-CD` in ID
-`PAT 01 0015 CD V1PRE`). The patient's name and the ECG ID
+the folder name (`7-0042` in folder `TRIAL_7_0042_XY`), or the
+folder name inside the ID (folder `SUBJ-0042` in ID
+`SUBJ 0042 VISIT2`). The patient's name and the ECG ID
 are always replaced, whatever the options.
 
 ### Renaming patient folders
@@ -91,12 +91,12 @@ one more identifier of the patient, for folders named after the patient
 or their hospital number:
 
 - the patient folder is named after the patient pseudonym in `ANONYMIZED`;
-- the folder name is replaced by the pseudonym wherever it appears in the
-  files (any field or free text, all formats), in the file names, and in
-  the names of the sub-folders of the patient folder;
+  it is the only folder renamed: its sub-folders and the folders above it
+  keep their exact names;
+- the folder name is replaced by the pseudonym wherever it appears inside
+  the files (any field or free text, all formats);
 - it is matched as a whole, ignoring case, accents and spacing: a part of
-  it (such as a number alone) is not replaced;
-- folders above the patient folders keep their names.
+  it (such as a number alone) is not replaced.
 
 Without it, every folder keeps its name in `ANONYMIZED`, and a folder
 named after the patient shows that name. The catalog column
@@ -131,8 +131,8 @@ named after the patient shows that name. The catalog column
 **Dates in the patient ID field.** Some devices store a date in the
 patient ID field (for example `28 11 23`). A value written as a date
 (`28 11 23`, `28/11/2023`, `2023-11-28`) is never replaced, even with
-`--group-by-patient-folders`: it is kept as is in the file and in the
-file name, and the catalog row is marked as risk with the reason.
+`--group-by-patient-folders`: it is kept as is in the file, and the
+catalog row is marked as risk with the reason.
 
 **Format kept.** Only the bytes of the identity values change: an XML
 file keeps its encoding, indentation and line endings, binary headers keep
@@ -141,22 +141,25 @@ original one was valid. DICOM files are written back with pydicom.
 
 ## File names
 
-Parts of the file name equal to the patient's name, the ECG ID or the
-patient ID when it is replaced in the file (ignoring case and accents)
-are replaced; dates, visits and other parts are kept:
+Each anonymized file gets a new name made of its pseudonyms and the
+extension of the raw file. Nothing of the raw name is kept: a name can
+hold identity in any form (codes, initials, dates written in many ways),
+so it is not edited but replaced.
 
 ```text
-R^ECG^F^0^PID-0042^DOE_20240109083645_V1.xml
-R^ECG^F^0^Hh3kQ9sLm2Xa^Hh3kQ9sLm2Xa_20240109083645_V1.xml
+SUBJ-0042-XY_20200101120000_a1b2c3d4.json
+qifUPPHzDGKG_7c1e4b2a-93d0-4f6e-8a51-2b9d0c6e1f37.json
 ```
 
-- With `--anonymize-patient-folders`, the patient folder name is replaced
-  in file names too.
-- With `--group-by-patient-folders`, a file that has no name field also
-  has the words of its patient folder name replaced in its file name.
-- Parts that may still identify the patient, such as initials or long
-  random identifiers, are kept and the catalog row is marked `risk` with
-  the reason. Review these rows.
+- The name is `<anonymized_patient_id>_<anonymized_ecg_id>.<extension>`.
+  The raw name stays in the catalog (`original_file_name`).
+- WFDB record names only allow letters, digits and underscores: the ECG
+  pseudonym is written there without its hyphens. The record line, the
+  signal file names in the header and every file of the record are
+  renamed together. A multi-segment WFDB record keeps its name, and its
+  row is marked as risk.
+- Folder names are not changed by this, see
+  [Renaming patient folders](#renaming-patient-folders).
 
 ## Pseudonyms
 

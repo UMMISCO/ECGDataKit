@@ -48,6 +48,12 @@ def _anonymizer(args, **extra):
                       **extra)
 
 
+def _print_empty(folders: list[str]) -> None:
+    if folders:
+        print(f"  patient folders without ECG files ({len(folders)}): "
+              + ", ".join(folders))
+
+
 def _print_reports(reports) -> bool:
     ok = True
     for r in reports:
@@ -64,6 +70,7 @@ def _print_reports(reports) -> bool:
 
             print(format_stats("  whole dataset, counted from the files "
                                "(also in anonymization_stats.csv):", r.stats))
+            _print_empty(r.empty_patient_folders)
         for error in r.errors:
             print(f"  ERROR {error}")
         ok &= r.ok
@@ -88,7 +95,9 @@ def _stats(args) -> int:
         if not (dataset / args.out_dir).is_dir():
             continue
         found = True
-        print(format_stats(dataset.name, anonymizer.stats(dataset)))
+        stats, empty = anonymizer.stats_and_empty_folders(dataset)
+        print(format_stats(dataset.name, stats))
+        _print_empty(empty)
         print()
     if not found:
         print(f"no {args.out_dir} folder found: run the anonymizer first", file=sys.stderr)

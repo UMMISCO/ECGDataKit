@@ -7,7 +7,8 @@
 - **New `ecgdatakit.anonymize` package and `ecgdatakit anonymize`
   command.** ECG files are copied into an `ANONYMIZED` folder with the
   patient's name, the ECG ID and, when it can be trusted, the patient ID
-  replaced by pseudonyms, in the file and in its name. Raw files are only
+  replaced by pseudonyms, and gets a new file name made of the
+  pseudonyms. Raw files are only
   read. A CSV catalog links every raw file to its anonymized copy. See
   {doc}`../api/anonymization`.
 - Every format ecgdatakit reads is supported, except EDAN Holter. Only the

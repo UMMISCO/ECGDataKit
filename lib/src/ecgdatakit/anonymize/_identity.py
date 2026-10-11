@@ -199,8 +199,8 @@ def _loose(value: str) -> str:
 def matches_folder(value: str, folder: str) -> bool:
     """True when a patient ID matches the patient folder name: equal
     ignoring case, accents and separators, or one found as whole words in
-    the other (the shorter one of 4 characters or more): ``001-0003`` in
-    ``SITE_001_0003_AB_CD``, or ``PAT-01-0015-CD`` in ``PAT 01 0015 CD V1``."""
+    the other (the shorter one of 4 characters or more): ``7-0042`` in
+    ``TRIAL_7_0042_XY``, or ``SUBJ-0042`` in ``SUBJ 0042 VISIT2``."""
     if not folder:
         return False
     v, f = _words(value), _words(folder)

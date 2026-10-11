@@ -28,21 +28,25 @@ ecgdatakit anonymize shell stats
 dataset-a
                                                                  raw  anonymized  check
   folders holding ECG files, sub-folders included                 52          52  OK     same
-  patient folders                                                 40          40  OK     same
+  patient folders                                                 42          40  OK     anonymized: those holding ECG files
+  patient folders without ECG files (nothing to copy)              2           0  OK     anonymized: 0
   ECG files                                                      120         120  OK     same
   ECG files with a patient ID                                    120         120  OK     same
   ECG files whose patient ID is not their patient folder's         3           0  OK     anonymized: 0
   distinct patient IDs in the files, dates aside                 236          40  OK     anonymized: one per patient folder
   duplicate ECG files (same content as another)                    2           0  OK     anonymized: 0
   distinct ECG IDs                                               118         120  OK     anonymized: one per ECG file
+  patient folders without ECG files (2): RAW/SUBJ-0007, RAW/SUBJ-0019
 ```
 
-Each line ends with `OK` when its check holds, `CHECK` when it does not.
+Each line ends with `OK` when its check holds, `CHECK` when it does not. The patient folders that hold no ECG file are listed below the table
+(in the printed summary and the `stats` command, not in the CSV file).
 
 | Line | Raw | Anonymized | Check |
 |------|-----|------------|-------|
 | folders holding ECG files, sub-folders included | Every folder that directly holds an ECG file, at any depth: a patient folder and each of its sub-folders that holds files (`PATIENT-001/visit-1`) | The same, in `ANONYMIZED` | same |
-| patient folders | Folders directly under the `--patients-dir-name` folders, or directly in the dataset, that hold ECG files (with `--group-by-patient-folders`, otherwise 0) | The same, in `ANONYMIZED` | same |
+| patient folders | Every patient folder on disk: the folders directly under the `--patients-dir-name` folders, or directly in the dataset (with `--group-by-patient-folders`, otherwise 0) | The same, in `ANONYMIZED` | anonymized: those holding ECG files |
+| patient folders without ECG files (nothing to copy) | Patient folders where no file is read by ecgdatakit (empty, or only PDFs, images, unsupported formats): nothing is copied for them. Their names are printed below the table | The same, in `ANONYMIZED` | anonymized: 0 |
 | ECG files | ECG files | ECG files | same |
 | ECG files with a patient ID | Files whose patient ID field is not empty | The same | same |
 | ECG files whose patient ID is not their patient folder's | Files whose patient ID does not match the patient folder name, or holds a date | Files whose patient ID is not the one of their patient folder: the folder name when folders are renamed, otherwise the ID most files of the folder hold; dates are left aside | anonymized: 0 |
@@ -60,7 +64,7 @@ Each line ends with `OK` when its check holds, `CHECK` when it does not.
   the wrong patient folder. Their rows are marked as risk in the catalog
   with the ID read in the file; review them with the clinicians.
 - **Distinct patient IDs**, raw side: devices often add a visit code to
-  the ID (`PAT-01-0015-CD V1PRE`), so one patient gives several values.
+  the ID (`SUBJ-0042 VISIT2`), so one patient gives several values.
   After anonymization each patient folder holds one pseudonym.
 - **Duplicate files and ECG IDs**: identical raw files (a `- Copie` next
   to its original, the same file in two folders) give fewer raw ECG IDs

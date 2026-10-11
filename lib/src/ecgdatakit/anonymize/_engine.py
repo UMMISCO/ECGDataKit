@@ -27,7 +27,7 @@ from pathlib import Path
 from ecgdatakit import __version__
 from ecgdatakit.anonymize._catalog import ACTIVE, SEPARATOR, Catalog
 from ecgdatakit.anonymize._codes import new_code, new_ecg_code
-from ecgdatakit.anonymize._filenames import new_file_name, new_part_name, split_name
+from ecgdatakit.anonymize._filenames import anonymized_file_name, split_name
 from ecgdatakit.anonymize._identity import (
     Identity,
     Replacer,
@@ -106,6 +106,8 @@ class Report:
     """Counts of the raw and anonymized files of the whole dataset, read
     from disk (see :meth:`Anonymizer.stats`), also written to
     ``anonymization_stats.csv``."""
+    empty_patient_folders: list[str] = field(default_factory=list)
+    """Raw patient folders holding no ECG file: nothing is copied for them."""
 
     @property
     def ok(self) -> bool:
@@ -174,8 +176,8 @@ class Anonymizer:
         ``False`` (default): folder names are copied as they are. ``True``
         (needs *group_by_patient_folders*): each patient folder is named
         after the patient pseudonym in the output, and its name is replaced
-        wherever it appears in the files, file names and sub-folder names.
-        Folders above the patient folders keep their names.
+        wherever it appears in the files. Every other folder, sub-folders of
+        the patient folder included, keeps its name.
     out_dir : str
         Output folder created in each dataset, with the same sub-folders
         as the dataset.
@@ -451,6 +453,11 @@ class Anonymizer:
     def stats(self, dataset: Path) -> list[Stat]:
         """Counts of the raw files and of the anonymized files, each read
         from disk (see :mod:`ecgdatakit.anonymize._stats`)."""
+        return self.stats_and_empty_folders(dataset)[0]
+
+    def stats_and_empty_folders(self, dataset: Path) -> tuple[list[Stat], list[str]]:
+        """:meth:`stats`, and the raw patient folders holding no ECG file
+        (nothing is copied for them), relative to the dataset."""
         dataset = Path(dataset)
         scope = [self.single_file] if self.single_file is not None else None
         raw_roots = [(folder, rec, root) for folder, rec, root
@@ -463,7 +470,27 @@ class Anonymizer:
                 anon_roots.append((anon_root, True, anon_root))
         raw = self._records(dataset, raw_roots, skip=out)
         anon = self._records(out, anon_roots, skip=None)
-        return compare(raw, anon, grouped=self.by_folder, renamed=self.folders)
+        raw_dirs = self._patient_dirs(dataset, raw_roots, out)
+        anon_dirs = self._patient_dirs(out, anon_roots, None)
+        stats = compare(raw, anon, grouped=self.by_folder, renamed=self.folders,
+                        raw_dirs=raw_dirs, anon_dirs=anon_dirs)
+        empty = sorted(raw_dirs - {r.patient_folder for r in raw})
+        return stats, empty
+
+    def _patient_dirs(self, base: Path, roots, skip: Path | None) -> set[str]:
+        """Every patient folder on disk (the folders directly under the
+        roots), with or without ECG files, relative to *base*."""
+        if not self.by_folder:
+            return set()
+        dirs: set[str] = set()
+        for _, _, root in roots:
+            if not root.is_dir():
+                continue
+            for e in os.scandir(root):
+                if (e.is_dir(follow_symlinks=False) and not _hidden(e.name)
+                        and e.name != _STAGING and Path(e.path) != skip):
+                    dirs.add(Path(e.path).relative_to(base).as_posix())
+        return dirs
 
     def _records(self, base: Path, roots, skip: Path | None) -> list[FileRecord]:
         """ECG files under *roots*, with their patient folder and the
@@ -557,7 +584,7 @@ class Anonymizer:
             catalog.save()
             report.errors = self.check(dataset, catalog, entries if scope is None else None)
             self._count(dataset, catalog, entries, report)
-            report.stats = self.stats(dataset)
+            report.stats, report.empty_patient_folders = self.stats_and_empty_folders(dataset)
             write_stats(dataset / STATS_NAME, report.stats)
         for error in report.errors:
             log.error("%s: %s", dataset.name, error)
@@ -620,19 +647,16 @@ class Anonymizer:
             for v in unmatched:
                 risks.append(f"patient ID field ({v}) does not match the patient folder "
                              f"name, replaced")
+        # The anonymized file gets a new name: nothing of the raw name is
+        # kept, since a name may hold identity in any form
         if isinstance(handler, WFDBHandler) and handler.is_multi_segment(entry.path):
             new_name = entry.path.name
-            if new_file_name(entry.path.name, identity, patient_code, ecg_code, folder_names,
-                             folder_ids)[0] != new_name:
-                risks.append("multi-segment WFDB record name kept (it may hold identity)")
+            risks.append("multi-segment WFDB record name kept as is (it may hold identity)")
         else:
-            new_name, name_risks = new_file_name(entry.path.name, identity, patient_code,
-                                                 ecg_code, folder_names, folder_ids)
-            risks += name_risks
+            new_name = anonymized_file_name(entry.path.name, patient_code, ecg_code,
+                                            wfdb=isinstance(handler, WFDBHandler))
 
-        rel_dir, folder_risks = self._output_dir(entry, identity, patient_code, ecg_code,
-                                                 folder_names)
-        risks += folder_risks
+        rel_dir = self._output_dir(entry, patient_code)
         out_dir = dataset / self.out_dir / rel_dir
         with state.lock:
             new_name = state.reserve((self.out_dir / rel_dir / new_name).as_posix(), entry.rel,
@@ -716,23 +740,16 @@ class Anonymizer:
     def _folder_flag(self) -> str:
         return "TRUE" if self.folders else "FALSE"
 
-    def _output_dir(self, entry: Entry, identity: Identity, patient_code: str, ecg_code: str,
-                    folder_names: list[str]) -> tuple[Path, list[str]]:
-        """Output sub-folder of *entry*, with the patient folder renamed to
-        the pseudonym when patient folders are anonymized."""
+    def _output_dir(self, entry: Entry, patient_code: str) -> Path:
+        """Output sub-folder of *entry*: the raw one, with only the patient
+        folder renamed to the pseudonym when patient folders are anonymized.
+        Every other folder, sub-folders of the patient folder included,
+        keeps its name."""
         rel_dir = Path(entry.rel).parent
         if not self.folders or not entry.patient_folder:
-            return rel_dir, []
+            return rel_dir
         patient = Path(entry.patient_folder)
-        below = rel_dir.relative_to(patient).parts
-        risks: list[str] = []
-        parts = []
-        for part in below:
-            new, part_risks = new_part_name(part, identity, patient_code, ecg_code, folder_names,
-                                            folder_names)
-            parts.append(new)
-            risks += [f"folder {r}" for r in part_risks]
-        return patient.parent / patient_code / Path(*parts) if parts else patient.parent / patient_code, risks
+        return patient.parent / patient_code / rel_dir.relative_to(patient)
 
     @staticmethod
     def _stage(outputs: dict, staging: Path) -> dict[Path, Path]:

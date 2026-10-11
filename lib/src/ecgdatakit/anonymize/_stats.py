@@ -84,12 +84,18 @@ def _not_folder_anonymized(records: list[FileRecord], renamed: bool) -> int:
 
 
 def compare(raw: list[FileRecord], anon: list[FileRecord], grouped: bool,
-            renamed: bool) -> list[Stat]:
-    """Lines of the stats, from the raw and the anonymized files."""
+            renamed: bool, raw_dirs: set[str] | None = None,
+            anon_dirs: set[str] | None = None) -> list[Stat]:
+    """Lines of the stats, from the raw and the anonymized files, and the
+    patient folders found on disk (*raw_dirs*, *anon_dirs*), with or
+    without ECG files."""
     raw_in = [r for r in raw if r.patient_folder]
     anon_in = [r for r in anon if r.patient_folder]
-    raw_folders = len({r.patient_folder for r in raw_in})
-    anon_folders = len({r.patient_folder for r in anon_in})
+    raw_with = {r.patient_folder for r in raw_in}
+    anon_with = {r.patient_folder for r in anon_in}
+    raw_dirs = set(raw_dirs or ()) | raw_with
+    anon_dirs = set(anon_dirs or ()) | anon_with
+    raw_empty, anon_empty = len(raw_dirs - raw_with), len(anon_dirs - anon_with)
     raw_ids = len(_ids(raw))
     anon_ids = len(_ids(anon))
     raw_with_id = sum(1 for r in raw if r.patient_ids)
@@ -116,7 +122,10 @@ def compare(raw: list[FileRecord], anon: list[FileRecord], grouped: bool,
     return [
         Stat("folders holding ECG files, sub-folders included", folders_raw, folders_anon,
              folders_raw == folders_anon, "same"),
-        Stat("patient folders", raw_folders, anon_folders, raw_folders == anon_folders, "same"),
+        Stat("patient folders", len(raw_dirs), len(anon_dirs),
+             len(anon_dirs) == len(raw_with), "anonymized: those holding ECG files"),
+        Stat("patient folders without ECG files (nothing to copy)", raw_empty, anon_empty,
+             anon_empty == 0, "anonymized: 0"),
         Stat("ECG files", len(raw), len(anon), len(raw) == len(anon), "same"),
         Stat("ECG files with a patient ID", raw_with_id, anon_with_id,
              raw_with_id == anon_with_id, "same"),
