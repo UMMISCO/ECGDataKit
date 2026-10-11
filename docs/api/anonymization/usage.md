@@ -70,6 +70,7 @@ ecgdatakit anonymize shell datasets                                # files per s
 ecgdatakit anonymize shell catalog --dataset dataset-a --risk      # rows to review
 ecgdatakit anonymize shell catalog --dataset dataset-a --status failed
 ecgdatakit anonymize shell catalog --dataset dataset-a PATIENT-001  # rows of one patient
+ecgdatakit anonymize shell stats                                   # counts before and after, per dataset
 ecgdatakit anonymize shell scan dataset-a                          # start a pass now
 ```
 
@@ -408,8 +409,26 @@ ecgdatakit anonymize shell [COMMAND ...] [--host ADDRESS] [--port PORT]
 | `status` | What the daemon is doing, start and end of the last pass, next pass, results per dataset (including files waiting because they changed less than `--settle` seconds ago). |
 | `datasets` | Datasets of the source with the number of files per status. |
 | `catalog [TEXT] [--dataset NAME] [--status S] [--risk] [--limit N] [--all-columns]` | Catalog rows. `TEXT` filters on any column (a name, a path, a pseudonym). `--dataset` picks the dataset when the source has several, `--status` keeps one status, `--risk` only rows at risk, `--limit` sets the number of rows shown (50), `--all-columns` shows every column. |
+| `stats` | Counts of each dataset before and after anonymization (see {doc}`stats`). |
 | `scan [DATASET]` | Start a pass now, of one dataset or of the whole source. |
 | `quit` | Leave the shell. The daemon keeps running. |
+
+### `ecgdatakit anonymize stats`
+
+Counts of each dataset before and after anonymization, read from its
+catalog (see {doc}`stats`). It does not need a daemon and changes nothing.
+
+```text
+ecgdatakit anonymize stats SOURCE [--datasets] [--dataset NAME] [--catalog FILE]
+```
+
+| Option | Default | Description |
+|--------|---------|-------------|
+| `--datasets` | | If set, each sub-folder of `SOURCE` is a dataset and each one is counted. Give it when the runs used it. |
+| `--dataset NAME` | all | With `--datasets` only. If set, only this dataset is counted; give it several times for several datasets. |
+| `--catalog FILE` | `anonymization_catalog.csv` | Catalog file name, as given to `run`. |
+
+Exit code 2 when no catalog is found.
 
 ### Exit codes
 

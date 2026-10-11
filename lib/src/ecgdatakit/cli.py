@@ -71,6 +71,28 @@ def _run(args) -> int:
     return 0 if _print_reports(reports) else 1
 
 
+def _stats(args) -> int:
+    from ecgdatakit.anonymize import Anonymizer
+    from ecgdatakit.anonymize._catalog import Catalog
+    from ecgdatakit.anonymize._stats import catalog_stats, format_stats
+
+    anonymizer = Anonymizer(args.source, datasets=args.datasets, catalog_name=args.catalog)
+    found = False
+    for dataset in anonymizer.datasets():
+        if args.dataset and dataset.name not in args.dataset:
+            continue
+        path = anonymizer.catalog_path(dataset)
+        if not path.exists():
+            continue
+        found = True
+        print(format_stats(dataset.name, catalog_stats(Catalog(path))))
+        print()
+    if not found:
+        print("no catalog found: run the anonymizer first", file=sys.stderr)
+        return 2
+    return 0
+
+
 def _daemon(args) -> int:
     from ecgdatakit.anonymize._daemon import Daemon
 
@@ -129,6 +151,16 @@ def main(argv: list[str] | None = None) -> int:
     daemon.add_argument("--host", default="127.0.0.1", help="control server address")
     daemon.add_argument("--port", type=int, default=DEFAULT_PORT, help="control server port")
     daemon.set_defaults(func=_daemon)
+
+    stats = actions.add_parser("stats", help="counts before and after anonymization")
+    stats.add_argument("source", help="folder given to run or daemon")
+    stats.add_argument("--datasets", action="store_true",
+                       help="each sub-folder of SOURCE is a separate dataset")
+    stats.add_argument("--dataset", action="append", metavar="NAME",
+                       help="with --datasets: only this dataset (repeatable)")
+    stats.add_argument("--catalog", default="anonymization_catalog.csv",
+                       help="CSV catalog file name in each dataset")
+    stats.set_defaults(func=_stats)
 
     shell = actions.add_parser("shell", help="talk to a running daemon")
     shell.add_argument("command", nargs=argparse.REMAINDER,

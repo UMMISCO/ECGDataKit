@@ -513,6 +513,7 @@ class Anonymizer:
         # date, a study code): it is replaced only with patient folder
         # grouping, and only when it matches the patient folder name
         folder = Path(entry.patient_folder).name if entry.patient_folder else ""
+        file_ids = list(identity.patient_ids)
         kept_ids = [v for v in identity.patient_ids
                     if not self.by_folder or looks_like_date(v) or not _matches_folder(v, folder)]
         identity.patient_ids = [v for v in identity.patient_ids if v not in kept_ids]
@@ -572,7 +573,13 @@ class Anonymizer:
             "format": handler.parser,
             "patient_code": patient_code,
             "ecg_code": ecg_code,
-            "original_patient_id": SEPARATOR.join(identity.patient_ids),
+            # With grouping the patient is known by its folder, whatever the
+            # file holds; the file's own ID values are in file_patient_id
+            "original_patient_id": folder if self.by_folder and folder
+            else SEPARATOR.join(identity.patient_ids),
+            "file_patient_id": SEPARATOR.join(file_ids),
+            "anonymized_patient_id": SEPARATOR.join(
+                dict.fromkeys(v if v in kept_ids else patient_code for v in file_ids)),
             "original_last_name": SEPARATOR.join(identity.last_names),
             "original_first_name": SEPARATOR.join(identity.first_names),
             "original_ecg_id": ecg_ids,

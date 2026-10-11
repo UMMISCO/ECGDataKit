@@ -6,6 +6,7 @@ import cmd
 import shlex
 
 from ecgdatakit.anonymize._daemon import DEFAULT_PORT, request
+from ecgdatakit.anonymize._stats import format_stats
 
 _BRIEF = ["status", "risk", "raw_path", "anonymized_path", "patient_code", "ecg_code",
           "last_change_at", "message"]
@@ -65,6 +66,18 @@ class Shell(cmd.Cmd):
         if reply is not None:
             print(_table(reply["datasets"], ["dataset", "anonymized", "copied", "changed",
                                             "deleted", "failed", "risk"]))
+
+    def do_stats(self, arg: str) -> None:
+        """stats: counts of each dataset before and after anonymization
+        (folders, patient folders, patients, patient IDs, ECG files, ECG IDs)."""
+        reply = self._ask({"cmd": "stats"})
+        if reply is None:
+            return
+        if not reply["datasets"]:
+            print("(no catalog yet)")
+        for d in reply["datasets"]:
+            print(format_stats(d["dataset"], [tuple(s) for s in d["stats"]]))
+            print()
 
     def do_catalog(self, arg: str) -> None:
         """catalog [TEXT] [--dataset NAME] [--status S] [--risk] [--limit N] [--all-columns]

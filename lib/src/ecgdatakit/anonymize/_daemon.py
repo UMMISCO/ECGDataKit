@@ -19,8 +19,9 @@ import time
 from datetime import datetime
 from pathlib import Path
 
-from ecgdatakit.anonymize._catalog import ACTIVE
+from ecgdatakit.anonymize._catalog import ACTIVE, Catalog
 from ecgdatakit.anonymize._engine import Anonymizer, DatasetLocked, Report
+from ecgdatakit.anonymize._stats import catalog_stats
 
 log = logging.getLogger("ecgdatakit.anonymize")
 
@@ -203,6 +204,14 @@ class Daemon:
                             if row["risk"] == "TRUE" and row["status"] in ACTIVE:
                                 counts["risk"] = counts.get("risk", 0) + 1
                 out.append({"dataset": dataset.name, "catalog": catalog.exists(), **counts})
+            return {"datasets": out}
+        if cmd == "stats":
+            out = []
+            for dataset in a.datasets():
+                path = a.catalog_path(dataset)
+                if path.exists():
+                    out.append({"dataset": dataset.name,
+                                "stats": catalog_stats(Catalog(path))})
             return {"datasets": out}
         if cmd == "catalog":
             name = request.get("dataset")

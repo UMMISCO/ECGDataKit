@@ -22,6 +22,8 @@ COLUMNS = [
     "patient_code",
     "ecg_code",
     "original_patient_id",
+    "file_patient_id",
+    "anonymized_patient_id",
     "original_last_name",
     "original_first_name",
     "original_ecg_id",

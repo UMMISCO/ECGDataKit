@@ -169,7 +169,9 @@ again after a change keeps its pseudonyms.
 | `patient_folder` | What groups the patient's files: the patient folder, or `file:` followed by the file's path when it is not in a patient folder |
 | `format` | Parser that read the file |
 | `patient_code`, `ecg_code` | The pseudonyms |
-| `original_patient_id`, `original_last_name`, `original_first_name`, `original_ecg_id`, `original_file_name` | The values replaced (several values are separated by a vertical bar) |
+| `original_patient_id` | With `--group-by-patient-folders`, the patient folder name, whatever the file holds. Without it, empty (the patient ID is not replaced) |
+| `file_patient_id`, `anonymized_patient_id` | The patient ID field read in the raw file, and what the anonymized file holds in it: the patient pseudonym when it was replaced, the same value when it was kept |
+| `original_last_name`, `original_first_name`, `original_ecg_id`, `original_file_name` | The values replaced (several values are separated by a vertical bar) |
 | `anonymized_file_name` | New file name |
 | `folder_anonymized` | `TRUE` when the patient folder was renamed |
 | `companions` | Other files of the record (WFDB) |
@@ -178,7 +180,8 @@ again after a change keeps its pseudonyms.
 | `message`, `tool_version` | Failure message, ecgdatakit version |
 
 The catalog links pseudonyms to patients: keep it where only authorized
-people can read it.
+people can read it. {doc}`anonymization/stats` counts folders, patients,
+patient IDs and ECGs from it, before and after anonymization.
 
 ## Checks
 
@@ -201,4 +204,5 @@ the run shows the counts side by side:
 :hidden:
 
 anonymization/usage
+anonymization/stats
 ```
