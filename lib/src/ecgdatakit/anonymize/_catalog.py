@@ -19,14 +19,13 @@ COLUMNS = [
     "anonymized_path",
     "patient_folder",
     "format",
-    "patient_code",
-    "ecg_code",
     "original_patient_id",
-    "file_patient_id",
     "anonymized_patient_id",
+    "file_patient_id",
+    "original_ecg_id",
+    "anonymized_ecg_id",
     "original_last_name",
     "original_first_name",
-    "original_ecg_id",
     "original_file_name",
     "anonymized_file_name",
     "folder_anonymized",
@@ -61,7 +60,12 @@ class Catalog:
         self.lock = threading.RLock()
         if self.path.exists():
             with open(self.path, newline="", encoding="utf-8") as f:
-                for row in csv.DictReader(f):
+                reader = csv.DictReader(f)
+                if "patient_code" in (reader.fieldnames or []):
+                    raise ValueError(
+                        f"{self.path} was written by an older version (patient_code "
+                        f"column): delete it and the ANONYMIZED folder to start again")
+                for row in reader:
                     self.rows[row["raw_path"]] = {c: row.get(c, "") or "" for c in COLUMNS}
 
     def get(self, raw_path: str) -> dict[str, str] | None:
@@ -78,13 +82,13 @@ class Catalog:
 
     def used_codes(self) -> set[str]:
         with self.lock:
-            return {r[c] for r in self.rows.values() for c in ("patient_code", "ecg_code") if r[c]}
+            return {r[c] for r in self.rows.values() for c in ("anonymized_patient_id", "anonymized_ecg_id") if r[c]}
 
     def patient_codes(self) -> dict[str, str]:
         """Patient code by patient folder (every row ever written keeps its code)."""
         with self.lock:
-            return {r["patient_folder"]: r["patient_code"] for r in self.rows.values()
-                    if r["patient_folder"] and r["patient_code"]}
+            return {r["patient_folder"]: r["anonymized_patient_id"] for r in self.rows.values()
+                    if r["patient_folder"] and r["anonymized_patient_id"]}
 
     def save(self) -> None:
         with self.lock:

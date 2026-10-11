@@ -13,7 +13,6 @@ file loses its anonymized copy.
 from __future__ import annotations
 
 import hashlib
-import re
 import logging
 import os
 import shutil
@@ -29,7 +28,13 @@ from ecgdatakit import __version__
 from ecgdatakit.anonymize._catalog import ACTIVE, SEPARATOR, Catalog
 from ecgdatakit.anonymize._codes import new_code, new_ecg_code
 from ecgdatakit.anonymize._filenames import new_file_name, new_part_name, split_name
-from ecgdatakit.anonymize._identity import Identity, Replacer, looks_like_date, norm
+from ecgdatakit.anonymize._identity import (
+    Identity,
+    Replacer,
+    looks_like_date,
+    matches_folder,
+)
+from ecgdatakit.anonymize._stats import STATS_NAME, catalog_stats, write_stats
 from ecgdatakit.anonymize._verify import VerificationError, verify
 from ecgdatakit.anonymize.formats import HANDLERS, Codes, Handler, Spliced
 from ecgdatakit.anonymize.formats._base import is_data
@@ -91,6 +96,9 @@ class Report:
     patient_codes: int = 0
     """Distinct patient pseudonyms of these files."""
     errors: list[str] = field(default_factory=list)
+    stats: list[tuple[str, int, int]] = field(default_factory=list)
+    """Counts of the whole dataset before and after anonymization (see
+    :func:`catalog_stats`), also written to ``anonymization_stats.csv``."""
 
     @property
     def ok(self) -> bool:
@@ -389,7 +397,8 @@ class Anonymizer:
                 for e in files:
                     path = Path(e.path)
                     rel = path.relative_to(dataset).as_posix()
-                    if path.parent == dataset and path.name in (self.catalog_name, _LOCK):
+                    if path.parent == dataset and path.name in (
+                            self.catalog_name, STATS_NAME, _LOCK):
                         continue
                     st = e.stat()
                     if self.settle and now - st.st_mtime < self.settle:
@@ -490,6 +499,8 @@ class Anonymizer:
             catalog.save()
             report.errors = self.check(dataset, catalog, entries if scope is None else None)
             self._count(dataset, catalog, entries, report)
+            report.stats = catalog_stats(catalog)
+            write_stats(dataset / STATS_NAME, report.stats)
         for error in report.errors:
             log.error("%s: %s", dataset.name, error)
         return report
@@ -515,7 +526,7 @@ class Anonymizer:
         folder = Path(entry.patient_folder).name if entry.patient_folder else ""
         file_ids = list(identity.patient_ids)
         kept_ids = [v for v in identity.patient_ids
-                    if not self.by_folder or looks_like_date(v) or not _matches_folder(v, folder)]
+                    if not self.by_folder or looks_like_date(v) or not matches_folder(v, folder)]
         identity.patient_ids = [v for v in identity.patient_ids if v not in kept_ids]
         # Only a patient folder groups files; a file outside one is its own
         # patient (an ID read in the file may be wrong, a date for example)
@@ -526,8 +537,8 @@ class Anonymizer:
                 patient_code = new_code(state.used)
                 state.patient_codes[key] = patient_code
             ecg_ids = SEPARATOR.join(identity.ecg_ids)
-            if old and old["ecg_code"] and old["original_ecg_id"] == ecg_ids:
-                ecg_code = old["ecg_code"]
+            if old and old["anonymized_ecg_id"] and old["original_ecg_id"] == ecg_ids:
+                ecg_code = old["anonymized_ecg_id"]
             else:
                 ecg_code = new_ecg_code(state.used)
 
@@ -571,15 +582,13 @@ class Anonymizer:
             "raw_path": entry.rel,
             "patient_folder": key,
             "format": handler.parser,
-            "patient_code": patient_code,
-            "ecg_code": ecg_code,
+            "anonymized_patient_id": patient_code,
+            "anonymized_ecg_id": ecg_code,
             # With grouping the patient is known by its folder, whatever the
             # file holds; the file's own ID values are in file_patient_id
             "original_patient_id": folder if self.by_folder and folder
             else SEPARATOR.join(identity.patient_ids),
             "file_patient_id": SEPARATOR.join(file_ids),
-            "anonymized_patient_id": SEPARATOR.join(
-                dict.fromkeys(v if v in kept_ids else patient_code for v in file_ids)),
             "original_last_name": SEPARATOR.join(identity.last_names),
             "original_first_name": SEPARATOR.join(identity.first_names),
             "original_ecg_id": ecg_ids,
@@ -743,9 +752,9 @@ class Anonymizer:
                 and (dataset / r["anonymized_path"]).exists()]
         report.raw_files = len(entries)
         report.anonymized_files = len(done)
-        report.ecg_codes = len({r["ecg_code"] for r in done})
+        report.ecg_codes = len({r["anonymized_ecg_id"] for r in done})
         report.patients = len({r["patient_folder"] for r in done})
-        report.patient_codes = len({r["patient_code"] for r in done})
+        report.patient_codes = len({r["anonymized_patient_id"] for r in done})
 
     def check(self, dataset: Path, catalog: Catalog,
               entries: dict[str, Entry] | None = None) -> list[str]:
@@ -755,8 +764,8 @@ class Anonymizer:
         by_folder: dict[str, set[str]] = {}
         by_code: dict[str, set[str]] = {}
         for r in rows:
-            by_folder.setdefault(r["patient_folder"], set()).add(r["patient_code"])
-            by_code.setdefault(r["patient_code"], set()).add(r["patient_folder"])
+            by_folder.setdefault(r["patient_folder"], set()).add(r["anonymized_patient_id"])
+            by_code.setdefault(r["anonymized_patient_id"], set()).add(r["patient_folder"])
         for folder, codes in by_folder.items():
             if len(codes) > 1:
                 errors.append(f"patient folder {folder!r} has {len(codes)} pseudonyms")
@@ -765,7 +774,7 @@ class Anonymizer:
                 errors.append(f"pseudonym {code} is shared by {len(folders)} patient folders")
         if len(by_folder) != len(by_code):
             errors.append(f"{len(by_folder)} patients but {len(by_code)} pseudonyms")
-        ecg = [r["ecg_code"] for r in rows]
+        ecg = [r["anonymized_ecg_id"] for r in rows]
         if len(ecg) != len(set(ecg)):
             errors.append("an ECG pseudonym is used by more than one file")
         outputs = [r["anonymized_path"] for r in rows]
@@ -818,24 +827,6 @@ class _State:
             out_rel = str(Path(out_rel).parent / name)
         self.taken[out_rel] = raw_rel
         return name
-
-
-def _matches_folder(value: str, folder: str) -> bool:
-    """True when a patient ID matches the patient folder name: equal
-    ignoring case, accents and separators, or found as whole words in the
-    folder name (IDs of 4 characters or more)."""
-    if not folder:
-        return False
-    v, f = _words(value), _words(folder)
-    if not v:
-        return False
-    if v == f:
-        return True
-    return len(v.replace(" ", "")) >= 4 and f" {v} " in f" {f} "
-
-
-def _words(text: str) -> str:
-    return " ".join(re.findall(r"[^\W_]+", norm(text)))
 
 
 def _patient_key(entry: Entry) -> str:

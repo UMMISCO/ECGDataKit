@@ -2,11 +2,15 @@
 
 from __future__ import annotations
 
-from pathlib import PurePosixPath
+import csv
+import os
+from pathlib import Path, PurePosixPath
 
 from ecgdatakit.anonymize._catalog import ACTIVE, SEPARATOR, Catalog
-from ecgdatakit.anonymize._engine import _matches_folder
-from ecgdatakit.anonymize._identity import looks_like_date
+
+STATS_NAME = "anonymization_stats.csv"
+"""Stats file written next to the catalog after each run."""
+from ecgdatakit.anonymize._identity import looks_like_date, matches_folder
 
 
 def _parents(paths) -> set[str]:
@@ -17,16 +21,21 @@ def _values(text: str) -> list[str]:
     return [v for v in text.split(SEPARATOR) if v.strip()]
 
 
-def _differs_from_folder(row: dict[str, str]) -> bool:
-    """A patient ID value of the raw file is not the patient folder name."""
+def _kept(row: dict[str, str]) -> list[str]:
+    """Patient ID values of the file kept as is: not the patient folder name,
+    or a date. Without patient folder grouping every value is kept."""
+    if not row["patient_folder"] or row["patient_folder"].startswith("file:"):
+        return _values(row["file_patient_id"])
     folder = PurePosixPath(row["patient_folder"]).name
-    return any(looks_like_date(v) or not _matches_folder(v, folder)
-               for v in _values(row["file_patient_id"]))
+    return [v for v in _values(row["file_patient_id"])
+            if looks_like_date(v) or not matches_folder(v, folder)]
 
 
-def _not_pseudonym(row: dict[str, str]) -> bool:
-    """The anonymized file holds a patient ID other than the pseudonym."""
-    return any(v != row["patient_code"] for v in _values(row["anonymized_patient_id"]))
+def _written(row: dict[str, str]) -> str:
+    """What the anonymized file holds in its patient ID field."""
+    kept = _kept(row)
+    return SEPARATOR.join(dict.fromkeys(
+        v if v in kept else row["anonymized_patient_id"] for v in _values(row["file_patient_id"])))
 
 
 def catalog_stats(catalog: Catalog) -> list[tuple[str, int, int]]:
@@ -46,19 +55,19 @@ def catalog_stats(catalog: Catalog) -> list[tuple[str, int, int]]:
         ("folders with ECG files", len(_parents(r["raw_path"] for r in raw)),
          len(_parents(r["anonymized_path"] for r in done))),
         ("patient folders", len({r["patient_folder"] for r in in_folder}),
-         len({r["patient_code"] for r in done_in_folder})),
+         len({r["anonymized_patient_id"] for r in done_in_folder})),
         ("patients", len({r["patient_folder"] or "file:" + r["raw_path"] for r in raw}),
-         len({r["patient_code"] for r in done})),
-        ("files with a patient ID", sum(1 for r in raw if _values(r["file_patient_id"])),
-         sum(1 for r in done if _values(r["anonymized_patient_id"]))),
+         len({r["anonymized_patient_id"] for r in done})),
+        ("files with a patient ID", sum(1 for r in raw if r["file_patient_id"]),
+         sum(1 for r in done if r["file_patient_id"])),
         ("different patient IDs", len({r["file_patient_id"] for r in raw if r["file_patient_id"]}),
-         len({r["anonymized_patient_id"] for r in done if r["anonymized_patient_id"]})),
+         len({_written(r) for r in done if r["file_patient_id"]})),
         ("files whose patient ID is not the folder name",
-         sum(1 for r in in_folder if _differs_from_folder(r)),
-         sum(1 for r in done_in_folder if _not_pseudonym(r))),
+         sum(1 for r in in_folder if _kept(r)),
+         sum(1 for r in done_in_folder if "patient ID field" in r["risk_reason"])),
         ("ECG files", len(raw), len(done)),
         ("ECG IDs", len({r["original_ecg_id"] for r in raw if r["original_ecg_id"]}),
-         len({r["ecg_code"] for r in done if r["original_ecg_id"]})),
+         len({r["anonymized_ecg_id"] for r in done if r["original_ecg_id"]})),
     ]
 
 
@@ -69,3 +78,14 @@ def format_stats(name: str, stats: list[tuple[str, int, int]]) -> str:
         mark = "" if before == after else "  differs"
         lines.append(f"  {what:{width}}  {before:>10}  {after:>10}{mark}")
     return "\n".join(lines)
+
+
+def write_stats(path: Path, stats: list[tuple[str, int, int]]) -> None:
+    """Write *stats* as a CSV (count, raw, anonymized, same)."""
+    temp = path.with_name(path.name + ".tmp")
+    with open(temp, "w", newline="", encoding="utf-8") as f:
+        writer = csv.writer(f)
+        writer.writerow(["count", "raw", "anonymized", "same"])
+        for what, before, after in stats:
+            writer.writerow([what, before, after, "TRUE" if before == after else "FALSE"])
+    os.replace(temp, path)

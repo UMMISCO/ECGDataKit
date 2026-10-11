@@ -67,9 +67,12 @@ it can be trusted to be the patient's ID:
 | With it, the ID does not match (or the file is outside a patient folder) | kept as is, and the catalog row is marked as risk with the reason |
 
 The ID matches the folder name when both are equal ignoring case, accents
-and separators (`DEEP-001-0001` and `deep 001 0001`), or when the ID
-appears as whole words in the folder name and has at least 4 characters
-(`001-0003` in `QuTe_001_0003_AB_CD`). The patient's name and the ECG ID
+and separators (`DEEP-001-0001` and `deep 001 0001`), or when one appears
+as whole words in the other and has at least 4 characters: the ID inside
+the folder name (`001-0003` in folder `QuTe_001_0003_AB_CD`), or the
+folder name inside the ID (folder `QT-01-0015-BV` in ID
+`QT 01 0015 BV C1J0H0PRE`). The whole field is then replaced by the
+patient pseudonym. The patient's name and the ECG ID
 are always replaced, whatever the options.
 
 ### Renaming patient folders
@@ -168,20 +171,23 @@ again after a change keeps its pseudonyms.
 | `raw_path`, `anonymized_path` | Paths relative to the dataset folder |
 | `patient_folder` | What groups the patient's files: the patient folder, or `file:` followed by the file's path when it is not in a patient folder |
 | `format` | Parser that read the file |
-| `patient_code`, `ecg_code` | The pseudonyms |
 | `original_patient_id` | With `--group-by-patient-folders`, the patient folder name, whatever the file holds. Without it, empty (the patient ID is not replaced) |
-| `file_patient_id`, `anonymized_patient_id` | The patient ID field read in the raw file, and what the anonymized file holds in it: the patient pseudonym when it was replaced, the same value when it was kept |
-| `original_last_name`, `original_first_name`, `original_ecg_id`, `original_file_name` | The values replaced (several values are separated by a vertical bar) |
-| `anonymized_file_name` | New file name |
+| `anonymized_patient_id` | The patient pseudonym, the same for every file of the patient |
+| `file_patient_id` | The patient ID field as read in the raw file. In the anonymized file it becomes `anonymized_patient_id`, unless the row is marked as risk because it was kept |
+| `original_ecg_id` | The ECG ID read in the raw file |
+| `anonymized_ecg_id` | The ECG pseudonym, one per file |
+| `original_last_name`, `original_first_name` | The names replaced (several values are separated by a vertical bar) |
+| `original_file_name`, `anonymized_file_name` | File name before and after |
 | `folder_anonymized` | `TRUE` when the patient folder was renamed |
-| `companions` | Other files of the record (WFDB) |
+| `companions` | Other anonymized files of the same recording, for formats stored as several files: a WFDB record is a `.hea` header (the row) plus its `.dat` signal files (listed here). Empty for other formats |
 | `raw_size`, `raw_mtime_ns`, `raw_sha256`, `anonymized_sha256` | Used to detect changes and check copies |
 | `detected_at`, `anonymized_at`, `last_change_at` | Dates of the events |
 | `message`, `tool_version` | Failure message, ecgdatakit version |
 
 The catalog links pseudonyms to patients: keep it where only authorized
 people can read it. {doc}`anonymization/stats` counts folders, patients,
-patient IDs and ECGs from it, before and after anonymization.
+patient IDs and ECGs before and after anonymization; it is written next
+to the catalog after each run, in `anonymization_stats.csv`.
 
 ## Checks
 

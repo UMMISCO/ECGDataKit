@@ -25,7 +25,8 @@
   runs it in a container.
 - `ecgdatakit anonymize stats` counts folders, patients, patient IDs
   (and files whose patient ID is not the folder name) and ECGs before and
-  after anonymization, to check they match.
+  after anonymization, to check they match. They are also printed after
+  each run and written to `anonymization_stats.csv`.
 - Install with `pip install "ecgdatakit[anonymize]"` (also part of
   `[all]`).
 

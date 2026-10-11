@@ -8,7 +8,7 @@ import shlex
 from ecgdatakit.anonymize._daemon import DEFAULT_PORT, request
 from ecgdatakit.anonymize._stats import format_stats
 
-_BRIEF = ["status", "risk", "raw_path", "anonymized_path", "patient_code", "ecg_code",
+_BRIEF = ["status", "risk", "raw_path", "anonymized_path", "anonymized_patient_id", "anonymized_ecg_id",
           "last_change_at", "message"]
 
 

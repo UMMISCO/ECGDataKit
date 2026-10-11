@@ -194,3 +194,24 @@ def _loose(value: str) -> str:
         else:
             out.append(re.escape(ch))
     return "".join(out)
+
+
+def matches_folder(value: str, folder: str) -> bool:
+    """True when a patient ID matches the patient folder name: equal
+    ignoring case, accents and separators, or one found as whole words in
+    the other (the shorter one of 4 characters or more): ``001-0003`` in
+    ``QuTe_001_0003_AB_CD``, or ``QT-01-0015-BV`` in ``QT 01 0015 BV C1J0``."""
+    if not folder:
+        return False
+    v, f = _words(value), _words(folder)
+    if not v:
+        return False
+    if v == f:
+        return True
+    if len(v.replace(" ", "")) >= 4 and f" {v} " in f" {f} ":
+        return True
+    return bool(f) and len(f.replace(" ", "")) >= 4 and f" {f} " in f" {v} "
+
+
+def _words(text: str) -> str:
+    return " ".join(re.findall(r"[^\W_]+", norm(text)))

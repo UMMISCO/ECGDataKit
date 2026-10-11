@@ -1,9 +1,17 @@
 # Statistics
 
-`ecgdatakit anonymize stats` counts, for each dataset, what was there
-before anonymization and what is in `ANONYMIZED`, side by side, so a
-mismatch shows at a glance. The counts come from the catalog: the command
-does not read the ECG files and changes nothing.
+Each run counts, for each dataset, what was there before anonymization
+and what is in `ANONYMIZED`, side by side, so a mismatch shows at a
+glance. The counts are:
+
+- printed at the end of `ecgdatakit anonymize run`;
+- written next to the catalog, in `anonymization_stats.csv` (columns
+  `count`, `raw`, `anonymized`, `same`);
+- shown again at any time by `ecgdatakit anonymize stats`, or by `stats`
+  in the shell of a running daemon.
+
+They are computed from the catalog of the whole dataset, not from the
+files of one run only.
 
 ```bash
 ecgdatakit anonymize stats /path/to/dataset
@@ -33,8 +41,8 @@ A line whose two counts differ ends with `differs`.
 | patient folders | Patient folders holding ECG files: only the top folder of each patient, whatever its sub-folders (with `--group-by-patient-folders`, otherwise 0) | Patient pseudonyms of the files in these folders |
 | patients | Patient folders, plus one per file outside a patient folder | Patient pseudonyms |
 | files with a patient ID | Raw files whose patient ID field is not empty | Copies whose patient ID field is not empty |
-| different patient IDs | Different values of the patient ID field in the raw files | Different values of that field in the copies |
-| files whose patient ID is not the folder name | Files in a patient folder whose patient ID field does not match the folder name, or holds a date | Copies in a patient folder whose patient ID field holds something other than the patient pseudonym (the kept values) |
+| different patient IDs | Different values of the patient ID field in the raw files | Different values of that field in the copies: the patient pseudonyms, plus the values kept |
+| files whose patient ID is not the folder name | Files in a patient folder whose patient ID field does not match the folder name, or holds a date | Copies whose patient ID was kept for that reason (rows marked as risk) |
 | ECG files | Raw files (failed ones included, deleted ones not) | Anonymized copies |
 | ECG IDs | Different ECG IDs in the raw files | ECG pseudonyms of the files that have an ECG ID |
 

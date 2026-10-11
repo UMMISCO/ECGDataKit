@@ -416,7 +416,9 @@ ecgdatakit anonymize shell [COMMAND ...] [--host ADDRESS] [--port PORT]
 ### `ecgdatakit anonymize stats`
 
 Counts of each dataset before and after anonymization, read from its
-catalog (see {doc}`stats`). It does not need a daemon and changes nothing.
+catalog (see {doc}`stats`). The same counts are printed at the end of
+each run and written to `anonymization_stats.csv`. It does not need a
+daemon and changes nothing.
 
 ```text
 ecgdatakit anonymize stats SOURCE [--datasets] [--dataset NAME] [--catalog FILE]

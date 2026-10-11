@@ -58,6 +58,10 @@ def _print_reports(reports) -> bool:
             print(f"  {r.raw_files} raw file(s) -> {r.anonymized_files} anonymized, "
                   f"{r.ecg_codes} ECG pseudonym(s); {r.patients} patient(s) -> "
                   f"{r.patient_codes} patient pseudonym(s)")
+        if r.stats:
+            from ecgdatakit.anonymize._stats import format_stats
+
+            print(format_stats("  whole dataset (also in anonymization_stats.csv):", r.stats))
         for error in r.errors:
             print(f"  ERROR {error}")
         ok &= r.ok
