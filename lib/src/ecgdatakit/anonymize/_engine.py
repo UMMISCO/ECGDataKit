@@ -167,9 +167,9 @@ class Anonymizer:
         folder is one patient and its files share one patient pseudonym.
         The patient folders are the sub-folders of the *patients_dir_name*
         folders, or without *patients_dir_name* the folders directly inside
-        the dataset. The patient ID field is replaced only when it matches
-        the patient folder name; otherwise it is kept and the file is
-        marked as risk.
+        the dataset. The patient ID field of a file in a patient folder is
+        replaced by the patient pseudonym (a date is kept); a value that
+        does not match the folder name is reported as risk.
     anonymize_patient_folders : bool
         ``False`` (default): folder names are copied as they are. ``True``
         (needs *group_by_patient_folders*): each patient folder is named

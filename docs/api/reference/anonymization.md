@@ -17,7 +17,7 @@ for report in reports:
 .. currentmodule:: ecgdatakit.anonymize
 
 .. autoclass:: Anonymizer
-   :members: run, run_dataset, datasets, dataset_of, catalog_path, check
+   :members: run, run_dataset, datasets, dataset_of, catalog_path, check, stats
 
 .. autoclass:: Report
    :members:

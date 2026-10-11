@@ -20,8 +20,9 @@ def _anonymizer_options(p: argparse.ArgumentParser) -> None:
                         "(default: every file is read)")
     p.add_argument("--group-by-patient-folders", action="store_true",
                    help="each patient folder is one patient: its files share one patient "
-                        "pseudonym, and the patient ID is replaced only when it matches "
-                        "the folder name; patient folders are the sub-folders of "
+                        "pseudonym, which also replaces the patient ID field (a date is "
+                        "kept; an ID that differs from the folder name is flagged as "
+                        "risk); patient folders are the sub-folders of "
                         "--patients-dir-name, or without it the folders directly inside "
                         "the dataset (default: no grouping, the patient ID is not replaced)")
     p.add_argument("--anonymize-patient-folders", action="store_true",

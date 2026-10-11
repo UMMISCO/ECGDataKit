@@ -63,7 +63,7 @@ the patient is known from the patient folder:
 | | Patient ID field |
 |-|------------------|
 | Without `--group-by-patient-folders` | never replaced: kept as is in the file, its free text and its name |
-| With it, file in a patient folder | replaced by the patient pseudonym, whatever it holds: the folder says who the patient is |
+| With it, file in a patient folder | replaced by the patient pseudonym, whatever it holds (except a date, see [below](#what-is-replaced)): the folder says who the patient is |
 | With it, file outside a patient folder | kept as is, and the catalog row is marked as risk |
 
 When the ID does not match the patient folder name (a typing error such as
@@ -73,8 +73,11 @@ read in the file, for example `patient ID field (PAT-002-003-AB) does not
 match the patient folder name, replaced`. These rows can be reviewed with
 the clinicians: a file may be in the wrong patient folder.
 
-The ID matches the folder name when both are equal ignoring case, accents
-and separators (`SITE-001-0001` and `site 001 0001`), or when one appears
+Matching only decides whether the row is flagged; it does not change what
+is replaced. The ID matches the folder name when both have the same words,
+ignoring case and accents, with any separator between them
+(`SITE-001-0001` and `site 001 0001`; but `003GM` is one word and does not
+match `003-GM`), or when one appears
 as whole words in the other and has at least 4 characters: the ID inside
 the folder name (`001-0003` in folder `SITE_001_0003_AB_CD`), or the
 folder name inside the ID (folder `PAT-01-0015-CD` in ID
@@ -204,7 +207,10 @@ At the end of each run, for every dataset:
 - ECG pseudonyms and anonymized paths are unique;
 - every raw file has its anonymized copy (or is marked `failed`), in total
   and per patient (when the whole dataset is processed, not only some of
-  its paths).
+  its paths);
+- the raw files and the anonymized files are counted again from disk and
+  compared (see {doc}`anonymization/stats`): a line that fails shows
+  `CHECK` in the summary and in `anonymization_stats.csv`.
 
 A problem is reported and the run ends with exit code 1. The summary of
 the run shows the counts side by side:

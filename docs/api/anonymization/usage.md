@@ -148,8 +148,8 @@ source/
 
 When each patient has a folder, `--group-by-patient-folders` makes each
 patient folder one patient: all its files share one patient pseudonym,
-and the patient ID field is replaced when it matches the folder name
-(see {ref}`how patients are identified <anonymization-patients>`).
+and the patient ID field of each file is replaced by that pseudonym (see
+{ref}`how patients are identified <anonymization-patients>`).
 
 **Where the patient folders are.** By default, the folders directly
 inside the dataset:
@@ -327,7 +327,7 @@ ecgdatakit anonymize run SOURCE [PATH ...]
 | `--datasets` | | If set, each sub-folder of `SOURCE` is a separate dataset with its own output folder and catalog. If not set, `SOURCE` is anonymized as one whole. |
 | `--dataset NAME` | all | With `--datasets` only. If set, only this dataset is processed; give it several times for several datasets. If not set, every dataset is processed. |
 | `--patients-dir-name NAME` | none | If set, only files under the folders with this name (the same in every dataset) are read, and their sub-folders are the patient folders. If not set, every file is read, and the patient folders are the folders directly inside the dataset. It does not group files by itself. |
-| `--group-by-patient-folders` | | If set, each patient folder is one patient: its files share one patient pseudonym, and the patient ID field is replaced only when it matches the folder name. If not set, each file is its own patient and the patient ID field is not replaced. |
+| `--group-by-patient-folders` | | If set, each patient folder is one patient: its files share one patient pseudonym, which also replaces the patient ID field, even when it differs from the folder name (the row is then marked as risk); a date in that field is kept. If not set, each file is its own patient and the patient ID field is not replaced. |
 | `--anonymize-patient-folders` | | With `--group-by-patient-folders` only. If set, each patient folder is renamed to the patient pseudonym in the output, and its name is replaced by the pseudonym wherever it appears in the files and their names. If not set, folder names are copied as they are. |
 | `--out-dir NAME` | `ANONYMIZED` | Output folder created in each dataset. |
 | `--catalog NAME` | `anonymization_catalog.csv` | Catalog file created in each dataset. |
@@ -371,7 +371,7 @@ ecgdatakit anonymize daemon SOURCE
 |--------|---------|-------------|
 | `--datasets` | | If set, each sub-folder of `SOURCE` is a separate dataset, and new sub-folders are picked up. If not set, `SOURCE` is one dataset. |
 | `--patients-dir-name NAME` | none | If set, only files under the folders with this name (the same in every dataset) are read, and their sub-folders are the patient folders. If not set, every file is read, and the patient folders are the folders directly inside the dataset. It does not group files by itself. |
-| `--group-by-patient-folders` | | If set, each patient folder is one patient: its files share one patient pseudonym, and the patient ID field is replaced only when it matches the folder name. If not set, each file is its own patient and the patient ID field is not replaced. |
+| `--group-by-patient-folders` | | If set, each patient folder is one patient: its files share one patient pseudonym, which also replaces the patient ID field, even when it differs from the folder name (the row is then marked as risk); a date in that field is kept. If not set, each file is its own patient and the patient ID field is not replaced. |
 | `--anonymize-patient-folders` | | With `--group-by-patient-folders` only. If set, each patient folder is renamed to the patient pseudonym in the output, and its name is replaced by the pseudonym wherever it appears in the files and their names. If not set, folder names are copied as they are. |
 | `--out-dir NAME` | `ANONYMIZED` | Output folder created in each dataset. |
 | `--catalog NAME` | `anonymization_catalog.csv` | Catalog file created in each dataset. |
