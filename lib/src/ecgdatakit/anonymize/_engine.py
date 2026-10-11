@@ -553,6 +553,7 @@ class Anonymizer:
 
         if not self.dry_run:
             report.deleted = self._deleted(dataset, entries, scanned, catalog)
+            _mark_duplicates(catalog)
             catalog.save()
             report.errors = self.check(dataset, catalog, entries if scope is None else None)
             self._count(dataset, catalog, entries, report)
@@ -915,6 +916,19 @@ def _in_scope(path: Path, scanned: list[tuple[Path, bool, bool]]) -> bool:
         elif path.parent == target or recursive and target in path.parents:
             return True
     return False
+
+
+def _mark_duplicates(catalog: Catalog) -> None:
+    """Fill the ``duplicate`` column: the raw paths of the other files with
+    the same content, for every file still on disk."""
+    with catalog.lock:
+        by_sha: dict[str, list[str]] = {}
+        for row in catalog.rows.values():
+            if row["status"] != "deleted" and row["raw_sha256"]:
+                by_sha.setdefault(row["raw_sha256"], []).append(row["raw_path"])
+        for row in catalog.rows.values():
+            same = by_sha.get(row["raw_sha256"], []) if row["status"] != "deleted" else []
+            row["duplicate"] = SEPARATOR.join(sorted(p for p in same if p != row["raw_path"]))
 
 
 def _sha256(paths: list[Path]) -> str:

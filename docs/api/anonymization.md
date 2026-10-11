@@ -186,6 +186,7 @@ again after a change keeps its pseudonyms.
 | `original_file_name`, `anonymized_file_name` | File name before and after |
 | `folder_anonymized` | `TRUE` when the patient folder was renamed |
 | `companions` | Other anonymized files of the same recording, for formats stored as several files: a WFDB record is a `.hea` header (the row) plus its `.dat` signal files (listed here). Empty for other formats |
+| `duplicate` | Raw paths of the other files with exactly the same content (several separated by a vertical bar), empty when the file is unique. Each copy is anonymized on its own, with its own ECG pseudonym; a copy in another patient folder gets that folder's patient pseudonym |
 | `raw_size`, `raw_mtime_ns`, `raw_sha256`, `anonymized_sha256` | Used to detect changes and check copies |
 | `detected_at`, `anonymized_at`, `last_change_at` | Dates of the events |
 | `message`, `tool_version` | Failure message, ecgdatakit version |

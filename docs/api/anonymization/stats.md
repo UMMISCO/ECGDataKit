@@ -64,6 +64,7 @@ Each line ends with `OK` when its check holds, `CHECK` when it does not.
   After anonymization each patient folder holds one pseudonym.
 - **Duplicate files and ECG IDs**: identical raw files (a `- Copie` next
   to its original, the same file in two folders) give fewer raw ECG IDs
-  than anonymized ones. Sort the catalog on `raw_sha256` to find them.
+  than anonymized ones. The catalog column `duplicate` lists, for each
+  file, the other files with the same content.
 - **Dates in the patient ID field** are kept as they are, so they are left
   aside in the patient ID lines.

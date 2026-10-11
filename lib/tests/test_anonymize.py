@@ -833,6 +833,11 @@ class TestOldCatalogRefused:
             Anonymizer(dataset).run()
 
 
+def _catalog_rows(dataset: Path) -> list[dict[str, str]]:
+    with open(dataset / "anonymization_catalog.csv", newline="") as f:
+        return list(csv.DictReader(f))
+
+
 class TestStats:
     """Stats counted from the raw and anonymized files on disk, on a layout
     like real exports: visit sub-folders, visit codes in the patient ID, a
@@ -925,6 +930,20 @@ class TestStats:
         # the stats file is not read as a raw file on the next run
         [r] = Anonymizer(dataset, patients_dir_name="RAW", group_by_patient_folders=True).run()
         assert r.ok and r.skipped_unsupported == 0
+
+    def test_duplicate_column(self, hl7_aecg_file, tmp_path):
+        dataset = self._dataset(hl7_aecg_file, tmp_path)
+        a = Anonymizer(dataset, patients_dir_name="RAW", group_by_patient_folders=True)
+        assert a.run()[0].ok
+        rows = {r["raw_path"]: r for r in _catalog_rows(dataset)}
+        b, copy = "RAW/PATIENT-001/visit-2/b.xml", "RAW/PATIENT-001/visit-2/b - copy.xml"
+        assert rows[b]["duplicate"] == copy and rows[copy]["duplicate"] == b
+        assert all(not r["duplicate"] for p, r in rows.items() if p not in (b, copy))
+        # the copy deleted: no duplicate left
+        (dataset / copy).unlink()
+        assert a.run()[0].ok
+        rows = {r["raw_path"]: r for r in _catalog_rows(dataset)}
+        assert rows[b]["duplicate"] == "" and rows[copy]["duplicate"] == ""
 
     def test_command_without_output(self, tmp_path):
         (tmp_path / "empty").mkdir()

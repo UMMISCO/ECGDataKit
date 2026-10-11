@@ -30,6 +30,7 @@ COLUMNS = [
     "anonymized_file_name",
     "folder_anonymized",
     "companions",
+    "duplicate",
     "raw_size",
     "raw_mtime_ns",
     "raw_sha256",
