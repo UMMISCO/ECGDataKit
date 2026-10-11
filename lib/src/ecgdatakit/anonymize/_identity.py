@@ -200,7 +200,7 @@ def matches_folder(value: str, folder: str) -> bool:
     """True when a patient ID matches the patient folder name: equal
     ignoring case, accents and separators, or one found as whole words in
     the other (the shorter one of 4 characters or more): ``001-0003`` in
-    ``QuTe_001_0003_AB_CD``, or ``QT-01-0015-BV`` in ``QT 01 0015 BV C1J0``."""
+    ``SITE_001_0003_AB_CD``, or ``PAT-01-0015-CD`` in ``PAT 01 0015 CD V1``."""
     if not folder:
         return False
     v, f = _words(value), _words(folder)

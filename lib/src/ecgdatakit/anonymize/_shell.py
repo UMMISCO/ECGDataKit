@@ -76,7 +76,7 @@ class Shell(cmd.Cmd):
         if not reply["datasets"]:
             print("(no catalog yet)")
         for d in reply["datasets"]:
-            print(format_stats(d["dataset"], [tuple(s) for s in d["stats"]]))
+            print(format_stats(d["dataset"], d["stats"]))
             print()
 
     def do_catalog(self, arg: str) -> None:

@@ -34,7 +34,13 @@ from ecgdatakit.anonymize._identity import (
     looks_like_date,
     matches_folder,
 )
-from ecgdatakit.anonymize._stats import STATS_NAME, catalog_stats, write_stats
+from ecgdatakit.anonymize._stats import (
+    STATS_NAME,
+    FileRecord,
+    Stat,
+    compare,
+    write_stats,
+)
 from ecgdatakit.anonymize._verify import VerificationError, verify
 from ecgdatakit.anonymize.formats import HANDLERS, Codes, Handler, Spliced
 from ecgdatakit.anonymize.formats._base import is_data
@@ -96,9 +102,10 @@ class Report:
     patient_codes: int = 0
     """Distinct patient pseudonyms of these files."""
     errors: list[str] = field(default_factory=list)
-    stats: list[tuple[str, int, int]] = field(default_factory=list)
-    """Counts of the whole dataset before and after anonymization (see
-    :func:`catalog_stats`), also written to ``anonymization_stats.csv``."""
+    stats: list = field(default_factory=list)
+    """Counts of the raw and anonymized files of the whole dataset, read
+    from disk (see :meth:`Anonymizer.stats`), also written to
+    ``anonymization_stats.csv``."""
 
     @property
     def ok(self) -> bool:
@@ -439,6 +446,56 @@ class Anonymizer:
             return (raw_root / rel.parts[0]).relative_to(dataset).as_posix()
         return ""
 
+    # -- stats -------------------------------------------------------------------
+
+    def stats(self, dataset: Path) -> list[Stat]:
+        """Counts of the raw files and of the anonymized files, each read
+        from disk (see :mod:`ecgdatakit.anonymize._stats`)."""
+        dataset = Path(dataset)
+        scope = [self.single_file] if self.single_file is not None else None
+        raw_roots = [(folder, rec, root) for folder, rec, root
+                     in self._raw_roots(dataset, scope, True)]
+        out = dataset / self.out_dir
+        anon_roots = []
+        for _, _, root in raw_roots:
+            anon_root = out / root.relative_to(dataset)
+            if anon_root.is_dir() and all(r != anon_root for _, _, r in anon_roots):
+                anon_roots.append((anon_root, True, anon_root))
+        raw = self._records(dataset, raw_roots, skip=out)
+        anon = self._records(out, anon_roots, skip=None)
+        return compare(raw, anon, grouped=self.by_folder, renamed=self.folders)
+
+    def _records(self, base: Path, roots, skip: Path | None) -> list[FileRecord]:
+        """ECG files under *roots*, with their patient folder and the
+        identity values read in them."""
+        found: list[tuple[Path, str]] = []
+        for folder, rec, root in roots:
+            for _, files in self._list(folder, rec, skip=skip):
+                for e in files:
+                    path = Path(e.path)
+                    if path.parent == base and path.name in (
+                            self.catalog_name, STATS_NAME, _LOCK):
+                        continue
+                    found.append((path, self._patient_folder(base, root, path)))
+
+        def read(item: tuple[Path, str]) -> FileRecord | None:
+            path, patient_folder = item
+            handler = self._detect(path)
+            if handler is None:
+                return None
+            if isinstance(handler, WFDBHandler) and path.suffix.lower() != ".hea":
+                return None
+            try:
+                identity = handler.identity(path)
+            except Exception:  # noqa: BLE001 - an unreadable file is counted without values
+                identity = Identity()
+            return FileRecord(path.relative_to(base).as_posix(), patient_folder,
+                              tuple(identity.patient_ids), tuple(identity.ecg_ids),
+                              _sha256([path]))
+
+        with ThreadPoolExecutor(self.threads) as pool:
+            return [r for r in pool.map(read, found) if r is not None]
+
     # -- processing --------------------------------------------------------------
 
     def _run_locked(self, dataset: Path, scope, recursive, report: Report) -> Report:
@@ -499,7 +556,7 @@ class Anonymizer:
             catalog.save()
             report.errors = self.check(dataset, catalog, entries if scope is None else None)
             self._count(dataset, catalog, entries, report)
-            report.stats = catalog_stats(catalog)
+            report.stats = self.stats(dataset)
             write_stats(dataset / STATS_NAME, report.stats)
         for error in report.errors:
             log.error("%s: %s", dataset.name, error)
@@ -522,11 +579,16 @@ class Anonymizer:
         identity = handler.identity(entry.path)
         # The patient ID field may hold something else than a patient ID (a
         # date, a study code): it is replaced only with patient folder
-        # grouping, and only when it matches the patient folder name
+        # grouping. The patient folder then says who the patient is, so the
+        # field is replaced even when it does not match the folder name (a
+        # typing error, another patient); only a date is kept. Values that do
+        # not match are reported as risks for review.
         folder = Path(entry.patient_folder).name if entry.patient_folder else ""
         file_ids = list(identity.patient_ids)
         kept_ids = [v for v in identity.patient_ids
-                    if not self.by_folder or looks_like_date(v) or not matches_folder(v, folder)]
+                    if not self.by_folder or not folder or looks_like_date(v)]
+        unmatched = [v for v in identity.patient_ids
+                     if v not in kept_ids and not matches_folder(v, folder)]
         identity.patient_ids = [v for v in identity.patient_ids if v not in kept_ids]
         # Only a patient folder groups files; a file outside one is its own
         # patient (an ID read in the file may be wrong, a date for example)
@@ -552,8 +614,11 @@ class Anonymizer:
                 if looks_like_date(v):
                     risks.append(f"patient ID field holds a date ({v}), kept as is")
                 else:
-                    risks.append(f"patient ID field ({v}) does not match the patient folder "
-                                 f"name, kept as is")
+                    risks.append(f"patient ID field ({v}) kept as is: the file is not in a "
+                                 f"patient folder")
+            for v in unmatched:
+                risks.append(f"patient ID field ({v}) does not match the patient folder "
+                             f"name, replaced")
         if isinstance(handler, WFDBHandler) and handler.is_multi_segment(entry.path):
             new_name = entry.path.name
             if new_file_name(entry.path.name, identity, patient_code, ecg_code, folder_names,

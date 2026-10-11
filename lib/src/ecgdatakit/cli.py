@@ -61,7 +61,8 @@ def _print_reports(reports) -> bool:
         if r.stats:
             from ecgdatakit.anonymize._stats import format_stats
 
-            print(format_stats("  whole dataset (also in anonymization_stats.csv):", r.stats))
+            print(format_stats("  whole dataset, counted from the files "
+                               "(also in anonymization_stats.csv):", r.stats))
         for error in r.errors:
             print(f"  ERROR {error}")
         ok &= r.ok
@@ -76,23 +77,20 @@ def _run(args) -> int:
 
 
 def _stats(args) -> int:
-    from ecgdatakit.anonymize import Anonymizer
-    from ecgdatakit.anonymize._catalog import Catalog
-    from ecgdatakit.anonymize._stats import catalog_stats, format_stats
+    from ecgdatakit.anonymize._stats import format_stats
 
-    anonymizer = Anonymizer(args.source, datasets=args.datasets, catalog_name=args.catalog)
+    anonymizer = _anonymizer(args)
     found = False
     for dataset in anonymizer.datasets():
         if args.dataset and dataset.name not in args.dataset:
             continue
-        path = anonymizer.catalog_path(dataset)
-        if not path.exists():
+        if not (dataset / args.out_dir).is_dir():
             continue
         found = True
-        print(format_stats(dataset.name, catalog_stats(Catalog(path))))
+        print(format_stats(dataset.name, anonymizer.stats(dataset)))
         print()
     if not found:
-        print("no catalog found: run the anonymizer first", file=sys.stderr)
+        print(f"no {args.out_dir} folder found: run the anonymizer first", file=sys.stderr)
         return 2
     return 0
 
@@ -156,14 +154,11 @@ def main(argv: list[str] | None = None) -> int:
     daemon.add_argument("--port", type=int, default=DEFAULT_PORT, help="control server port")
     daemon.set_defaults(func=_daemon)
 
-    stats = actions.add_parser("stats", help="counts before and after anonymization")
-    stats.add_argument("source", help="folder given to run or daemon")
-    stats.add_argument("--datasets", action="store_true",
-                       help="each sub-folder of SOURCE is a separate dataset")
+    stats = actions.add_parser("stats", help="counts before and after anonymization, "
+                                             "read from the raw and anonymized files")
+    _anonymizer_options(stats)
     stats.add_argument("--dataset", action="append", metavar="NAME",
                        help="with --datasets: only this dataset (repeatable)")
-    stats.add_argument("--catalog", default="anonymization_catalog.csv",
-                       help="CSV catalog file name in each dataset")
     stats.set_defaults(func=_stats)
 
     shell = actions.add_parser("shell", help="talk to a running daemon")

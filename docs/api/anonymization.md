@@ -16,8 +16,8 @@ To run it, see {doc}`anonymization/usage`.
    not supported.
 2. **Read the identity values.** The patient's name and ID and the ECG ID
    are read from the fields of each format (see
-   [What is replaced](#what-is-replaced)). The patient ID is kept unless
-   it matches the patient folder name (see [Patients](#patients)). With
+   [What is replaced](#what-is-replaced)). The patient ID is replaced only
+   with `--group-by-patient-folders` (see [Patients](#patients)). With
    `--anonymize-patient-folders`, the name of the patient folder is added
    to the values to replace.
 3. **Choose the pseudonyms.** Each file gets its own ECG pseudonym. Each
@@ -58,21 +58,27 @@ patients.
 ### The patient ID field
 
 For the same reason, the patient ID field of a file is only replaced when
-it can be trusted to be the patient's ID:
+the patient is known from the patient folder:
 
 | | Patient ID field |
 |-|------------------|
 | Without `--group-by-patient-folders` | never replaced: kept as is in the file, its free text and its name |
-| With it, the ID matches the patient folder name | replaced by the patient pseudonym |
-| With it, the ID does not match (or the file is outside a patient folder) | kept as is, and the catalog row is marked as risk with the reason |
+| With it, file in a patient folder | replaced by the patient pseudonym, whatever it holds: the folder says who the patient is |
+| With it, file outside a patient folder | kept as is, and the catalog row is marked as risk |
+
+When the ID does not match the patient folder name (a typing error such as
+`PAT-002-003-AB` in folder `PAT-01-003-AB`, or the ID of another patient),
+it is still replaced, and the catalog row is marked as risk with the ID
+read in the file, for example `patient ID field (PAT-002-003-AB) does not
+match the patient folder name, replaced`. These rows can be reviewed with
+the clinicians: a file may be in the wrong patient folder.
 
 The ID matches the folder name when both are equal ignoring case, accents
-and separators (`DEEP-001-0001` and `deep 001 0001`), or when one appears
+and separators (`SITE-001-0001` and `site 001 0001`), or when one appears
 as whole words in the other and has at least 4 characters: the ID inside
-the folder name (`001-0003` in folder `QuTe_001_0003_AB_CD`), or the
-folder name inside the ID (folder `QT-01-0015-BV` in ID
-`QT 01 0015 BV C1J0H0PRE`). The whole field is then replaced by the
-patient pseudonym. The patient's name and the ECG ID
+the folder name (`001-0003` in folder `SITE_001_0003_AB_CD`), or the
+folder name inside the ID (folder `PAT-01-0015-CD` in ID
+`PAT 01 0015 CD V1PRE`). The patient's name and the ECG ID
 are always replaced, whatever the options.
 
 ### Renaming patient folders
@@ -173,7 +179,7 @@ again after a change keeps its pseudonyms.
 | `format` | Parser that read the file |
 | `original_patient_id` | With `--group-by-patient-folders`, the patient folder name, whatever the file holds. Without it, empty (the patient ID is not replaced) |
 | `anonymized_patient_id` | The patient pseudonym, the same for every file of the patient |
-| `file_patient_id` | The patient ID field as read in the raw file. In the anonymized file it becomes `anonymized_patient_id`, unless the row is marked as risk because it was kept |
+| `file_patient_id` | The patient ID field as read in the raw file. With `--group-by-patient-folders` it becomes `anonymized_patient_id` in the anonymized file (except a date); `risk_reason` says when it did not match the folder name |
 | `original_ecg_id` | The ECG ID read in the raw file |
 | `anonymized_ecg_id` | The ECG pseudonym, one per file |
 | `original_last_name`, `original_first_name` | The names replaced (several values are separated by a vertical bar) |
@@ -185,9 +191,9 @@ again after a change keeps its pseudonyms.
 | `message`, `tool_version` | Failure message, ecgdatakit version |
 
 The catalog links pseudonyms to patients: keep it where only authorized
-people can read it. {doc}`anonymization/stats` counts folders, patients,
-patient IDs and ECGs before and after anonymization; it is written next
-to the catalog after each run, in `anonymization_stats.csv`.
+people can read it. {doc}`anonymization/stats` counts the raw and the
+anonymized files, each read again from disk, after each run, and writes
+them to `anonymization_stats.csv` next to the catalog.
 
 ## Checks
 

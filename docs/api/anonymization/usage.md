@@ -415,22 +415,20 @@ ecgdatakit anonymize shell [COMMAND ...] [--host ADDRESS] [--port PORT]
 
 ### `ecgdatakit anonymize stats`
 
-Counts of each dataset before and after anonymization, read from its
-catalog (see {doc}`stats`). The same counts are printed at the end of
-each run and written to `anonymization_stats.csv`. It does not need a
-daemon and changes nothing.
+Counts the raw files and the files of `ANONYMIZED`, each read again from
+disk, and checks them (see {doc}`stats`). The same counts are printed at
+the end of each run and written to `anonymization_stats.csv`. It does
+not need a daemon and changes nothing.
 
 ```text
-ecgdatakit anonymize stats SOURCE [--datasets] [--dataset NAME] [--catalog FILE]
+ecgdatakit anonymize stats SOURCE [options of run] [--dataset NAME]
 ```
 
-| Option | Default | Description |
-|--------|---------|-------------|
-| `--datasets` | | If set, each sub-folder of `SOURCE` is a dataset and each one is counted. Give it when the runs used it. |
-| `--dataset NAME` | all | With `--datasets` only. If set, only this dataset is counted; give it several times for several datasets. |
-| `--catalog FILE` | `anonymization_catalog.csv` | Catalog file name, as given to `run`. |
-
-Exit code 2 when no catalog is found.
+It takes the options of `ecgdatakit anonymize run` that describe the
+dataset (`--datasets`, `--patients-dir-name`, `--group-by-patient-folders`,
+`--anonymize-patient-folders`, `--out-dir`): give the ones the runs used.
+`--dataset NAME` limits it to some datasets. Exit code 2 when no
+`ANONYMIZED` folder is found.
 
 ### Exit codes
 

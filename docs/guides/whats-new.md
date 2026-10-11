@@ -23,10 +23,10 @@
 - `ecgdatakit anonymize daemon` keeps a folder anonymized as files arrive,
   `ecgdatakit anonymize shell` shows what it is doing, and a Dockerfile
   runs it in a container.
-- `ecgdatakit anonymize stats` counts folders, patients, patient IDs
-  (and files whose patient ID is not the folder name) and ECGs before and
-  after anonymization, to check they match. They are also printed after
-  each run and written to `anonymization_stats.csv`.
+- After each run, the raw files and the anonymized files are counted
+  again from disk and checked (folders, patient folders, ECG files, patient
+  IDs, duplicates, ECG IDs). The counts are printed, written to
+  `anonymization_stats.csv`, and shown by `ecgdatakit anonymize stats`.
 - Install with `pip install "ecgdatakit[anonymize]"` (also part of
   `[all]`).
 
