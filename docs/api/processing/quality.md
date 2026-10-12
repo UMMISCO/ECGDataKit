@@ -10,9 +10,9 @@ The SQI is a heuristic screening score, not a validated clinical measure. It is 
 
 | Sub-score | Definition | Scoring |
 |---|---|---|
-| Kurtosis | Excess kurtosis of the signal (after Li, Clark and Clifford 2008) | 1 for 3–20; `k / 3` below 3; 0 when negative; linear decrease to 0 at 50 above 20 |
+| Kurtosis | Excess kurtosis of the signal (after Li, Clark and Clifford 2008) | 1 from 3 to 20, `k / 3` below 3, 0 when negative, linear decrease to 0 at 50 above 20 |
 | Power ratio | Variance of the 1–40 Hz band / variance of the mean-removed signal | `ratio / 0.7`, clipped to [0, 1] |
-| Peak regularity | Coefficient of variation (CV) of RR intervals from {func}`~ecgdatakit.processing.detect_r_peaks` | `1 − 2 × CV`, clipped; 0.3 when fewer than 3 peaks |
+| Peak regularity | Coefficient of variation (CV) of RR intervals from {func}`~ecgdatakit.processing.detect_r_peaks` | `1 − 2 × CV`, clipped, or 0.3 when fewer than 3 peaks |
 | Baseline stability | Variance below 1 Hz / variance of the 1–40 Hz band | `1 − ratio`, clipped |
 
 {func}`~ecgdatakit.processing.classify_quality` maps the SQI to `"excellent"` (> 0.8), `"acceptable"` (0.5–0.8) or `"unacceptable"` (< 0.5).

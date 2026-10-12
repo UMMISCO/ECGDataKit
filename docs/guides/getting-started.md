@@ -61,7 +61,7 @@ record = FileParser().parse("path/to/ecg_file.xml")
 
 Leads are returned in millivolts by default (`auto_scale=True`). Leads whose
 file gives no voltage scale stay in raw counts, with a warning. Pass
-`auto_scale=False` to get the values stored in the file; see {doc}`../api/scaling`.
+`auto_scale=False` to get the values stored in the file (see {doc}`../api/scaling`).
 
 ### Patient information
 

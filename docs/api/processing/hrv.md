@@ -21,7 +21,7 @@ Definitions follow the Task Force of the ESC and NASPE (1996), *Heart rate varia
 | `nn20_count`, `pnn20` | count, % | Same with 20 ms |
 | `hr_mean`, `hr_std` | bpm | Mean and sample standard deviation of `60000 / RR` |
 | `vlf_power`, `lf_power`, `hf_power`, `total_power` | ms² | Welch PSD of the RR series, cubic-interpolated at `interp_fs` (default 4 Hz, must be finite and above 0.8 Hz), integrated over 0–0.04, 0.04–0.15, 0.15–0.40 and 0–0.40 Hz |
-| `lf_hf_ratio` | – | `lf_power / hf_power` (`nan` when HF is 0) |
+| `lf_hf_ratio` | none | `lf_power / hf_power` (`nan` when HF is 0) |
 | `sd1`, `sd2` | ms | `std(RR[n+1] − RR[n]) / √2` and `std(RR[n+1] + RR[n]) / √2` |
 
 ```{warning}

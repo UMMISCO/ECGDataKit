@@ -74,11 +74,11 @@ read in the file, for example `patient ID field (SUBJ-0024) does not
 match the patient folder name, replaced`. These rows can be reviewed with
 the clinicians: a file may be in the wrong patient folder.
 
-Matching only decides whether the row is flagged; it does not change what
+Matching only decides whether the row is flagged. It does not change what
 is replaced. The ID matches the folder name when both have the same words,
 ignoring case and accents, with any separator between them
-(`SUBJ-0042` and `subj 0042`; but `0042XY` is one word and does not
-match `0042-XY`), or when one appears
+(`SUBJ-0042` and `subj 0042`, but not `0042XY` and `0042-XY`, since
+`0042XY` is one word), or when one appears
 as whole words in the other and has at least 4 characters: the ID inside
 the folder name (`7-0042` in folder `TRIAL_7_0042_XY`), or the
 folder name inside the ID (folder `SUBJ-0042` in ID
@@ -91,12 +91,12 @@ With `--anonymize-patient-folders`, the patient folder name is treated as
 one more identifier of the patient, for folders named after the patient
 or their hospital number:
 
-- the patient folder is named after the patient pseudonym in `ANONYMIZED`;
-  it is the only folder renamed: its sub-folders and the folders above it
-  keep their exact names;
-- the folder name is replaced by the pseudonym wherever it appears inside
-  the files (any field or free text, all formats);
-- it is matched as a whole, ignoring case, accents and spacing: a part of
+- The patient folder is named after the patient pseudonym in `ANONYMIZED`.
+  It is the only folder renamed: its sub-folders and the folders above it
+  keep their exact names.
+- The folder name is replaced by the pseudonym wherever it appears inside
+  the files (any field or free text, all formats).
+- It is matched as a whole, ignoring case, accents and spacing: a part of
   it (such as a number alone) is not replaced.
 
 Without it, every folder keeps its name in `ANONYMIZED`, and a folder
@@ -188,7 +188,7 @@ anonymized again after a change keeps its pseudonyms.
 | `format` | Parser that read the file |
 | `original_patient_id` | With `--group-by-patient-folders`, the patient folder name, whatever the file holds. Without it, empty (the patient ID is not replaced) |
 | `anonymized_patient_id` | The patient pseudonym, the same for every file of the patient |
-| `file_patient_id` | The patient ID field as read in the raw file. With `--group-by-patient-folders` it becomes `anonymized_patient_id` in the anonymized file (except a date); `risk_reason` says when it did not match the folder name |
+| `file_patient_id` | The patient ID field as read in the raw file. With `--group-by-patient-folders` it becomes `anonymized_patient_id` in the anonymized file (except a date). `risk_reason` says when it did not match the folder name |
 | `original_ecg_id` | The ECG ID read in the raw file |
 | `anonymized_ecg_id` | The ECG pseudonym, one per file |
 | `original_last_name`, `original_first_name` | The names replaced (several values are separated by a vertical bar) |
@@ -209,15 +209,15 @@ them to `anonymization_stats.csv` next to the catalog.
 
 At the end of each run, for every dataset:
 
-- each patient has one pseudonym and each pseudonym one patient;
+- each patient has one pseudonym and each pseudonym one patient
 - anonymized paths are unique, and an ECG pseudonym is only shared by
-  files with the same content;
+  files with the same content
 - every raw file has its anonymized copy (or is marked `failed`), in total
   and per patient (when the whole dataset is processed, not only some of
-  its paths);
+  its paths)
 - the raw files and the anonymized files are counted again from disk and
   compared (see {doc}`anonymization/stats`): a line that fails shows
-  `CHECK` in the summary and in `anonymization_stats.csv`.
+  `CHECK` in the summary and in `anonymization_stats.csv`
 
 A problem is reported and the run ends with exit code 1. The summary of
 the run shows the counts side by side:

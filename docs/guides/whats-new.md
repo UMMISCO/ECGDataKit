@@ -134,11 +134,11 @@ different result. This page lists every change you may notice.
 ### Parsing many files
 
 - `parse_batch(..., on_error="warn")` skips files that fail and reports
-  each one as a `BatchParseWarning`; `on_error="ignore"` skips them
+  each one as a `BatchParseWarning`, and `on_error="ignore"` skips them
   silently. The default, `"raise"`, stops at the first failure.
 - `parse_batch(..., executor="serial")` parses in the current process,
   which is faster for long Holter recordings. The default uses worker
-  processes; on macOS and Windows call it under
+  processes. On macOS and Windows, call it under
   `if __name__ == "__main__":`.
 
 ### Signal processing

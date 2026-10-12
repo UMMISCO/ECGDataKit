@@ -18,7 +18,7 @@ Each {class}`~ecgdatakit.models.Lead` stores these scaling-related fields:
 | `resolution` | `float` | `1.0` | Multiplier, the ADC-to-physical scale factor |
 | `resolution_unit` | `str` | `""` | Unit of `resolution`, the unit samples are in after `to_physical()` |
 | `offset` | `float` | `0.0` | Additive constant applied after scaling |
-| `units` | `str` | `""` | Current unit of `samples`; empty while they are raw counts |
+| `units` | `str` | `""` | Current unit of `samples`, empty while they are raw counts |
 | `is_raw` | `bool` | `True` | `True` if samples are raw ADC, `False` after conversion |
 
 ```{tip}

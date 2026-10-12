@@ -15,7 +15,7 @@
 
 #### Detection methods
 
-{func}`~ecgdatakit.processing.detect_r_peaks` supports two algorithms, selected via the `method` parameter. Both work at any sample rate (all time constants are in seconds), accept either QRS polarity, and return sorted, unique sample indices. The signal must be 1-D, finite and at least 1 s long; otherwise a `ValueError` is raised.
+{func}`~ecgdatakit.processing.detect_r_peaks` supports two algorithms, selected via the `method` parameter. Both work at any sample rate (all time constants are in seconds), accept either QRS polarity, and return sorted, unique sample indices. The signal must be 1-D, finite and at least 1 s long, otherwise a `ValueError` is raised.
 
 Exactly constant runs of 2 s or more (zero padding at the end of a short recording, a disconnected or saturated lead) are skipped, and the stretches between them are processed separately, so the step into the padding is not taken as a beat. ECG stretches shorter than 1 s between such runs are not analysed. A constant signal returns no peaks.
 
@@ -48,7 +48,7 @@ Each candidate is moved to the dominant QRS deflection within Â±75 ms in a 0.5â€
 
 ##### Benchmark
 
-Measured on 18 MIT-BIH Arrhythmia Database records (100, 101, 103, 105, 106, 108, 109, 114, 119, 200, 203, 207, 208, 210, 213, 222, 228, 232; 30 min each, first channel, 41 595 annotated beats). A detection counts as correct within 150 ms of an annotation. Signals were resampled from 360 Hz for the other rates.
+Measured on 18 MIT-BIH Arrhythmia Database records (100, 101, 103, 105, 106, 108, 109, 114, 119, 200, 203, 207, 208, 210, 213, 222, 228 and 232, 30 min each, first channel, 41 595 annotated beats). A detection counts as correct within 150 ms of an annotation. Signals were resampled from 360 Hz for the other rates.
 
 | Sample rate | Shannon energy Se / PPV | Pan-Tompkins Se / PPV |
 |---|---|---|

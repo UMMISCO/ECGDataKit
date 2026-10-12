@@ -14,9 +14,9 @@ Without them, the plotting functions raise `ImportError` with the install comman
 - Amplitude labels show each lead's unit (`mV`, `uV`, ...) or `raw counts` for leads that are still raw ADC values (`FileParser(...).parse(path, auto_scale=False)`). Numpy arrays are drawn as given, without a unit.
 - With a shared x-axis (`share_x=True`, the default) the range covers the longest lead, so leads of different lengths or rates are never cut off.
 - `show_grid=True` draws ECG paper lines every 0.2 s / 0.04 s and 0.5 / 0.1 mV (converted to the lead unit). Leads in raw counts keep automatic amplitude ticks.
-- {func}`~ecgdatakit.plotting.plot_report` uses the standard 3 x 4 layout, each column showing its own 2.5 s of the first 10 s, with a 10 s lead II rhythm strip; signal quality is computed on the same 10 s.
+- {func}`~ecgdatakit.plotting.plot_report` uses the standard 3 x 4 layout, each column showing its own 2.5 s of the first 10 s, with a 10 s lead II rhythm strip. Signal quality is computed on the same 10 s.
 - Interactive traces longer than 200 000 samples are drawn with min/max decimation (peaks are kept) and a `UserWarning`. Slice the lead to see every sample.
-- Static plots use the `seaborn-v0_8-whitegrid` style only while drawing; the global matplotlib settings are not changed.
+- Static plots use the `seaborn-v0_8-whitegrid` style only while drawing. The global matplotlib settings are not changed.
 
 ```{note}
 All plotting functions accept raw **numpy arrays** in addition to `Lead` / `ECGRecord` objects. When passing numpy arrays, provide the sample rate via `fs`:

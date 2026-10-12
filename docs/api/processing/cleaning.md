@@ -26,7 +26,7 @@ Below 89 Hz the 40 Hz upper cutoff of `"default"` is lowered to 0.45 * fs, with 
 
 `powerline` sets the mains frequency (default 50 Hz, use `powerline=60` in the Americas) for `"default"`, `"neurokit2"` and the NeuroKit2 stage of `"combined"`. `powerline=None` disables the notch of `"default"`. When the sampling rate is too low for the notch, `"default"` skips it with a warning.
 
-Backend errors are never hidden: a signal a backend cannot process raises its error, and NaN or Inf samples raise `ValueError`. Keyword arguments that the selected method does not use raise `TypeError`; `device`, `weights_path` and `batch_size` are accepted by `"deepfade"` only.
+Backend errors are never hidden: a signal a backend cannot process raises its error, and NaN or Inf samples raise `ValueError`. Keyword arguments that the selected method does not use raise `TypeError`. `device`, `weights_path` and `batch_size` are accepted by `"deepfade"` only.
 
 ```python
 cleaned = clean_ecg(lead)                    # 0.5-40 Hz + 50 Hz notch
@@ -49,7 +49,7 @@ How a lead is processed:
 3. The network output has no fixed amplitude scale. It is rescaled by a least-squares fit to the 0.5 to 40 Hz band of the same input window, so the result stays in the input units. The output is exactly proportional to the input amplitude, and adding a constant offset to the input does not change it.
 4. Windows are recombined with a Hann overlap-add, resampled back to the original rate and trimmed to the original length.
 
-The output has baseline wander removed: its isoelectric level is near zero, not at the input mean. CPU inference is deterministic. The lead must be in physical units (for example mV): a lead still holding raw ADC counts raises `ValueError`, so call `lead.to_physical()` or parse with `auto_scale=True` first. Signals shorter than 1 s, or containing NaN or infinite values, also raise `ValueError`. The experimental warning is issued only when torch is available; without torch the call raises `ImportError`.
+The output has baseline wander removed: its isoelectric level is near zero, not at the input mean. CPU inference is deterministic. The lead must be in physical units (for example mV): a lead still holding raw ADC counts raises `ValueError`, so call `lead.to_physical()` or parse with `auto_scale=True` first. Signals shorter than 1 s, or containing NaN or infinite values, also raise `ValueError`. The experimental warning is issued only when torch is available. Without torch, the call raises `ImportError`.
 
 Caveats:
 
