@@ -1,6 +1,7 @@
 """Format handlers, one per ecgdatakit parser.
 
-EDAN Holter is not handled: the format is undocumented.
+EDAN Holter is not handled: the format is undocumented. XLE, also
+undocumented, is handled from its reverse-engineered layout.
 """
 
 from __future__ import annotations
@@ -17,13 +18,14 @@ from ecgdatakit.anonymize.formats.mortara_el250 import MortaraHandler
 from ecgdatakit.anonymize.formats.scp_ecg import SCPHandler
 from ecgdatakit.anonymize.formats.sierra_xml import SierraHandler
 from ecgdatakit.anonymize.formats.wfdb import WFDBHandler
+from ecgdatakit.anonymize.formats.xle import XLEHandler
 
 HANDLERS: dict[str, Handler] = {
     h.parser: h
     for h in (
         HL7Handler(), MuseHandler(), SierraHandler(), MortaraHandler(),
         ISHNEHandler(), EDFHandler(), AliveCorHandler(),
-        SCPHandler(), MFERHandler(), WFDBHandler(), DICOMHandler(),
+        SCPHandler(), MFERHandler(), WFDBHandler(), DICOMHandler(), XLEHandler(),
     )
 }
 """Handler by parser class name."""

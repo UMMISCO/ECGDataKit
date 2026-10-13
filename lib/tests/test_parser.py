@@ -41,13 +41,14 @@ class TestFileParserDiscovery:
         assert "DICOMWaveformParser" in names
         assert "EDANARCHolterParser" in names
         assert "AliveCorKardiaParser" in names
+        assert "XLEParser" in names
         # Removed from the release: no public spec and no real sample
         assert "BeneHeartR12Parser" not in names
         assert "GEMAC2000Parser" not in names
 
     def test_discovers_correct_count(self):
-        # 12 parsers (DICOM is discovered even without pydicom installed)
-        assert len(FileParser().parsers) == 12
+        # 13 parsers (DICOM is discovered even without pydicom installed)
+        assert len(FileParser().parsers) == 13
 
     def test_discovers_each_parser_once(self):
         names = [p.__name__ for p in FileParser().parsers]

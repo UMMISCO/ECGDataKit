@@ -118,6 +118,7 @@ named after the patient shows that name. The catalog column
 | DICOM | PatientName, OtherPatientNames, PatientBirthName | PatientID, OtherPatientIDs | SOPInstanceUID |
 | WFDB | `# name:` comment | `# id:` comment | none |
 | AliveCor Kardia JSON | none | `patientID` | `id` |
+| XLE (experimental) | `Given name`, `Family name` | `ID` | none |
 
 - The last name takes the patient pseudonym and the first name is
   emptied. The patient ID takes the patient pseudonym only as described
@@ -137,8 +138,9 @@ catalog row is marked as risk with the reason.
 
 **Format kept.** Only the bytes of the identity values change: an XML
 file keeps its encoding, indentation and line endings, binary headers keep
-their size, and a checksum (ISHNE, SCP-ECG) is computed again when the
-original one was valid. DICOM files are written back with pydicom.
+their size, the XLE header text keeps its byte-swapped layout, and a
+checksum (ISHNE, SCP-ECG) is computed again when the original one was
+valid. DICOM files are written back with pydicom.
 
 ## File names
 

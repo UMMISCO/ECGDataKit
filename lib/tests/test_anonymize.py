@@ -701,7 +701,12 @@ class TestPatientIdField:
 
 
 ALL_FORMATS = ["hl7_aecg_file", "mortara_file", "ishne_file", "edf_file", "scp_ecg_file",
-               "ge_muse_xml_file", "dicom_12lead_file", "mfer_file", "sierra", "wfdb", "alivecor"]
+               "ge_muse_xml_file", "dicom_12lead_file", "mfer_file", "sierra", "wfdb", "alivecor",
+               "xle"]
+
+XLE_VALUES = {"Given name": "John", "Family name": "Doe", "ID": "PX-7781",
+              "Birth Date": "01.02.03", "Sex": "m", "History": "none",
+              "Comment": "Doe follow-up"}
 
 
 def _any_format_file(name: str, request, tmp_path: Path) -> list[Path]:
@@ -723,6 +728,11 @@ def _any_format_file(name: str, request, tmp_path: Path) -> list[Path]:
         (folder / "rec.hea").write_text("rec 1 100 20\nrec.dat 16 200 16 0 0 0 0 II\n"
                                         "# name: John Doe\n# id: PX-4521\n")
         return [folder / "rec.hea", folder / "rec.dat"]
+    if name == "xle":
+        from tests.test_xle import ecg_like, make_xle
+        path = tmp_path / "make" / "rec.xle"
+        path.parent.mkdir(parents=True, exist_ok=True)
+        return [make_xle(path, ecg_like(), XLE_VALUES)]
     if name == "alivecor":
         doc = {"id": "rec8f3kd92jd83", "patientID": "PAT7d9s8f7d9s8", "duration": 1000,
                "recordedAt": "2021-04-16T15:19:09+05:30", "algorithmDetermination": "normal",
@@ -737,6 +747,16 @@ def _any_format_file(name: str, request, tmp_path: Path) -> list[Path]:
 
 def _main_id(files: list[Path]) -> str:
     return _parse(files[0]).patient.patient_id
+
+
+def _readable(path: Path) -> str:
+    """File content as text, plus the header with its 16-bit words swapped
+    back (XLE stores its text that way)."""
+    data = path.read_bytes()
+    n = min(4096, len(data)) // 2 * 2
+    head = bytearray(n)
+    head[0::2], head[1::2] = data[1:n:2], data[0:n:2]
+    return data.decode("latin-1") + "\n" + bytes(head).decode("latin-1")
 
 
 def _has(text: str, value: str) -> bool:
@@ -759,7 +779,7 @@ class TestPatientIdAllFormats:
         with open(dataset / "anonymization_catalog.csv", newline="") as fh:
             [row] = list(csv.DictReader(fh))
         out = dataset / row["anonymized_path"]
-        return patient_id, row, _parse(out), out.read_bytes().decode("latin-1")
+        return patient_id, row, _parse(out), _readable(out)
 
     @pytest.mark.parametrize("name", ALL_FORMATS)
     def test_without_grouping_the_id_is_kept(self, name, request, tmp_path):
@@ -1032,6 +1052,9 @@ def _longer_id(name: str, files: list[Path], pid: str) -> str:
         old = mfer_tlv(0x82, b"MFER001^EXAM9")
         assert old in data
         path.write_bytes(data.replace(old, mfer_tlv(0x82, new_id.encode() + b"^EXAM9")))
+    elif name == "xle":
+        from tests.test_xle import ecg_like, make_xle
+        make_xle(path, ecg_like(), dict(XLE_VALUES, ID=new_id))
     else:  # text formats: XML, WFDB header, JSON
         text = data.decode("utf-8")
         assert pid in text
@@ -1060,7 +1083,7 @@ class TestFolderNameInsideIdAllFormats:
             [row] = list(csv.DictReader(fh))
         out = dataset / row["anonymized_path"]
         after = _parse(out)
-        text = out.read_bytes().decode("latin-1")
+        text = _readable(out)
         assert after.patient.patient_id == row["anonymized_patient_id"]
         assert not _has(text, pid) and "V1" not in after.patient.patient_id
         assert pid not in row["risk_reason"] and new_id not in row["risk_reason"]

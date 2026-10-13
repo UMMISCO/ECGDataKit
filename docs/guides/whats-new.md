@@ -1,5 +1,17 @@
 # What's new
 
+## 2.0.1
+
+### Parsing
+
+- **New format (experimental): XLE ECG (`.xle`).** 8-channel ECG
+  recordings read from their reverse-engineered layout. The file does not
+  state the voltage scale, so samples stay in raw ADC counts. ECGDataKit
+  now reads 13 formats (see {doc}`formats`).
+- XLE files can be anonymized: given name emptied, family name and
+  patient ID replaced by the patient pseudonym, names and IDs replaced in
+  the history and comment fields. Birth date and sex are kept.
+
 ## 2.0.0
 
 ### Anonymization

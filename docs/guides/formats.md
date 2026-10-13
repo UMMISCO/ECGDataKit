@@ -1,6 +1,6 @@
 # Supported Formats
 
-ECGDataKit parses 12 ECG file formats via content-based detection, not file extensions. Parsers with a reliable magic number are tried first and loose sniffers last (`Parser.PRIORITY`).
+ECGDataKit parses 13 ECG file formats via content-based detection, not file extensions. Parsers with a reliable magic number are tried first and loose sniffers last (`Parser.PRIORITY`).
 
 | Format | File Types | Parser Class | Detection |
 |--------|-----------|--------------|-----------|
@@ -16,6 +16,7 @@ ECGDataKit parses 12 ECG file formats via content-based detection, not file exte
 | MFER | `.mwf`, `.mfer`, `.mfr` | `MFERParser` | `MFR ` preamble or a chain of known MFER tags |
 | EDAN ARC Holter (experimental) | recording folder, `patient.hea` + `ecgraw.dat`, `.arc` | `EDANARCHolterParser` | `patient.hea` with sibling `ecgraw.dat`, or an `.arc` with a known signature |
 | AliveCor Kardia JSON | `.json` | `AliveCorKardiaParser` | JSON object with Kardia recording keys (`recordedAt`, `algorithmDetermination`, ...) |
+| XLE ECG (experimental) | `.xle` | `XLEParser` | `.xle` file with a 256 KiB header holding the patient field labels, and whole 16-byte frames after it |
 
 ## HL7 aECG
 
@@ -94,5 +95,25 @@ Holter recordings from EDAN devices, either as a recording folder (`patient.hea`
 ## AliveCor Kardia JSON
 
 ECG recordings from KardiaMobile (single lead) and KardiaMobile 6L devices, as returned by the [Kardia API](https://developers.kardia.com) (`GET /v1/recordings/:id`). The file holds the signal twice: `raw` goes to `record.leads` and `enhanced` (filtered by AliveCor) to `record.leads_enhanced`. Samples are scaled with `amplitudeResolution` (nanovolts per count). `algorithmDetermination` is the device's automatic analysis (`interpretation.source` is `"machine"`). Kardia 12L recordings use another layout and raise `UnsupportedFormatError`.
+
+**Dependencies:** None.
+
+## XLE ECG (experimental)
+
+```{warning}
+XLE support is experimental. There is no public description of this format, and the device that writes it is not known. The layout was worked out from sample files and has not been checked against a specification or the recorder's own software. Every parse issues a `UserWarning`.
+```
+
+8-channel ECG recordings in `.xle` files: a 256 KiB header, then the signal up to the end of the file. What the parser reads:
+
+- **Signal.** 8 channels of signed 16-bit samples. Only the low 16 bits of each value are stored, so a baseline that drifts past the 16-bit range wraps around. The parser undoes these wraps to give a continuous signal (`raw_metadata["wraps_undone"]` counts them).
+- **Patient fields.** Given name, family name, ID, sex and history go to `record.patient`. The birth date is free text in the file, kept as stored in `raw_metadata["birth_date_text"]` and not converted to a date. The comment goes to `raw_metadata["comment"]`.
+
+What the file does not store:
+
+- **The voltage scale.** Samples stay in raw ADC counts (`is_raw=True`, no unit), also with `auto_scale=True`. They are never converted to millivolts.
+- **The lead labels.** Channels are named `Ch1` to `Ch8`. In the sample files their waveforms match I, II, V1 to V6 in that order. This order is given in `raw_metadata["likely_lead_order"]` but not applied.
+- **The sampling rate.** It is set to 1000 Hz, the rate that matches the sample files (heart cycle intervals, mains interference at 50 Hz), and `raw_metadata["sampling_rate_stated"]` is `False`.
+- **The recording date.**
 
 **Dependencies:** None.
