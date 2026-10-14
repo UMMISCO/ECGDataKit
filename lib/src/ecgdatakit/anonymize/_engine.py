@@ -40,6 +40,7 @@ from ecgdatakit.anonymize._stats import (
     FileRecord,
     Stat,
     compare,
+    name_pseudonym,
     write_stats,
 )
 from ecgdatakit.anonymize._verify import VerificationError, verify
@@ -179,6 +180,12 @@ class Anonymizer:
         after the patient pseudonym in the output, and its name is replaced
         wherever it appears in the files. Every other folder, sub-folders of
         the patient folder included, keeps its name.
+    anonymize_file_names : bool
+        ``False`` (default): each anonymized file keeps its raw name. A name
+        holding a known identity value (name, ID, anonymized patient folder
+        name) is reported as risk. ``True``: each anonymized file is named
+        ``<patient pseudonym>_<ECG pseudonym>.<extension>``, nothing of the
+        raw name is kept.
     out_dir : str
         Output folder created in each dataset, with the same sub-folders
         as the dataset.
@@ -197,7 +204,7 @@ class Anonymizer:
 
     def __init__(self, source: str | Path, datasets: bool = False,
                  patients_dir_name: str | None = None, group_by_patient_folders: bool = False,
-                 anonymize_patient_folders: bool = False,
+                 anonymize_patient_folders: bool = False, anonymize_file_names: bool = False,
                  out_dir: str = "ANONYMIZED", catalog_name: str = "anonymization_catalog.csv",
                  threads: int = 8, settle_seconds: float = 0.0,
                  lock_stale_seconds: float = 12 * 3600, dry_run: bool = False) -> None:
@@ -214,6 +221,7 @@ class Anonymizer:
         self.patients_dir_name = patients_dir_name or None
         self.by_folder = bool(group_by_patient_folders)
         self.folders = bool(anonymize_patient_folders)
+        self.file_names = bool(anonymize_file_names)
         if self.folders and not self.by_folder:
             raise ValueError("Renaming patient folders needs group_by_patient_folders "
                              "(--group-by-patient-folders): without it there are no "
@@ -470,13 +478,29 @@ class Anonymizer:
             if anon_root.is_dir() and all(r != anon_root for _, _, r in anon_roots):
                 anon_roots.append((anon_root, True, anon_root))
         raw = self._records(dataset, raw_roots, skip=out)
-        anon = self._records(out, anon_roots, skip=None)
+        anon = self._records(out, anon_roots, skip=None, pseudonyms=self._ecg_pseudonyms(dataset))
         raw_dirs = self._patient_dirs(dataset, raw_roots, out)
         anon_dirs = self._patient_dirs(out, anon_roots, None)
         stats = compare(raw, anon, grouped=self.by_folder, renamed=self.folders,
                         raw_dirs=raw_dirs, anon_dirs=anon_dirs)
         empty = sorted(raw_dirs - {r.patient_folder for r in raw})
         return stats, empty
+
+    def _ecg_pseudonyms(self, dataset: Path) -> dict[str, str] | None:
+        """ECG pseudonym of each anonymized file, by its path relative to
+        the output folder, from the catalog. ``None`` when the files are
+        named after their pseudonyms: the names are read instead."""
+        if self.file_names:
+            return None
+        catalog = Catalog(self.catalog_path(dataset))
+        out = Path(self.out_dir)
+        result: dict[str, str] = {}
+        for r in catalog.active():
+            for p in _outputs(r):
+                path = Path(p)
+                if path.parts[:len(out.parts)] == out.parts:
+                    result[path.relative_to(out).as_posix()] = r["anonymized_ecg_id"]
+        return result
 
     def _patient_dirs(self, base: Path, roots, skip: Path | None) -> set[str]:
         """Every patient folder on disk (the folders directly under the
@@ -493,9 +517,12 @@ class Anonymizer:
                     dirs.add(Path(e.path).relative_to(base).as_posix())
         return dirs
 
-    def _records(self, base: Path, roots, skip: Path | None) -> list[FileRecord]:
+    def _records(self, base: Path, roots, skip: Path | None,
+                 pseudonyms: dict[str, str] | None = None) -> list[FileRecord]:
         """ECG files under *roots*, with their patient folder and the
-        identity values read in them."""
+        identity values read in them. For anonymized files, *pseudonyms*
+        gives the ECG pseudonym of each file (``None``: read from the file
+        names)."""
         found: list[tuple[Path, str]] = []
         for folder, rec, root in roots:
             for _, files in self._list(folder, rec, skip=skip):
@@ -517,9 +544,15 @@ class Anonymizer:
                 identity = handler.identity(path)
             except Exception:  # noqa: BLE001 - an unreadable file is counted without values
                 identity = Identity()
-            return FileRecord(path.relative_to(base).as_posix(), patient_folder,
+            rel = path.relative_to(base).as_posix()
+            if pseudonyms is None:
+                pseudonym = name_pseudonym(rel)
+            else:
+                # A file missing from the catalog counts as its own ECG
+                pseudonym = pseudonyms.get(rel, "") or rel
+            return FileRecord(rel, patient_folder,
                               tuple(identity.patient_ids), tuple(identity.ecg_ids),
-                              _sha256([path]))
+                              _sha256([path]), pseudonym.replace("-", ""))
 
         with ThreadPoolExecutor(self.threads) as pool:
             return [r for r in pool.map(read, found) if r is not None]
@@ -539,7 +572,8 @@ class Anonymizer:
                 # Unchanged on disk; re-done only when its output disappeared
                 # or the folder mode changed
                 if (all((dataset / p).exists() for p in _outputs(old))
-                        and old["folder_anonymized"] == self._folder_flag()):
+                        and old["folder_anonymized"] == self._folder_flag()
+                        and _names_flag(old) == self._names_flag()):
                     report.unchanged += 1
                     continue
                 entry.handler = self._detect(entry.path)
@@ -600,6 +634,7 @@ class Anonymizer:
         now = _now()
         if (old and old["status"] in ACTIVE and old["raw_sha256"] == sha
                 and old["folder_anonymized"] == self._folder_flag()
+                and _names_flag(old) == self._names_flag()
                 and all((dataset / p).exists() for p in _outputs(old))):
             row = dict(old, raw_size=str(entry.size), raw_mtime_ns=str(entry.mtime_ns))
             row["status"] = "unchanged"
@@ -652,9 +687,17 @@ class Anonymizer:
             for v in unmatched:
                 risks.append(f"patient ID field ({v}) does not match the patient folder "
                              f"name, replaced")
-        # The anonymized file gets a new name: nothing of the raw name is
-        # kept, since a name may hold identity in any form
-        if isinstance(handler, WFDBHandler) and handler.is_multi_segment(entry.path):
+        replacer = Replacer(identity, patient_code, ecg_code, extra_ids=folder_ids)
+        # With anonymize_file_names the file gets a new name: nothing of the
+        # raw name is kept, since a name may hold identity in any form.
+        # Otherwise the raw name is kept, and reported when it holds a known
+        # identity value.
+        if not self.file_names:
+            new_name = entry.path.name
+            if replacer.replace(new_name) != new_name:
+                risks.append("file name kept as is and holds identity text "
+                             "(see --anonymize-file-names)")
+        elif isinstance(handler, WFDBHandler) and handler.is_multi_segment(entry.path):
             new_name = entry.path.name
             risks.append("multi-segment WFDB record name kept as is (it may hold identity)")
         else:
@@ -668,7 +711,6 @@ class Anonymizer:
                                      new_name, ecg_code)
         out_path = out_dir / new_name
 
-        replacer = Replacer(identity, patient_code, ecg_code, extra_ids=folder_ids)
         codes = Codes(patient_code, ecg_code, frozenset(kept_ids))
         rewrite = handler.rewrite(entry.path, out_path, identity, codes, replacer)
         risks += rewrite.notes
@@ -690,6 +732,7 @@ class Anonymizer:
             "original_file_name": entry.path.name,
             "anonymized_file_name": new_name,
             "folder_anonymized": self._folder_flag(),
+            "file_name_anonymized": self._names_flag(),
             "companions": SEPARATOR.join(
                 (Path(self.out_dir) / rel_dir / p.name).as_posix()
                 for p in rewrite.outputs if p != out_path),
@@ -745,6 +788,9 @@ class Anonymizer:
 
     def _folder_flag(self) -> str:
         return "TRUE" if self.folders else "FALSE"
+
+    def _names_flag(self) -> str:
+        return "TRUE" if self.file_names else "FALSE"
 
     def _output_dir(self, entry: Entry, patient_code: str) -> Path:
         """Output sub-folder of *entry*: the raw one, with only the patient
@@ -937,6 +983,12 @@ def _outputs(row: dict) -> list[str]:
     paths = [row.get("anonymized_path", "")]
     paths += [p for p in (row.get("companions") or "").split(SEPARATOR) if p]
     return [p for p in paths if p]
+
+
+def _names_flag(row: dict) -> str:
+    """``file_name_anonymized`` of a catalog row. Catalogs written before
+    the option existed always anonymized file names."""
+    return row.get("file_name_anonymized") or "TRUE"
 
 
 def _in_scope(path: Path, scanned: list[tuple[Path, bool, bool]]) -> bool:

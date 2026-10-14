@@ -3,7 +3,8 @@
 ECGDataKit anonymizes ECG files in any supported format. Each file is
 copied into an `ANONYMIZED` folder with the patient's name, the ECG ID
 and, when it can be trusted, the patient ID replaced by pseudonyms, and
-gets a new file name made of the pseudonyms. A CSV catalog links every raw file to its
+keeps its file name, or gets a new one made of the pseudonyms with
+`--anonymize-file-names`. A CSV catalog links every raw file to its
 anonymized copy. Raw files are only read, never modified.
 
 To run it, see {doc}`anonymization/usage`.
@@ -25,7 +26,8 @@ To run it, see {doc}`anonymization/usage`.
    patient gets one patient pseudonym: a patient folder with
    `--group-by-patient-folders`, otherwise each file.
 4. **Write the copy.** Only the bytes of the identity values change, then
-   the copy gets its new file name.
+   the copy is written under its raw name, or under its new name with
+   `--anonymize-file-names`.
 5. **Check the copy.** It is read back with ecgdatakit and must give the
    same samples, bit for bit, and the same fields apart from the replaced
    values. A copy that fails is not kept and the catalog marks it `failed`.
@@ -142,12 +144,18 @@ their size, the XLE header text keeps its byte-swapped layout, and a
 checksum (ISHNE, SCP-ECG) is computed again when the original one was
 valid. DICOM files are written back with pydicom.
 
+(anonymization-file-names)=
 ## File names
 
-Each anonymized file gets a new name made of its pseudonyms and the
-extension of the raw file. Nothing of the raw name is kept: a name can
-hold identity in any form (codes, initials, dates written in many ways),
-so it is not edited but replaced.
+By default each anonymized file keeps its raw name. When the name holds
+a known identity value (the patient's name or ID, the ECG ID, or the
+patient folder name with `--anonymize-patient-folders`), the row is
+marked as risk. Other forms (initials, codes, dates) are not detected.
+
+With `--anonymize-file-names`, each anonymized file gets a new name made
+of its pseudonyms and the extension of the raw file. Nothing of the raw
+name is kept: a name can hold identity in any form, so it is not edited
+but replaced.
 
 ```text
 SUBJ-0042-XY_20200101120000_a1b2c3d4.json
@@ -161,6 +169,8 @@ qifUPPHzDGKG_7c1e4b2a-93d0-4f6e-8a51-2b9d0c6e1f37.json
   signal file names in the header and every file of the record are
   renamed together. A multi-segment WFDB record keeps its name, and its
   row is marked as risk.
+- Turning the option on or off for a dataset already anonymized renames
+  the existing copies on the next run. The pseudonyms do not change.
 - Folder names are not changed by this, see
   [Renaming patient folders](#renaming-patient-folders).
 
@@ -196,6 +206,7 @@ anonymized again after a change keeps its pseudonyms.
 | `original_last_name`, `original_first_name` | The names replaced (several values are separated by a vertical bar) |
 | `original_file_name`, `anonymized_file_name` | File name before and after |
 | `folder_anonymized` | `TRUE` when the patient folder was renamed |
+| `file_name_anonymized` | `TRUE` when the file got a new name (`--anonymize-file-names`) |
 | `companions` | Other anonymized files of the same recording, for formats stored as several files: a WFDB record is a `.hea` header (the row) plus its `.dat` signal files (listed here). Empty for other formats |
 | `duplicate` | Raw paths of the other files with exactly the same content (several separated by a vertical bar), empty when the file is unique. Copies are the same ECG: they share the ECG pseudonym, and each copy is still written in `ANONYMIZED` (a second copy in the same folder gets `_2` at the end of its name). A copy in another patient folder gets that folder's patient pseudonym |
 | `raw_size`, `raw_mtime_ns`, `raw_sha256`, `anonymized_sha256` | Used to detect changes and check copies |

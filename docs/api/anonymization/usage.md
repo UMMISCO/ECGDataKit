@@ -24,6 +24,9 @@ ecgdatakit anonymize run /path/to/dataset --group-by-patient-folders
 # Same, and the patient folders renamed to the patient pseudonyms
 ecgdatakit anonymize run /path/to/dataset --group-by-patient-folders --anonymize-patient-folders
 
+# Same, and the files renamed to their pseudonyms
+ecgdatakit anonymize run /path/to/dataset --group-by-patient-folders --anonymize-patient-folders --anonymize-file-names
+
 # Only the files under the RAW folders, one patient per sub-folder of RAW
 ecgdatakit anonymize run /path/to/dataset --patients-dir-name RAW --group-by-patient-folders
 
@@ -106,13 +109,15 @@ source/
   PATIENT-001/V1/ecg.xml              raw file (read only)
   PATIENT-002/ecg.scp
   ANONYMIZED/                         created by the anonymizer
-    PATIENT-001/V1/<new name>.xml
-    PATIENT-002/<new name>.scp
+    PATIENT-001/V1/ecg.xml
+    PATIENT-002/ecg.scp
   anonymization_catalog.csv           re-identification key
 ```
 
 Every file of every folder is processed (except the output folder) and
-the same tree is rebuilt in `ANONYMIZED`, with the same folder names.
+the same tree is rebuilt in `ANONYMIZED`, with the same folder and file
+names. With `--anonymize-file-names` each file gets a new name made of its
+pseudonyms instead (see {ref}`File names <anonymization-file-names>`).
 Without patient folder grouping, each file gets its own patient pseudonym
 and the patient ID field is kept: files are not grouped by the ID they
 hold, which may be wrong (see {ref}`how patients are identified
@@ -181,7 +186,7 @@ dataset-a/
   xml/RAW/PATIENT-001/V2/ecg.xml      same patient
   xml/RAW/PATIENT-002/ecg.xml         patient PATIENT-002
   pdf/report.pdf                      ignored (not under RAW)
-  ANONYMIZED/xml/RAW/PATIENT-001/V1/<new name>.xml
+  ANONYMIZED/xml/RAW/PATIENT-001/V1/ecg.xml
 ```
 
 `--patients-dir-name` alone only limits what is read: it does not group
@@ -213,6 +218,7 @@ The folder name is then one more identifier of the patient:
 |-------|--------------------|-----------------|
 | Patient folder in `ANONYMIZED` | same name as the raw folder | patient pseudonym |
 | Folder name inside the files (any field, free text) | kept | replaced by the patient pseudonym |
+| Folder name in the file names | kept | kept, and the row marked as risk. Add `--anonymize-file-names` to rename the files |
 | Sub-folders of the patient folder (`V1`, dates...) | kept | kept |
 | Folders above the patient folders (`xml`, `RAW`) | kept | kept |
 
@@ -234,6 +240,7 @@ over:
 | File deleted | Its anonymized copy deleted, status `deleted` |
 | Anonymized copy deleted by hand | Written again |
 | `--anonymize-patient-folders` switched on or off | Copies moved to the right folders, same pseudonyms |
+| `--anonymize-file-names` switched on or off | Copies renamed, same pseudonyms |
 
 Files are compared by size and modification time, and by content when
 those differ. The catalog is saved during the run, so an interrupted run
@@ -312,6 +319,7 @@ Anonymizes once and exits.
 ecgdatakit anonymize run SOURCE [PATH ...]
     [--datasets] [--dataset NAME ...] [--patients-dir-name NAME]
     [--group-by-patient-folders] [--anonymize-patient-folders]
+    [--anonymize-file-names]
     [--out-dir NAME] [--catalog NAME] [--threads N]
     [--no-recursive] [--dry-run] [-v]
 ```
@@ -327,7 +335,8 @@ ecgdatakit anonymize run SOURCE [PATH ...]
 | `--dataset NAME` | all | With `--datasets` only. If set, only this dataset is processed. Give it several times for several datasets. If not set, every dataset is processed. |
 | `--patients-dir-name NAME` | none | If set, only files under the folders with this name (the same in every dataset) are read, and their sub-folders are the patient folders. If not set, every file is read, and the patient folders are the folders directly inside the dataset. It does not group files by itself. |
 | `--group-by-patient-folders` | | If set, each patient folder is one patient: its files share one patient pseudonym, which also replaces the patient ID field, even when it differs from the folder name (the row is then marked as risk). A date in that field is kept. If not set, each file is its own patient and the patient ID field is not replaced. |
-| `--anonymize-patient-folders` | | With `--group-by-patient-folders` only. If set, each patient folder is renamed to the patient pseudonym in the output, and its name is replaced by the pseudonym wherever it appears in the files and their names. If not set, folder names are copied as they are. |
+| `--anonymize-patient-folders` | | With `--group-by-patient-folders` only. If set, each patient folder is renamed to the patient pseudonym in the output, and its name is replaced by the pseudonym wherever it appears in the files. If not set, folder names are copied as they are. |
+| `--anonymize-file-names` | | If set, each anonymized file is named `<patient pseudonym>_<ECG pseudonym>.<extension>`, keeping nothing of the raw name. If not set, files keep their raw names, and a name holding a known identity value is marked as risk. |
 | `--out-dir NAME` | `ANONYMIZED` | Output folder created in each dataset. |
 | `--catalog NAME` | `anonymization_catalog.csv` | Catalog file created in each dataset. |
 | `--threads N` | 8 | Number of files processed in parallel. |
@@ -358,6 +367,7 @@ then live detection of changes and a full pass every `--interval` seconds
 ecgdatakit anonymize daemon SOURCE
     [--datasets] [--patients-dir-name NAME]
     [--group-by-patient-folders] [--anonymize-patient-folders]
+    [--anonymize-file-names]
     [--out-dir NAME] [--catalog NAME] [--threads N]
     [--interval SECONDS] [--settle SECONDS] [--no-watch]
     [--host ADDRESS] [--port PORT] [-v]
@@ -372,7 +382,8 @@ ecgdatakit anonymize daemon SOURCE
 | `--datasets` | | If set, each sub-folder of `SOURCE` is a separate dataset, and new sub-folders are picked up. If not set, `SOURCE` is one dataset. |
 | `--patients-dir-name NAME` | none | If set, only files under the folders with this name (the same in every dataset) are read, and their sub-folders are the patient folders. If not set, every file is read, and the patient folders are the folders directly inside the dataset. It does not group files by itself. |
 | `--group-by-patient-folders` | | If set, each patient folder is one patient: its files share one patient pseudonym, which also replaces the patient ID field, even when it differs from the folder name (the row is then marked as risk). A date in that field is kept. If not set, each file is its own patient and the patient ID field is not replaced. |
-| `--anonymize-patient-folders` | | With `--group-by-patient-folders` only. If set, each patient folder is renamed to the patient pseudonym in the output, and its name is replaced by the pseudonym wherever it appears in the files and their names. If not set, folder names are copied as they are. |
+| `--anonymize-patient-folders` | | With `--group-by-patient-folders` only. If set, each patient folder is renamed to the patient pseudonym in the output, and its name is replaced by the pseudonym wherever it appears in the files. If not set, folder names are copied as they are. |
+| `--anonymize-file-names` | | If set, each anonymized file is named `<patient pseudonym>_<ECG pseudonym>.<extension>`, keeping nothing of the raw name. If not set, files keep their raw names, and a name holding a known identity value is marked as risk. |
 | `--out-dir NAME` | `ANONYMIZED` | Output folder created in each dataset. |
 | `--catalog NAME` | `anonymization_catalog.csv` | Catalog file created in each dataset. |
 | `--threads N` | 8 | Number of files processed in parallel. |
@@ -426,7 +437,8 @@ ecgdatakit anonymize stats SOURCE [options of run] [--dataset NAME]
 
 It takes the options of `ecgdatakit anonymize run` that describe the
 dataset (`--datasets`, `--patients-dir-name`, `--group-by-patient-folders`,
-`--anonymize-patient-folders`, `--out-dir`): give the ones the runs used.
+`--anonymize-patient-folders`, `--anonymize-file-names`, `--out-dir`): give
+the ones the runs used.
 `--dataset NAME` limits it to some datasets. Exit code 2 when no
 `ANONYMIZED` folder is found.
 

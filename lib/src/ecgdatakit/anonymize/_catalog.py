@@ -29,6 +29,7 @@ COLUMNS = [
     "original_file_name",
     "anonymized_file_name",
     "folder_anonymized",
+    "file_name_anonymized",
     "companions",
     "duplicate",
     "raw_size",

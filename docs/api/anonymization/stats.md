@@ -53,7 +53,7 @@ Each line ends with `OK` when its check holds, `CHECK` when it does not. The pat
 | ECG files whose patient ID is not their patient folder's | Files whose patient ID does not match the patient folder name, or holds a date | Files whose patient ID is not the one of their patient folder: the folder name when folders are renamed, otherwise the ID most files of the folder hold. Dates are left aside | anonymized: 0 |
 | distinct patient IDs in the files, dates aside | Different values of the patient ID field (the same patient often has several: visit codes, typing errors) | Different values in the anonymized files | with grouping: one per patient folder, never shared by two folders. Without grouping: same |
 | duplicate ECG files (same content as another) | Files identical to another file, each extra copy counted | The same, in `ANONYMIZED`: copies in the same patient folder stay identical (same pseudonyms), copies in two patient folders differ by their patient pseudonym | anonymized: at most raw |
-| distinct ECGs (duplicates counted once) | Different file contents | Different ECG pseudonyms, read from the anonymized file names | same: one ECG pseudonym per distinct ECG |
+| distinct ECGs (duplicates counted once) | Different file contents | Different ECG pseudonyms: read from the anonymized file names with `--anonymize-file-names`, otherwise from the catalog row of each anonymized file | same: one ECG pseudonym per distinct ECG |
 | distinct ECG IDs in the files | Different ECG IDs stored in the files (0 for formats without an ECG ID field: Mortara, ISHNE, WFDB) | The same, in the anonymized files | anonymized: one per ECG pseudonym of the files that have an ECG ID field |
 
 ## Reading the counts
@@ -75,6 +75,7 @@ Each line ends with `OK` when its check holds, `CHECK` when it does not. The pat
   content.
 - **Distinct ECG IDs at 0**: the format has no ECG ID field (Mortara,
   ISHNE, WFDB) or it is empty. The ECG pseudonym is then only in the
-  catalog and the file name, and "distinct ECGs" still counts them.
+  catalog (and in the file name with `--anonymize-file-names`), and
+  "distinct ECGs" still counts them.
 - **Dates in the patient ID field** are kept as they are, so they are left
   aside in the patient ID lines.

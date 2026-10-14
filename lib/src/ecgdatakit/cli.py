@@ -29,6 +29,10 @@ def _anonymizer_options(p: argparse.ArgumentParser) -> None:
                    help="with --group-by-patient-folders: name each patient folder after the "
                         "patient pseudonym in the output and replace its name in the files "
                         "(default: folder names are kept)")
+    p.add_argument("--anonymize-file-names", action="store_true",
+                   help="name each anonymized file <patient pseudonym>_<ECG pseudonym>."
+                        "<extension>, keeping nothing of the raw name (default: raw file "
+                        "names are kept, a name holding identity text is flagged as risk)")
     p.add_argument("--out-dir", default="ANONYMIZED",
                    help="output folder created in each dataset (default: ANONYMIZED)")
     p.add_argument("--catalog", default="anonymization_catalog.csv",
@@ -44,6 +48,7 @@ def _anonymizer(args, **extra):
     return Anonymizer(args.source, datasets=args.datasets, patients_dir_name=args.patients_dir_name,
                       group_by_patient_folders=args.group_by_patient_folders,
                       anonymize_patient_folders=args.anonymize_patient_folders,
+                      anonymize_file_names=args.anonymize_file_names,
                       out_dir=args.out_dir, catalog_name=args.catalog, threads=args.threads,
                       **extra)
 

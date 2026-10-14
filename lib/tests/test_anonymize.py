@@ -86,7 +86,7 @@ class TestFormats:
         raw_file = next((base / "dataset-a").rglob(src.name))
         raw_hash = _sha(raw_file)
 
-        [report] = _anonymizer(base, threads=2).run()
+        [report] = _anonymizer(base, threads=2, anonymize_file_names=True).run()
         assert report.ok, report.errors
         [row] = _rows(base)
         assert row["status"] == "anonymized"
@@ -146,7 +146,7 @@ class TestFormats:
             "Doe_rec.dat 16 200 16 0 0 0 0 II\n"
             "# name: John Doe\n# id: PX-4521\n# age: 60\n# seen by John's doctor\n")
         base = _source(tmp_path, [record / "Doe_rec.hea", record / "Doe_rec.dat"], patient="PX-4521")
-        [report] = _anonymizer(base).run()
+        [report] = _anonymizer(base, anonymize_file_names=True).run()
         assert report.ok, report.errors
         [row] = _rows(base)
         code = row["anonymized_patient_id"]
@@ -171,7 +171,7 @@ class TestFormats:
         src = tmp_path / "PAT7d9s8f7d9s8_rec.json"
         src.write_text(json.dumps(doc, indent=2))
         base = _source(tmp_path, [src], patient="PAT7d9s8f7d9s8")
-        _anonymizer(base).run()
+        _anonymizer(base, anonymize_file_names=True).run()
         [row] = _rows(base)
         out = base / "dataset-a" / row["anonymized_path"]
         assert row["anonymized_file_name"] == (
@@ -427,7 +427,7 @@ class TestPatientFolders:
             shutil.copy2(hl7_aecg_file, dataset / patient / "V1" / "ecg.xml")
         shutil.copy2(hl7_aecg_file, dataset / "loose.xml")  # no patient folder
         [r] = Anonymizer(dataset, group_by_patient_folders=True,
-                         anonymize_patient_folders=True).run()
+                         anonymize_patient_folders=True, anonymize_file_names=True).run()
         assert r.ok and r.found == 3
         with open(dataset / "anonymization_catalog.csv", newline="") as f:
             rows = {x["raw_path"]: x for x in csv.DictReader(f)}
@@ -439,7 +439,7 @@ class TestPatientFolders:
         assert rows["loose.xml"]["anonymized_path"].startswith("ANONYMIZED/")
         assert not any((dataset / "ANONYMIZED").rglob("DOE Jane"))
         [r] = Anonymizer(dataset, group_by_patient_folders=True,
-                         anonymize_patient_folders=True).run()
+                         anonymize_patient_folders=True, anonymize_file_names=True).run()
         assert r.unchanged == 3
 
     def test_switching_grouping_on_a_dataset_is_refused(self, hl7_aecg_file, tmp_path):
@@ -482,7 +482,8 @@ class TestDateInPatientIdField:
 
     def test_date_kept_in_file_and_name(self, tmp_path):
         self._file(tmp_path, "PATIENT-001")
-        [r] = Anonymizer(tmp_path / "export", group_by_patient_folders=True).run()
+        [r] = Anonymizer(tmp_path / "export", group_by_patient_folders=True,
+                         anonymize_file_names=True).run()
         assert r.ok
         with open(tmp_path / "export" / "anonymization_catalog.csv", newline="") as f:
             [row] = list(csv.DictReader(f))
@@ -534,7 +535,7 @@ class TestPatientFolderNameAsIdentifier:
 
     def test_folder_name_replaced_in_file_and_name(self, tmp_path):
         base = self._source_with_folder_name_inside(tmp_path)
-        [r] = _anonymizer(base, anonymize_patient_folders=True).run()
+        [r] = _anonymizer(base, anonymize_patient_folders=True, anonymize_file_names=True).run()
         assert r.ok
         [row] = _rows(base)
         code = row["anonymized_patient_id"]
@@ -652,7 +653,7 @@ class TestPatientIdField:
         dataset = tmp_path / "dataset"
         (dataset / "SUBJ-001").mkdir(parents=True)
         shutil.copy2(hl7_aecg_file, dataset / "SUBJ-001" / "SUBJ-001_ecg.xml")
-        [r] = Anonymizer(dataset).run()
+        [r] = Anonymizer(dataset, anonymize_file_names=True).run()
         assert r.ok
         with open(dataset / "anonymization_catalog.csv", newline="") as f:
             [row] = list(csv.DictReader(f))
@@ -886,10 +887,11 @@ class TestStats:
         return {s.what: s for s in anonymizer.stats(dataset)}
 
     @pytest.mark.parametrize("renamed", [False, True])
-    def test_counts_from_disk(self, hl7_aecg_file, tmp_path, renamed):
+    @pytest.mark.parametrize("names", [False, True])
+    def test_counts_from_disk(self, hl7_aecg_file, tmp_path, renamed, names):
         dataset = self._dataset(hl7_aecg_file, tmp_path)
         a = Anonymizer(dataset, patients_dir_name="RAW", group_by_patient_folders=True,
-                       anonymize_patient_folders=renamed)
+                       anonymize_patient_folders=renamed, anonymize_file_names=names)
         [r] = a.run()
         assert r.ok
         stats = self._stats(a, dataset)
@@ -915,8 +917,12 @@ class TestStats:
         copy = rows["RAW/PATIENT-001/visit-2/b - copy.xml"]
         assert b["anonymized_ecg_id"] == copy["anonymized_ecg_id"]
         assert b["anonymized_path"] != copy["anonymized_path"]
-        assert copy["anonymized_file_name"].endswith("_2.xml") or \
-            b["anonymized_file_name"].endswith("_2.xml")
+        if names:
+            assert copy["anonymized_file_name"].endswith("_2.xml") or \
+                b["anonymized_file_name"].endswith("_2.xml")
+        else:
+            assert (b["anonymized_file_name"], copy["anonymized_file_name"]) == (
+                "b.xml", "b - copy.xml")
 
     def test_anonymized_files_read_independently(self, hl7_aecg_file, tmp_path):
         dataset = self._dataset(hl7_aecg_file, tmp_path)
@@ -1115,7 +1121,7 @@ class TestNewFileNames:
             # a raw name full of identity in odd forms
             target = f.name.replace(main_file.stem, "SUBJ-0042-XY Doe_J V1^x")
             shutil.copy2(f, dataset / "PATIENT-001" / target)
-        a = Anonymizer(dataset, group_by_patient_folders=True)
+        a = Anonymizer(dataset, group_by_patient_folders=True, anonymize_file_names=True)
         [r] = a.run()
         assert r.ok, (name, r.errors)
         [row] = _catalog_rows(dataset)
@@ -1137,10 +1143,122 @@ class TestNewFileNames:
         (dataset / "PATIENT-001").mkdir(parents=True)
         for f in record.iterdir():
             shutil.copy2(f, dataset / "PATIENT-001" / f.name)
-        [r] = Anonymizer(dataset, group_by_patient_folders=True).run()
+        [r] = Anonymizer(dataset, group_by_patient_folders=True, anonymize_file_names=True).run()
         assert r.ok, r.errors
         [row] = _catalog_rows(dataset)
         out = dataset / row["anonymized_path"]
         assert "SUBJ_0042" not in out.read_text() and "0042" not in out.name
         assert {p.suffix for p in out.parent.iterdir()} == {".hea", ".dat"}
         assert len(_parse(out).leads) == 1
+
+
+class TestKeptFileNames:
+    """Default: each anonymized file keeps its raw name."""
+
+    @pytest.mark.parametrize("name", ALL_FORMATS)
+    def test_every_format(self, name, request, tmp_path):
+        files = _any_format_file(name, request, tmp_path)
+        dataset = tmp_path / "dataset"
+        (dataset / "PATIENT-001").mkdir(parents=True)
+        for f in files:
+            shutil.copy2(f, dataset / "PATIENT-001" / f.name)
+        a = Anonymizer(dataset, group_by_patient_folders=True)
+        [r] = a.run()
+        assert r.ok, (name, r.errors)
+        [row] = _catalog_rows(dataset)
+        assert row["anonymized_file_name"] == row["original_file_name"] == files[0].name
+        assert row["file_name_anonymized"] == "FALSE"
+        out = dataset / row["anonymized_path"]
+        assert sorted(p.name for p in out.parent.iterdir()) == sorted(f.name for f in files)
+        assert _parse(out).leads
+        assert all(s.ok for s in a.stats(dataset))
+
+    def test_wfdb_record_holding_a_name(self, tmp_path):
+        record = tmp_path / "make"
+        record.mkdir()
+        (record / "Doe_rec.dat").write_bytes(np.arange(20, dtype="<i2").tobytes())
+        (record / "Doe_rec.hea").write_text(
+            "Doe_rec 1 100 20\nDoe_rec.dat 16 200 16 0 0 0 0 II\n# name: John Doe\n")
+        dataset = tmp_path / "dataset"
+        (dataset / "PATIENT-001").mkdir(parents=True)
+        for f in record.iterdir():
+            shutil.copy2(f, dataset / "PATIENT-001" / f.name)
+        [r] = Anonymizer(dataset, group_by_patient_folders=True).run()
+        assert r.ok, r.errors
+        [row] = _catalog_rows(dataset)
+        out = dataset / row["anonymized_path"]
+        assert out.name == "Doe_rec.hea" and (out.parent / "Doe_rec.dat").exists()
+        assert out.read_text().splitlines()[0] == "Doe_rec 1 100 20"
+        assert "John" not in out.read_text()
+        assert len(_parse(out).leads) == 1
+        assert row["risk"] == "TRUE" and "file name kept as is" in row["risk_reason"]
+
+    def test_name_holding_identity_is_flagged(self, hl7_aecg_file, tmp_path):
+        dataset = tmp_path / "dataset"
+        (dataset / "SUBJ-001").mkdir(parents=True)
+        shutil.copy2(hl7_aecg_file, dataset / "SUBJ-001" / "Doe_ecg.xml")
+        shutil.copy2(hl7_aecg_file, dataset / "SUBJ-001" / "ecg.xml")
+        [r] = Anonymizer(dataset, group_by_patient_folders=True).run()
+        assert r.ok
+        rows = {x["original_file_name"]: x for x in _catalog_rows(dataset)}
+        assert "file name kept as is" in rows["Doe_ecg.xml"]["risk_reason"]
+        assert "file name" not in rows["ecg.xml"]["risk_reason"]
+        assert (dataset / "ANONYMIZED" / "SUBJ-001" / "Doe_ecg.xml").exists()
+
+    def test_anonymized_folder_name_in_file_name_is_flagged(self, hl7_aecg_file, tmp_path):
+        dataset = tmp_path / "dataset"
+        (dataset / "PAT-0042-XY").mkdir(parents=True)
+        shutil.copy2(hl7_aecg_file, dataset / "PAT-0042-XY" / "PAT-0042-XY_1.xml")
+        [r] = Anonymizer(dataset, group_by_patient_folders=True,
+                         anonymize_patient_folders=True).run()
+        assert r.ok
+        [row] = _catalog_rows(dataset)
+        assert row["anonymized_path"] == f"ANONYMIZED/{row['anonymized_patient_id']}/PAT-0042-XY_1.xml"
+        assert "file name kept as is" in row["risk_reason"]
+
+    def test_switching_on_and_off_moves_the_copies(self, hl7_aecg_file, tmp_path):
+        dataset = tmp_path / "dataset"
+        (dataset / "SUBJ-001").mkdir(parents=True)
+        shutil.copy2(hl7_aecg_file, dataset / "SUBJ-001" / "ecg.xml")
+        out = dataset / "ANONYMIZED" / "SUBJ-001"
+        Anonymizer(dataset, group_by_patient_folders=True).run()
+        [before] = _catalog_rows(dataset)
+        [r] = Anonymizer(dataset, group_by_patient_folders=True, anonymize_file_names=True).run()
+        assert r.ok
+        [after] = _catalog_rows(dataset)
+        assert after["anonymized_ecg_id"] == before["anonymized_ecg_id"]
+        assert after["anonymized_patient_id"] == before["anonymized_patient_id"]
+        assert after["status"] == before["status"] == "anonymized"
+        assert [p.name for p in out.iterdir()] == [after["anonymized_file_name"]]
+        assert after["anonymized_file_name"] != "ecg.xml"
+        [r] = Anonymizer(dataset, group_by_patient_folders=True).run()
+        assert r.ok and [p.name for p in out.iterdir()] == ["ecg.xml"]
+        [r] = Anonymizer(dataset, group_by_patient_folders=True).run()
+        assert r.unchanged == 1
+
+    def test_catalog_written_before_the_option(self, hl7_aecg_file, tmp_path):
+        # older catalogs have no file_name_anonymized column: names were anonymized
+        dataset = tmp_path / "dataset"
+        (dataset / "SUBJ-001").mkdir(parents=True)
+        shutil.copy2(hl7_aecg_file, dataset / "SUBJ-001" / "ecg.xml")
+        Anonymizer(dataset, group_by_patient_folders=True, anonymize_file_names=True).run()
+        path = dataset / "anonymization_catalog.csv"
+        rows = _catalog_rows(dataset)
+        with open(path, "w", newline="") as f:
+            columns = [c for c in rows[0] if c != "file_name_anonymized"]
+            writer = csv.DictWriter(f, columns, extrasaction="ignore")
+            writer.writeheader()
+            writer.writerows(rows)
+        [r] = Anonymizer(dataset, group_by_patient_folders=True, anonymize_file_names=True).run()
+        assert r.unchanged == 1
+
+    def test_command_line_option(self, hl7_aecg_file, tmp_path):
+        dataset = tmp_path / "dataset"
+        (dataset / "SUBJ-001").mkdir(parents=True)
+        shutil.copy2(hl7_aecg_file, dataset / "SUBJ-001" / "ecg.xml")
+        assert main(["anonymize", "run", str(dataset), "--group-by-patient-folders",
+                     "--anonymize-file-names"]) == 0
+        [row] = _catalog_rows(dataset)
+        assert row["file_name_anonymized"] == "TRUE"
+        assert row["anonymized_file_name"] == (
+            f"{row['anonymized_patient_id']}_{row['anonymized_ecg_id']}.xml")

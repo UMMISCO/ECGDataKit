@@ -1,5 +1,19 @@
 # What's new
 
+## 2.0.4
+
+### Anonymization
+
+- **File names are kept by default.** Each anonymized file keeps its raw
+  name. A name holding a known identity value (the patient's name or ID,
+  the ECG ID, or the patient folder name with
+  `--anonymize-patient-folders`) is marked as risk in the catalog.
+- **New `--anonymize-file-names` option** (`anonymize_file_names=True`).
+  Each anonymized file is named `<patient pseudonym>_<ECG pseudonym>`,
+  as 2.0.0 to 2.0.3 always did. Turning it on or off renames the existing
+  copies on the next run, with the same pseudonyms. The catalog has a new
+  `file_name_anonymized` column.
+
 ## 2.0.3
 
 ### Parsing

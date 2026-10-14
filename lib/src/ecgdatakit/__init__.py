@@ -1,6 +1,6 @@
 """ECGDataKit - Multi-format ECG file parsing and processing library."""
 
-__version__ = "2.0.3"
+__version__ = "2.0.4"
 
 from ecgdatakit.models import (
     AcquisitionSetup,
