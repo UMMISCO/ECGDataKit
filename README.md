@@ -1,4 +1,4 @@
-# ECGDataKit
+# ECGDataKit 2.0.4
 
 [![PyPI](https://img.shields.io/pypi/v/ecgdatakit)](https://pypi.org/project/ecgdatakit/)
 [![Release](https://img.shields.io/github/v/release/UMMISCO/ECGDataKit)](https://github.com/UMMISCO/ECGDataKit/releases)
