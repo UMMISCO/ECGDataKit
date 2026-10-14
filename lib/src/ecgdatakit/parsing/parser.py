@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import dataclasses
+import functools
 import importlib
 import pkgutil
 import warnings
@@ -52,31 +53,35 @@ class Parser(ABC):
         ...
 
 
+@functools.cache
+def _discover() -> tuple[type[Parser], ...]:
+    """Every Parser subclass of ``ecgdatakit.parsing.parsers``, in
+    detection order."""
+    package = importlib.import_module("ecgdatakit.parsing.parsers")
+    found: list[type[Parser]] = []
+    for _, name, _ in pkgutil.iter_modules(package.__path__):
+        module = importlib.import_module(f"ecgdatakit.parsing.parsers.{name}")
+        for attr in vars(module).values():
+            if (
+                isinstance(attr, type)
+                and issubclass(attr, Parser)
+                and attr is not Parser
+            ):
+                found.append(attr)
+    return tuple(sorted(found, key=lambda cls: (cls.PRIORITY, cls.__name__)))
+
+
 class FileParser:
-    """Auto-discovers parsers and dispatches files to the right one."""
+    """Auto-discovers parsers and dispatches files to the right one.
 
-    def __init__(self) -> None:
-        self._parsers: list[type[Parser]] = []
-        self._discover_parsers()
-
-    def _discover_parsers(self) -> None:
-        """Find all Parser subclasses in ecgdatakit.parsers package."""
-        package = importlib.import_module("ecgdatakit.parsing.parsers")
-        for _, name, _ in pkgutil.iter_modules(package.__path__):
-            module = importlib.import_module(f"ecgdatakit.parsing.parsers.{name}")
-            for attr in vars(module).values():
-                if (
-                    isinstance(attr, type)
-                    and issubclass(attr, Parser)
-                    and attr is not Parser
-                ):
-                    self._parsers.append(attr)
-        self._parsers.sort(key=lambda cls: (cls.PRIORITY, cls.__name__))
+    No method needs an instance: ``FileParser.parse(path)`` and
+    ``FileParser().parse(path)`` do the same.
+    """
 
     @property
     def parsers(self) -> list[type[Parser]]:
         """List of discovered :class:`Parser` subclasses."""
-        return list(self._parsers)
+        return list(_discover())
 
     @staticmethod
     def supported_formats() -> list[dict[str, str | list[str]]]:
@@ -112,8 +117,49 @@ class FileParser:
             for p in parsers
         ]
 
+    @staticmethod
+    def detect_format(file_path: str | Path) -> dict | None:
+        """Detect the format of an ECG file without parsing it.
+
+        Returns the format and the parser :meth:`parse` would use, or
+        ``None`` when no parser recognises the file. The dict holds
+        ``name``, ``description`` and ``extensions`` (as in
+        :meth:`supported_formats`), ``parser`` (the class name, e.g.
+        ``"SCPECGParser"``) and ``parser_class`` (the class itself)::
+
+            fmt = FileParser.detect_format("ecg.scp")
+            record = fmt["parser_class"]().parse("ecg.scp")
+
+        Raises
+        ------
+        FileNotFoundError
+            If the file does not exist.
+        """
+        path = Path(file_path)
+        if not path.exists():
+            raise FileNotFoundError(f"File not found: {path}")
+        parser_cls = FileParser._find_parser(path)
+        if parser_cls is None:
+            return None
+        return {
+            "name": parser_cls.FORMAT_NAME or parser_cls.__name__,
+            "description": parser_cls.FORMAT_DESCRIPTION or (parser_cls.__doc__ or "").strip(),
+            "extensions": list(parser_cls.FILE_EXTENSIONS),
+            "parser": parser_cls.__name__,
+            "parser_class": parser_cls,
+        }
+
+    @staticmethod
+    def _find_parser(path: Path) -> type[Parser] | None:
+        """First parser, in detection order, that recognises *path*."""
+        header = b""
+        if path.is_file():
+            with open(path, "rb") as f:
+                header = f.read(_SNIFF_SIZE)
+        return next((p for p in _discover() if p.can_parse(path, header)), None)
+
+    @staticmethod
     def parse(
-        self,
         file_path: str | Path,
         auto_scale: bool = True,
         units: str = "mV",
@@ -159,12 +205,7 @@ class FileParser:
         path = Path(file_path)
         if not path.exists():
             raise FileNotFoundError(f"File not found: {path}")
-        header = b""
-        if path.is_file():
-            with open(path, "rb") as f:
-                header = f.read(_SNIFF_SIZE)
-
-        parser_cls = next((p for p in self._parsers if p.can_parse(path, header)), None)
+        parser_cls = FileParser._find_parser(path)
         if parser_cls is None:
             raise UnsupportedFormatError(f"No parser found for: {path.name}")
 
@@ -174,7 +215,7 @@ class FileParser:
         try:
             with warnings.catch_warnings(record=True) as caught:
                 warnings.simplefilter("always")
-                record = self._run_parser(parser_cls, path)
+                record = FileParser._run_parser(parser_cls, path)
                 if record.leads and all(len(lead.samples) == 0 for lead in record.leads):
                     raise CorruptedFileError(
                         f"{parser_cls.FORMAT_NAME or parser_cls.__name__}: "
@@ -182,7 +223,7 @@ class FileParser:
                     )
                 fill_signal_summary(record)
                 if auto_scale:
-                    record = self._auto_scale(record, target)
+                    record = FileParser._auto_scale(record, target)
         finally:
             for w in caught:
                 warnings.warn(w.message, w.category, stacklevel=2)

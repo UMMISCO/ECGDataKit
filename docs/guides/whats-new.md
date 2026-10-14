@@ -1,5 +1,19 @@
 # What's new
 
+## 2.0.3
+
+### Parsing
+
+- **XLE: standard 12 leads.**
+  `XLEParser(wilson_correction=True, compute_missing_leads=True)` adds
+  III, aVR, aVL and aVF, computed from I and II, with a warning. The
+  record then holds the standard 12 leads. `compute_missing_leads`
+  requires the Wilson correction.
+- **`FileParser.detect_format(path)`** tells the format of a file and the
+  parser that reads it, without parsing it.
+- **`FileParser` needs no instance.** `FileParser.parse(path)` works like
+  `FileParser().parse(path)`.
+
 ## 2.0.2
 
 ### Parsing

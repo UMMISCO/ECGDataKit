@@ -20,6 +20,7 @@ FIELDS = (("Given name", 2673), ("Family name", 2712), ("ID", 2761), ("Birth Dat
 DATE_OFFSET, TIME_OFFSET = 182972, 182982
 CR_LEADS = ["I", "II", "CR1", "CR2", "CR3", "CR4", "CR5", "CR6"]
 V_LEADS = ["I", "II", "V1", "V2", "V3", "V4", "V5", "V6"]
+TWELVE_LEADS = ["I", "II", "III", "aVR", "aVL", "aVF", "V1", "V2", "V3", "V4", "V5", "V6"]
 
 
 def _swap16(data: bytes) -> bytes:
@@ -164,6 +165,50 @@ class TestXLE:
         assert meta["lead_order_stated"] is False
         assert meta["wilson_correction"] is False
         assert meta["chest_lead_reference"] == "right arm"
+        assert meta["computed_leads"] == []
+
+    def test_compute_missing_leads(self, tmp_path):
+        signal = ecg_like()
+        path = make_xle(tmp_path / "rec.xle", signal)
+        record, messages = caught_messages(
+            XLEParser(wilson_correction=True, compute_missing_leads=True).parse, path)
+        assert has(messages, "computed from leads I and II")
+        leads = {lead.label: lead.samples for lead in record.leads}
+        assert list(leads) == TWELVE_LEADS
+        i, ii = signal[:, 0], signal[:, 1]
+        np.testing.assert_allclose(leads["III"], ii - i)
+        np.testing.assert_allclose(leads["aVR"], -(i + ii) / 2)
+        np.testing.assert_allclose(leads["aVL"], i - ii / 2)
+        np.testing.assert_allclose(leads["aVF"], ii - i / 2)
+        # stored limb leads unchanged
+        np.testing.assert_array_equal(leads["I"], i)
+        np.testing.assert_array_equal(leads["II"], ii)
+        assert record.raw_metadata["computed_leads"] == ["III", "aVR", "aVL", "aVF"]
+        # computed leads are converted with the same scale
+        mv = record.to_physical().convert_units("mV")
+        np.testing.assert_allclose(mv.leads[2].samples, (ii - i) * 0.9375 / 1000)
+
+    def test_missing_leads_require_wilson(self):
+        with pytest.raises(ValueError, match="requires wilson_correction=True"):
+            XLEParser(compute_missing_leads=True)
+
+    def test_standard_twelve_leads(self, tmp_path):
+        signal = ecg_like()
+        path = make_xle(tmp_path / "rec.xle", signal)
+        record, messages = caught_messages(
+            XLEParser(wilson_correction=True, compute_missing_leads=True).parse, path)
+        assert [lead.label for lead in record.leads] == TWELVE_LEADS
+        assert has(messages, "Wilson correction applied")
+        assert has(messages, "computed from leads I and II")
+        wct = (signal[:, 0] + signal[:, 1]) / 3
+        np.testing.assert_allclose(record.leads[6].samples, signal[:, 2] - wct)
+        # Einthoven: I + III = II
+        np.testing.assert_allclose(record.leads[0].samples + record.leads[2].samples,
+                                   record.leads[1].samples)
+        # Goldberger: aVR + aVL + aVF = 0
+        np.testing.assert_allclose(
+            record.leads[3].samples + record.leads[4].samples + record.leads[5].samples, 0,
+            atol=1e-9)
 
     @pytest.mark.parametrize("date, time, expected", [
         ("27.04.99", "08:15", datetime(1999, 4, 27, 8, 15)),     # dots: day first

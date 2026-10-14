@@ -33,8 +33,11 @@ Not stored in the file, and taken from outside it:
 
 ``XLEParser(wilson_correction=True)`` refers the chest leads to Wilson's
 central terminal, ``V = CR - (I + II) / 3``, and names them ``V1`` to
-``V6``, with a warning. Leads III, aVR, aVL and aVF are not stored and not
-computed.
+``V6``, with a warning. Leads III, aVR, aVL and aVF are not stored.
+``XLEParser(wilson_correction=True, compute_missing_leads=True)`` also
+computes them from I and II (Einthoven and Goldberger), with a warning,
+so the record holds the standard 12 leads. ``compute_missing_leads``
+requires ``wilson_correction``.
 """
 
 from __future__ import annotations
@@ -150,10 +153,27 @@ class XLEParser(Parser):
     FILE_EXTENSIONS = [_EXT]
     PRIORITY = 45
 
-    def __init__(self, wilson_correction: bool = False) -> None:
+    def __init__(self, wilson_correction: bool = False,
+                 compute_missing_leads: bool = False) -> None:
         """*wilson_correction*: refer the chest leads, stored against the
-        right arm, to Wilson's central terminal (experimental)."""
+        right arm, to Wilson's central terminal (experimental).
+        *compute_missing_leads*: add III, aVR, aVL and aVF, computed from
+        I and II. Requires *wilson_correction*, so that the record holds
+        the standard 12 leads.
+
+        Raises
+        ------
+        ValueError
+            If *compute_missing_leads* is set without *wilson_correction*.
+        """
+        if compute_missing_leads and not wilson_correction:
+            raise ValueError(
+                "compute_missing_leads=True requires wilson_correction=True: "
+                "the 12 standard leads need the chest leads referred to "
+                "Wilson's central terminal."
+            )
         self.wilson_correction = wilson_correction
+        self.compute_missing_leads = compute_missing_leads
 
     @staticmethod
     def can_parse(file_path: Path, header: bytes) -> bool:
@@ -197,7 +217,24 @@ class XLEParser(Parser):
             )
             samples[:, 2:] -= (samples[:, :1] + samples[:, 1:2]) / 3
             chest = "V"
-        labels = ["I", "II"] + [f"{chest}{k}" for k in range(1, 7)]
+        lead_i, lead_ii = samples[:, 0], samples[:, 1]
+        leads = [("I", lead_i), ("II", lead_ii)]
+        computed: list[str] = []
+        if self.compute_missing_leads:
+            warnings.warn(
+                "Leads III, aVR, aVL and aVF are not stored in the XLE file: "
+                "they were computed from leads I and II.",
+                UserWarning,
+                stacklevel=2,
+            )
+            leads += [
+                ("III", lead_ii - lead_i),
+                ("aVR", -(lead_i + lead_ii) / 2),
+                ("aVL", lead_i - lead_ii / 2),
+                ("aVF", lead_ii - lead_i / 2),
+            ]
+            computed = ["III", "aVR", "aVL", "aVF"]
+        leads += [(f"{chest}{k}", samples[:, k + 1]) for k in range(1, 7)]
 
         fields = _fields(data)
         patient = PatientInfo(
@@ -215,10 +252,10 @@ class XLEParser(Parser):
         start, date_text, time_text = _recording_date(data)
         record.recording.date = start
         record.recording.duration = timedelta(seconds=frames / _SAMPLING_RATE)
-        for ch in range(_CHANNELS):
+        for label, values in leads:
             record.leads.append(Lead(
-                label=labels[ch],
-                samples=np.ascontiguousarray(samples[:, ch]),
+                label=label,
+                samples=np.ascontiguousarray(values),
                 sampling_rate=_SAMPLING_RATE,
                 resolution=_RESOLUTION_UV,
                 resolution_unit="uV",
@@ -244,6 +281,7 @@ class XLEParser(Parser):
         meta["wilson_correction"] = self.wilson_correction
         meta["chest_lead_reference"] = (
             "Wilson central terminal" if self.wilson_correction else "right arm")
+        meta["computed_leads"] = computed
         meta["header_size"] = _HEADER_SIZE
         meta["samples_per_channel"] = frames
         meta["wraps_undone"] = wraps

@@ -77,6 +77,47 @@ class TestFileParserDiscovery:
         with pytest.raises(UnsupportedFormatError):
             fp.parse(unknown)
 
+    def test_parse_needs_no_instance(self, mortara_file: Path):
+        a = FileParser.parse(mortara_file)
+        b = FileParser().parse(mortara_file)
+        assert a.file_format.parser == b.file_format.parser == "MortaraEL250Parser"
+        assert [lead.label for lead in a.leads] == [lead.label for lead in b.leads]
+
+
+class TestDetectFormat:
+    @pytest.mark.parametrize("fixture, parser", [
+        ("hl7_aecg_file", "HL7aECGParser"),
+        ("mortara_file", "MortaraEL250Parser"),
+        ("ishne_file", "ISHNEHolterParser"),
+        ("edf_file", "EDFParser"),
+        ("scp_ecg_file", "SCPECGParser"),
+        ("ge_muse_xml_file", "GEMuseXMLParser"),
+        ("wfdb_file", "WFDBParser"),
+        ("mfer_file", "MFERParser"),
+    ])
+    def test_detects_the_parser_parse_uses(self, fixture, parser, request):
+        path = request.getfixturevalue(fixture)
+        fmt = FileParser.detect_format(path)
+        assert fmt["parser"] == parser
+        assert fmt["parser_class"].__name__ == parser
+        assert fmt["name"] == fmt["parser_class"].FORMAT_NAME
+        assert fmt["extensions"] == fmt["parser_class"].FILE_EXTENSIONS
+        assert FileParser.parse(path).file_format.parser == parser
+
+    def test_suggested_class_parses_the_file(self, mortara_file: Path):
+        fmt = FileParser.detect_format(mortara_file)
+        record = fmt["parser_class"]().parse(mortara_file)
+        assert record.leads
+
+    def test_unknown_format_gives_none(self, tmp_path: Path):
+        unknown = tmp_path / "data.xyz"
+        unknown.write_text("not an ecg file")
+        assert FileParser.detect_format(unknown) is None
+
+    def test_missing_file(self):
+        with pytest.raises(FileNotFoundError):
+            FileParser.detect_format("/nonexistent/file.xml")
+
 
 class TestCanParse:
     # --- Original 4 parsers ---

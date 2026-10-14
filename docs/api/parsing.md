@@ -50,9 +50,24 @@ Unknown files raise `UnsupportedFormatError` (a `ValueError`). A missing optiona
 ```python
 from ecgdatakit import FileParser
 
-fp = FileParser()
-record = fp.parse("ecg_file.xml")
+record = FileParser.parse("ecg_file.xml")
 ```
+
+`FileParser` needs no instance. `FileParser.parse(path)` and `FileParser().parse(path)` do the same.
+
+### Detecting the format
+
+`detect_format` tells which format a file is in and which parser reads it, without parsing it. It returns `None` when no parser recognises the file.
+
+```python
+fmt = FileParser.detect_format("ecg_file.scp")
+print(fmt["name"], fmt["parser"])          # SCP-ECG SCPECGParser
+
+# Use the suggested parser directly, for example to pass format options
+record = fmt["parser_class"]().parse("ecg_file.scp")
+```
+
+A parser called directly returns the values as stored, without the conversion to mV that `FileParser.parse` applies. Convert with `record.to_physical().convert_units("mV")`.
 
 ### Auto-scaling
 
@@ -76,10 +91,10 @@ optional dependency (pydicom for DICOM) raises `ImportError`.
 
 ```python
 # Default: leads with scaling metadata are converted to mV
-record = fp.parse("ecg_file.xml")
+record = FileParser.parse("ecg_file.xml")
 
 # Raw ADC values, no conversion
-record = fp.parse("ecg_file.xml", auto_scale=False)
+record = FileParser.parse("ecg_file.xml", auto_scale=False)
 ```
 
 Set to `False` to always receive raw ADC samples. See {doc}`scaling` for details on which formats provide scaling metadata and how to convert manually.
