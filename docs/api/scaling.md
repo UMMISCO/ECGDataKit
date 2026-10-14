@@ -44,14 +44,15 @@ These formats provide per-lead scaling information: leads are auto-converted to 
 | Mortara ELI | `UNITS_PER_MV` per channel | uV |
 | Philips Sierra XML | `resolution` attribute | uV |
 | AliveCor Kardia JSON | `amplitudeResolution` (nanovolts per count) | uV |
+| XLE (experimental) | Not stored: 0.9375 µV per count, not validated by the manufacturer's documentation (a warning is issued at conversion) | uV |
 
 ### Formats without scaling metadata
 
 When a file does not state its scale, samples stay raw ADC integers with
 `resolution=1.0`, `offset=0.0`, `resolution_unit=""` and `units=""`, and
 `auto_scale=True` leaves them unchanged with a warning. This applies to EDAN
-ARC Holter and XLE files (the count to voltage factor is not documented)
-and to any file whose leads omit their scale.
+ARC Holter files (the count to voltage factor is not documented) and to any
+file whose leads omit their scale.
 
 ## Manual conversion
 

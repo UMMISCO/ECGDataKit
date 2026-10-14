@@ -5,9 +5,13 @@
 ### Parsing
 
 - **New format (experimental): XLE ECG (`.xle`).** 8-channel ECG
-  recordings read from their reverse-engineered layout. The file does not
-  state the voltage scale, so samples stay in raw ADC counts. ECGDataKit
-  now reads 13 formats (see {doc}`formats`).
+  recordings read from their reverse-engineered layout, with the recording
+  date. The file does not state the voltage scale. Samples are converted to
+  mV with 0.9375 µV per count, a scale not validated by the manufacturer's
+  documentation, and the conversion warns about it. The chest leads are stored against
+  the right arm (`CR1` to `CR6`). `XLEParser(wilson_correction=True)`
+  refers them to Wilson's central terminal (`V1` to `V6`), with a warning.
+  ECGDataKit now reads 13 formats (see {doc}`formats`).
 - XLE files can be anonymized: given name emptied, family name and
   patient ID replaced by the patient pseudonym, names and IDs replaced in
   the history and comment fields. Birth date and sex are kept.

@@ -969,13 +969,18 @@ class ECGRecord:
         Leads already in physical units keep their sample array (it is
         shared with this record). Leads whose file gives no physical unit
         (uncalibrated counts) are left raw and reported in a warning.
+        When the scale is not stated in the file but set by the parser
+        (``raw_metadata["scale_warning"]``), that warning is issued.
         """
         skipped: list[str] = []
+        converted: list[str] = []
 
         def convert(lead: Lead) -> Lead:
             if lead.is_raw and lead.resolution != 0.0 and not lead.resolution_unit:
                 skipped.append(lead.label)
                 return lead
+            if lead.is_raw:
+                converted.append(lead.label)
             return lead.to_physical()
 
         leads = [convert(lead) for lead in self.leads]
@@ -987,6 +992,9 @@ class ECGRecord:
                 "left as raw counts.",
                 stacklevel=2,
             )
+        scale_warning = self.raw_metadata.get("scale_warning")
+        if converted and scale_warning:
+            warnings.warn(scale_warning, UserWarning, stacklevel=2)
         return self._with_signals(leads, beats, enhanced)
 
     def convert_units(self, target: str) -> ECGRecord:

@@ -101,19 +101,29 @@ ECG recordings from KardiaMobile (single lead) and KardiaMobile 6L devices, as r
 ## XLE ECG (experimental)
 
 ```{warning}
-XLE support is experimental. There is no public description of this format, and the device that writes it is not known. The layout was worked out from sample files and has not been checked against a specification or the recorder's own software. Every parse issues a `UserWarning`.
+XLE support is experimental. The manufacturer gives no public description of this format. The layout, the sampling rate, the lead order and the voltage scale were worked out from sample files and a third-party reader of the format. They are not validated by the manufacturer's documentation. Two `UserWarning`s say so: one at every parse for the format, and one for the voltage scale each time the samples are converted to physical units.
 ```
 
 8-channel ECG recordings in `.xle` files: a 256 KiB header, then the signal up to the end of the file. What the parser reads:
 
 - **Signal.** 8 channels of signed 16-bit samples. Only the low 16 bits of each value are stored, so a baseline that drifts past the 16-bit range wraps around. The parser undoes these wraps to give a continuous signal (`raw_metadata["wraps_undone"]` counts them).
+- **Leads.** I, II, then the six chest leads. The chest leads are stored against the right arm, not against Wilson's central terminal, so they are named `CR1` to `CR6`. Leads III, aVR, aVL and aVF are not stored and not computed.
 - **Patient fields.** Given name, family name, ID, sex and history go to `record.patient`. The birth date is free text in the file, kept as stored in `raw_metadata["birth_date_text"]` and not converted to a date. The comment goes to `raw_metadata["comment"]`.
+- **Recording date and time.** They go to `record.recording.date`. Dates with dots are read day first (`27.04.99`), dates with slashes month first (`04/27/99`). The text is kept in `raw_metadata["recording_date_text"]` and `raw_metadata["recording_time_text"]`.
 
-What the file does not store:
+What the file does not store, and where the parser takes it from:
 
-- **The voltage scale.** Samples stay in raw ADC counts (`is_raw=True`, no unit), also with `auto_scale=True`. They are never converted to millivolts.
-- **The lead labels.** Channels are named `Ch1` to `Ch8`. In the sample files their waveforms match I, II, V1 to V6 in that order. This order is given in `raw_metadata["likely_lead_order"]` but not applied.
+- **The voltage scale.** It is set to 0.9375 µV per count, the scale of the third-party reader. With `auto_scale=True` (the default) the samples are converted to mV with it, and the conversion issues the scale warning. With `auto_scale=False` the samples stay in counts and this warning comes with `record.to_physical()`. Treat the converted amplitudes as experimental. `raw_metadata["resolution_stated"]` is `False`.
 - **The sampling rate.** It is set to 1000 Hz, the rate that matches the sample files (heart cycle intervals, mains interference at 50 Hz), and `raw_metadata["sampling_rate_stated"]` is `False`.
-- **The recording date.**
+- **The lead order.** It matches the waveforms of the sample files and the third-party reader. `raw_metadata["lead_order_stated"]` is `False`.
+
+**Wilson correction (optional).** `XLEParser(wilson_correction=True)` refers the chest leads to Wilson's central terminal, `V = CR - (I + II) / 3`, and names them `V1` to `V6`. It also issues a `UserWarning`, since the correction is experimental too. `FileParser` does not apply it. Call the parser directly, then convert:
+
+```python
+from ecgdatakit.parsing.parsers.xle import XLEParser
+
+record = XLEParser(wilson_correction=True).parse("recording.xle")
+record = record.to_physical().convert_units("mV")
+```
 
 **Dependencies:** None.

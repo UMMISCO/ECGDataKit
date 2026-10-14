@@ -231,6 +231,7 @@ class FileParser:
         """
         raw_labels: list[str] = []
         other_units: list[str] = []
+        converted: list[str] = []
         def root(samples: np.ndarray) -> int:
             while isinstance(samples.base, np.ndarray):
                 samples = samples.base
@@ -272,6 +273,7 @@ class FileParser:
                         other_units.append(f"{lead.label} ({lead.resolution_unit})")
                     return lead.to_physical()
                 factor = _TO_UV[unit] / _TO_UV[target]
+                converted.append(lead.label)
                 return dataclasses.replace(
                     lead,
                     samples=apply(lead.samples, lead.resolution * factor, lead.offset * factor),
@@ -306,4 +308,8 @@ class FileParser:
                 f"converted to {target}.",
                 stacklevel=3,
             )
+        # A scale the file does not state, set by the parser (experimental)
+        scale_warning = record.raw_metadata.get("scale_warning")
+        if converted and scale_warning:
+            warnings.warn(scale_warning, UserWarning, stacklevel=3)
         return record
