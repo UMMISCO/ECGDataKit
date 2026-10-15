@@ -12,7 +12,14 @@ recorder's own software.
   ``Family name:``, ``ID:``, ``Birth Date:``, ``Sex:``, ``History:``,
   ``Comment:``) at fixed offsets and ended by a NUL. The recording date
   (``DD.MM.YY`` or ``MM/DD/YY``) and time (``HH:MM``) are text swapped the
-  same way, at fixed offsets. The other header bytes are not decoded.
+  same way, at fixed offsets.
+* Header, representative beat: the QRS onset and offset of the beat (16-bit,
+  in ms then in beat samples), the number of QRS complexes detected and
+  averaged (32-bit), then 5000 rows of nine 32-bit values (each stored as two
+  16-bit little-endian words, high word first). A row holds, on the 8
+  channels, the change from the previous instant of the sum of the averaged
+  beats, then the number of beats still summed at that instant (0 or less
+  once the beat has ended). The other header bytes are not decoded.
 * Signal: 8 channels interleaved, signed 16-bit little-endian, 16 bytes
   per sample instant. Only the low 16 bits of each value are stored, so a
   value that drifts past +32767 continues from -32768: consecutive
@@ -31,13 +38,29 @@ Not stored in the file, and taken from outside it:
   (heart cycle intervals, and mains interference at 50 Hz and its
   harmonics). ``raw_metadata["sampling_rate_stated"]`` is ``False``.
 
+The averaged beat goes to ``median_beats``: the stored changes are added up
+and divided by the number of beats averaged, up to the first row with no beat
+summed, at 5000 Hz (the QRS bounds stored in ms and in beat samples differ by
+a factor of 5), with the channels in the order of the leads. Its voltage
+scale is not stored either: it is set to the scale of the leads divided by
+1.6, the ratio between the beat and the median beat of the leads in counts
+on the sample files (it would be 8/5 if each 1000 Hz sample were the sum of
+five 5000 Hz samples divided by 8). The beat stays in raw counts with this
+resolution, so ``auto_scale`` converts it, with the scale warning. The number
+of beats summed at each instant goes to ``raw_metadata["median_beat_counts"]``.
+Its QRS bounds go to ``annotations`` (``median_qrs_onset_ms``,
+``median_qrs_offset_ms``, with ``median_beats_averaged``) and the number of
+QRS complexes detected to ``measurements.qrs_count``. Reading it issues a
+warning.
+
 ``XLEParser(wilson_correction=True)`` refers the chest leads to Wilson's
 central terminal, ``V = CR - (I + II) / 3``, and names them ``V1`` to
 ``V6``, with a warning. Leads III, aVR, aVL and aVF are not stored.
 ``XLEParser(wilson_correction=True, compute_missing_leads=True)`` also
 computes them from I and II (Einthoven and Goldberger), with a warning,
 so the record holds the standard 12 leads. ``compute_missing_leads``
-requires ``wilson_correction``.
+requires ``wilson_correction``. Both options apply to the representative
+beat as well.
 """
 
 from __future__ import annotations
@@ -66,6 +89,13 @@ _SCALE_WARNING = (
     "amplitudes are experimental: check them against the recorder's own "
     "printout before use."
 )
+# Beat counts per lead count, estimated from sample files (not stored)
+_AVERAGE_GAIN = 1.6
+_AVERAGE_SCALE_WARNING = (
+    " The representative beat was converted with 0.9375 / 1.6 uV per count: "
+    "the factor 1.6 is the ratio between the beat and the median beat of the "
+    "leads on sample files, not a value stored in the file."
+)
 
 # Offset of each label in the byte-swapped header, and the field it names
 _FIELDS = (
@@ -82,6 +112,20 @@ _SEX = {"M": "M", "F": "F", "W": "F"}  # W: weiblich
 # Recording date (8 characters) and time (5 characters), byte-swapped
 _DATE_OFFSET = 182972
 _TIME_OFFSET = 182982
+# Representative beat
+_QRS_OFFSET = 0xB8A  # QRS onset, offset (ms), then the same in beat samples
+_COUNTS_OFFSET = 0xB94  # QRS complexes detected, then averaged
+_AVERAGE_OFFSET = 0xB9C
+_AVERAGE_ROWS = 5000
+_AVERAGE_COLUMNS = 9  # 8 channels, then the number of beats summed
+_AVERAGE_RATE = 5000
+_AVERAGE_WARNING = (
+    "XLE representative beat (experimental): the averaged beat stored in the "
+    "header, rebuilt from its stored sample-to-sample changes and divided by "
+    "the number of beats averaged. Its 5000 Hz sampling rate and its lead "
+    "order are inferred, and its voltage scale, not stored, is estimated from "
+    "sample files. Not validated by the manufacturer's documentation."
+)
 
 
 def _swap16(data: bytes) -> bytes:
@@ -145,6 +189,50 @@ def _recording_date(data: bytes) -> tuple[datetime | None, str, str]:
     return start, date_text, time_text
 
 
+def _int32(data: bytes, offset: int, count: int) -> np.ndarray:
+    """*count* 32-bit values stored as two 16-bit words, high word first."""
+    words = np.frombuffer(data, dtype="<i2", count=2 * count, offset=offset).astype(np.int64)
+    return words[0::2] * 65536 + (words[1::2] & 0xFFFF)
+
+
+def _average(data: bytes) -> tuple[np.ndarray, np.ndarray, dict[str, int]] | None:
+    """Averaged beat (samples x 8), the number of beats summed at each
+    sample, and the values stored with it, or ``None`` when it is empty."""
+    table = _int32(data, _AVERAGE_OFFSET, _AVERAGE_ROWS * _AVERAGE_COLUMNS)
+    table = table.reshape(_AVERAGE_ROWS, _AVERAGE_COLUMNS)
+    counts = table[:, -1]
+    onset, offset = np.frombuffer(data, dtype="<u2", count=2, offset=_QRS_OFFSET)
+    detected, averaged = _int32(data, _COUNTS_OFFSET, 2)
+    # the beat ends at the first row with no beat summed, the rows after it
+    # are not part of it
+    ended = np.flatnonzero(counts <= 0)
+    end = int(ended[0]) if ended.size else _AVERAGE_ROWS
+    if end == 0 or averaged <= 0:
+        return None
+    beat = np.cumsum(table[:end, :-1], axis=0) / averaged
+    return beat, counts[:end], {"qrs_onset_ms": int(onset), "qrs_offset_ms": int(offset),
+                                "detected": int(detected), "averaged": int(averaged)}
+
+
+def _lead_set(samples: np.ndarray, wilson: bool, missing: bool) -> list[tuple[str, np.ndarray]]:
+    """Labelled leads from *samples* (I, II, then the chest leads against the
+    right arm), modified in place by the Wilson correction."""
+    chest = "CR"
+    if wilson:
+        samples[:, 2:] -= (samples[:, :1] + samples[:, 1:2]) / 3
+        chest = "V"
+    lead_i, lead_ii = samples[:, 0], samples[:, 1]
+    leads = [("I", lead_i), ("II", lead_ii)]
+    if missing:
+        leads += [
+            ("III", lead_ii - lead_i),
+            ("aVR", -(lead_i + lead_ii) / 2),
+            ("aVL", lead_i - lead_ii / 2),
+            ("aVF", lead_ii - lead_i / 2),
+        ]
+    return leads + [(f"{chest}{k}", samples[:, k + 1]) for k in range(1, 7)]
+
+
 class XLEParser(Parser):
     """Parser for ``.xle`` ECG files (experimental, reverse-engineered)."""
 
@@ -205,7 +293,6 @@ class XLEParser(Parser):
         stored = np.frombuffer(data, dtype="<i2", count=frames * _CHANNELS,
                                offset=_HEADER_SIZE).reshape(frames, _CHANNELS)
         samples, wraps = _unwrap(stored)
-        chest = "CR"
         if self.wilson_correction:
             warnings.warn(
                 "Wilson correction applied to the XLE chest leads, "
@@ -215,10 +302,6 @@ class XLEParser(Parser):
                 UserWarning,
                 stacklevel=2,
             )
-            samples[:, 2:] -= (samples[:, :1] + samples[:, 1:2]) / 3
-            chest = "V"
-        lead_i, lead_ii = samples[:, 0], samples[:, 1]
-        leads = [("I", lead_i), ("II", lead_ii)]
         computed: list[str] = []
         if self.compute_missing_leads:
             warnings.warn(
@@ -227,14 +310,9 @@ class XLEParser(Parser):
                 UserWarning,
                 stacklevel=2,
             )
-            leads += [
-                ("III", lead_ii - lead_i),
-                ("aVR", -(lead_i + lead_ii) / 2),
-                ("aVL", lead_i - lead_ii / 2),
-                ("aVF", lead_ii - lead_i / 2),
-            ]
             computed = ["III", "aVR", "aVL", "aVF"]
-        leads += [(f"{chest}{k}", samples[:, k + 1]) for k in range(1, 7)]
+        leads = _lead_set(samples, self.wilson_correction, self.compute_missing_leads)
+        average = _average(data)
 
         fields = _fields(data)
         patient = PatientInfo(
@@ -270,18 +348,42 @@ class XLEParser(Parser):
             data_encoding="int16",
             compression="none",
         )
+        if average is not None:
+            warnings.warn(_AVERAGE_WARNING, UserWarning, stacklevel=2)
+            beat, counts, stored_values = average
+            for label, values in _lead_set(beat, self.wilson_correction,
+                                           self.compute_missing_leads):
+                record.median_beats.append(Lead(
+                    label=label,
+                    samples=np.ascontiguousarray(values),
+                    sampling_rate=_AVERAGE_RATE,
+                    resolution=_RESOLUTION_UV / _AVERAGE_GAIN,
+                    resolution_unit="uV",
+                    is_raw=True,
+                ))
+            record.annotations["median_qrs_onset_ms"] = str(stored_values["qrs_onset_ms"])
+            record.annotations["median_qrs_offset_ms"] = str(stored_values["qrs_offset_ms"])
+            record.annotations["median_beats_averaged"] = str(stored_values["averaged"])
+            record.measurements.qrs_count = stored_values["detected"]
 
         meta = record.raw_metadata
         meta["filepath"] = str(path)
         meta["reverse_engineered"] = True
         meta["sampling_rate_stated"] = False
         meta["resolution_stated"] = False
-        meta["scale_warning"] = _SCALE_WARNING
+        meta["scale_warning"] = _SCALE_WARNING + (
+            _AVERAGE_SCALE_WARNING if average is not None else "")
         meta["lead_order_stated"] = False
         meta["wilson_correction"] = self.wilson_correction
         meta["chest_lead_reference"] = (
             "Wilson central terminal" if self.wilson_correction else "right arm")
         meta["computed_leads"] = computed
+        if average is not None:
+            meta["median_sampling_rate_stated"] = False
+            meta["median_scale_stated"] = False
+            meta["median_scale_factor"] = _AVERAGE_GAIN
+            meta["median_lead_order_stated"] = False
+            meta["median_beat_counts"] = counts.tolist()
         meta["header_size"] = _HEADER_SIZE
         meta["samples_per_channel"] = frames
         meta["wraps_undone"] = wraps

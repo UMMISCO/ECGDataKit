@@ -18,6 +18,7 @@ HEADER = 0x40000
 FIELDS = (("Given name", 2673), ("Family name", 2712), ("ID", 2761), ("Birth Date", 2793),
           ("Sex", 2840), ("History", 2876), ("Comment", 2916))
 DATE_OFFSET, TIME_OFFSET = 182972, 182982
+QRS_OFFSET, COUNTS_OFFSET, AVERAGE_OFFSET = 0xB8A, 0xB94, 0xB9C
 CR_LEADS = ["I", "II", "CR1", "CR2", "CR3", "CR4", "CR5", "CR6"]
 V_LEADS = ["I", "II", "V1", "V2", "V3", "V4", "V5", "V6"]
 TWELVE_LEADS = ["I", "II", "III", "aVR", "aVL", "aVF", "V1", "V2", "V3", "V4", "V5", "V6"]
@@ -29,11 +30,40 @@ def _swap16(data: bytes) -> bytes:
     return bytes(out)
 
 
+def _int32_words(values: np.ndarray) -> bytes:
+    """32-bit values as two 16-bit little-endian words, high word first."""
+    values = np.asarray(values, dtype=np.int64).ravel()
+    words = np.empty(2 * values.size, dtype="<u2")
+    words[0::2] = (values >> 16) & 0xFFFF
+    words[1::2] = values & 0xFFFF
+    return words.tobytes()
+
+
+def average_beat() -> np.ndarray:
+    """5000 samples x 8 of an averaged beat."""
+    t = np.arange(5000)
+    return np.stack([(k + 1) * 300 * np.exp(-((t - 2000) / 60.0) ** 2) - 50 * k
+                     for k in range(8)], axis=1).round()
+
+
+def average_table(beats: int = 40, rows: int = 5000) -> np.ndarray:
+    """5000 rows x 9 as stored: on 8 channels the change from the previous
+    row of the sum of *beats* copies of :func:`average_beat`, then the number
+    of beats summed (half of them in the last 1000 rows, none after *rows*)."""
+    sums = average_beat() * beats
+    changes = np.diff(sums, axis=0, prepend=0)
+    counts = np.where(np.arange(5000) < 4000, beats, beats // 2)
+    counts[rows:] = 0
+    return np.column_stack([changes, counts]).astype(np.int64)
+
+
 def make_xle(path: Path, signal: np.ndarray, values: dict[str, str] | None = None,
-             date: str = "", time: str = "") -> Path:
+             date: str = "", time: str = "", average: np.ndarray | None = None,
+             qrs: tuple[int, int] = (380, 470), detected: int = 45) -> Path:
     """Write an XLE-like file: patient labels and values in a byte-swapped
-    header with the recording *date* and *time*, then *signal* (frames x 8)
-    stored as int16 modulo 65536."""
+    header with the recording *date* and *time* and the representative beat
+    *average* (see :func:`average_table`), then *signal* (frames x 8) stored
+    as int16 modulo 65536."""
     values = values or {}
     text = bytearray(3200)
     for label, off in FIELDS:
@@ -43,6 +73,12 @@ def make_xle(path: Path, signal: np.ndarray, values: dict[str, str] | None = Non
     header[:3200] = _swap16(bytes(text))
     header[DATE_OFFSET:DATE_OFFSET + 8] = _swap16(date.encode("latin-1").ljust(8, b"\x00"))
     header[TIME_OFFSET:TIME_OFFSET + 6] = _swap16(time.encode("latin-1").ljust(6, b"\x00"))
+    if average is not None:
+        header[QRS_OFFSET:QRS_OFFSET + 8] = np.array(
+            [qrs[0], qrs[1], 5 * qrs[0], 5 * qrs[1]], dtype="<u2").tobytes()
+        header[COUNTS_OFFSET:COUNTS_OFFSET + 8] = _int32_words([detected, average[0, 8]])
+        table = _int32_words(average)
+        header[AVERAGE_OFFSET:AVERAGE_OFFSET + len(table)] = table
     stored = ((np.asarray(signal, dtype=np.int64) + 32768) % 65536 - 32768).astype("<i2")
     path.write_bytes(bytes(header) + stored.tobytes())
     return path
@@ -76,6 +112,7 @@ def has(messages: list[str], text: str) -> bool:
 
 EXPERIMENTAL = "XLE support is experimental"
 SCALE = "XLE: the voltage scale is not stored"
+AVERAGE = "XLE representative beat"
 
 
 class TestXLE:
@@ -224,6 +261,91 @@ class TestXLE:
         assert record.raw_metadata["recording_time_text"] == time
 
 
+class TestRepresentativeBeat:
+    def test_none_without_average(self, tmp_path):
+        path = make_xle(tmp_path / "rec.xle", ecg_like())
+        record, messages = caught_messages(XLEParser().parse, path)
+        assert record.median_beats == []
+        assert not has(messages, AVERAGE)
+        assert record.annotations == {}
+        assert record.measurements.qrs_count is None
+        assert "median_scale_stated" not in record.raw_metadata
+
+    def test_beat_rebuilt_and_averaged(self, tmp_path):
+        table = average_table()
+        path = make_xle(tmp_path / "rec.xle", ecg_like(), average=table)
+        record, messages = caught_messages(XLEParser().parse, path)
+        assert has(messages, AVERAGE)
+        assert [beat.label for beat in record.median_beats] == CR_LEADS
+        for k, beat in enumerate(record.median_beats):
+            assert beat.sampling_rate == 5000
+            np.testing.assert_allclose(beat.samples, average_beat()[:, k])
+        assert record.raw_metadata["median_beat_counts"] == table[:, 8].tolist()
+        assert record.annotations == {"median_qrs_onset_ms": "380",
+                                      "median_qrs_offset_ms": "470",
+                                      "median_beats_averaged": "40"}
+        assert record.measurements.qrs_count == 45
+        meta = record.raw_metadata
+        assert meta["median_sampling_rate_stated"] is False
+        assert meta["median_scale_stated"] is False
+        assert meta["median_lead_order_stated"] is False
+
+    def test_ends_where_no_beat_is_summed(self, tmp_path):
+        table = average_table(rows=4500)
+        table[4500:, :8] = 123_456_789   # rows after the end are not read
+        path = make_xle(tmp_path / "rec.xle", ecg_like(), average=table)
+        record = parse(path, auto_scale=False)
+        for k, beat in enumerate(record.median_beats):
+            np.testing.assert_allclose(beat.samples, average_beat()[:4500, k])
+        assert len(record.raw_metadata["median_beat_counts"]) == 4500
+
+    def test_converted_with_the_beat_scale(self, tmp_path):
+        path = make_xle(tmp_path / "rec.xle", ecg_like(), average=average_table())
+        record, messages = caught_messages(FileParser().parse, path)   # auto_scale=True
+        assert has(messages, SCALE) and has(messages, "0.9375 / 1.6 uV per count")
+        beat = record.median_beats[0]
+        assert not beat.is_raw and beat.units == "mV"
+        np.testing.assert_allclose(beat.samples, average_beat()[:, 0] * 0.9375 / 1.6 / 1000)
+        assert record.raw_metadata["median_scale_factor"] == 1.6
+
+    def test_raw_counts_keep_the_beat_scale(self, tmp_path):
+        path = make_xle(tmp_path / "rec.xle", ecg_like(), average=average_table())
+        record = parse(path, auto_scale=False)
+        beat = record.median_beats[0]
+        assert beat.is_raw and beat.units == ""
+        assert (beat.resolution, beat.resolution_unit) == (0.9375 / 1.6, "uV")
+        np.testing.assert_allclose(beat.samples, average_beat()[:, 0])
+        _, messages = caught_messages(record.to_physical)
+        assert has(messages, "0.9375 / 1.6 uV per count")
+
+    def test_no_beat_scale_note_without_beat(self, tmp_path):
+        record, messages = caught_messages(
+            FileParser().parse, make_xle(tmp_path / "rec.xle", ecg_like()))
+        assert has(messages, SCALE) and not has(messages, "1.6")
+
+    def test_wilson_and_missing_leads(self, tmp_path):
+        path = make_xle(tmp_path / "rec.xle", ecg_like(), average=average_table())
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            record = XLEParser(wilson_correction=True, compute_missing_leads=True).parse(path)
+        beats = {beat.label: beat.samples for beat in record.median_beats}
+        assert list(beats) == TWELVE_LEADS
+        mean = average_beat()
+        i, ii = mean[:, 0], mean[:, 1]
+        np.testing.assert_allclose(beats["V1"], mean[:, 2] - (i + ii) / 3)
+        np.testing.assert_allclose(beats["III"], ii - i)
+        np.testing.assert_allclose(beats["aVR"], -(i + ii) / 2)
+        np.testing.assert_allclose(beats["aVL"], i - ii / 2)
+        np.testing.assert_allclose(beats["aVF"], ii - i / 2)
+
+    def test_wilson_only(self, tmp_path):
+        path = make_xle(tmp_path / "rec.xle", ecg_like(), average=average_table())
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            record = XLEParser(wilson_correction=True).parse(path)
+        assert [beat.label for beat in record.median_beats] == V_LEADS
+
+
 @pytest.mark.parametrize("name", ALL_FORMATS)
 def test_xle_warnings_only_for_xle(name, request, tmp_path):
     """FileParser is shared: the XLE warnings must not reach other formats."""
@@ -234,6 +356,7 @@ def test_xle_warnings_only_for_xle(name, request, tmp_path):
     assert has(messages, EXPERIMENTAL) == is_xle
     assert has(messages, SCALE) == is_xle
     assert has(manual, SCALE) == is_xle
+    assert not has(messages, AVERAGE) or is_xle
     assert ("scale_warning" in record.raw_metadata) == is_xle
 
     def test_patient_fields(self, tmp_path):
