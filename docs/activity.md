@@ -4,7 +4,7 @@
 <div class="activity-dashboard">
   <div class="activity-stats">
     <div class="activity-stat-card">
-      <div class="activity-stat-value">89</div>
+      <div class="activity-stat-value">91</div>
       <div class="activity-stat-label">Commits</div>
     </div>
     <div class="activity-stat-card">
@@ -266,7 +266,8 @@
       <rect x="544" y="18" width="13" height="13" rx="2" fill="#30a14e"><title>2026-10-11: 7 commits</title></rect>
       <rect x="544" y="34" width="13" height="13" rx="2" fill="#9be9a8"><title>2026-10-12: 1 commits</title></rect>
       <rect x="544" y="50" width="13" height="13" rx="2" fill="#9be9a8"><title>2026-10-13: 2 commits</title></rect>
-      <rect x="544" y="66" width="13" height="13" rx="2" fill="#40c463"><title>2026-10-14: 4 commits</title></rect>
+      <rect x="544" y="66" width="13" height="13" rx="2" fill="#30a14e"><title>2026-10-14: 6 commits</title></rect>
+      <rect x="544" y="82" width="13" height="13" rx="2" fill="#ebedf0"><title>2026-10-15: No commits</title></rect>
     </svg>
     <svg class="activity-heatmap-svg dark" width="560" height="130" xmlns="http://www.w3.org/2000/svg">
       <text x="32" y="12" class="activity-svg-month">Mar</text>
@@ -507,7 +508,8 @@
       <rect x="544" y="18" width="13" height="13" rx="2" fill="#26a641"><title>2026-10-11: 7 commits</title></rect>
       <rect x="544" y="34" width="13" height="13" rx="2" fill="#0e4429"><title>2026-10-12: 1 commits</title></rect>
       <rect x="544" y="50" width="13" height="13" rx="2" fill="#0e4429"><title>2026-10-13: 2 commits</title></rect>
-      <rect x="544" y="66" width="13" height="13" rx="2" fill="#006d32"><title>2026-10-14: 4 commits</title></rect>
+      <rect x="544" y="66" width="13" height="13" rx="2" fill="#26a641"><title>2026-10-14: 6 commits</title></rect>
+      <rect x="544" y="82" width="13" height="13" rx="2" fill="#161b22"><title>2026-10-15: No commits</title></rect>
     </svg>
     <div class="activity-heatmap-legend">
       <span>Less</span>
@@ -536,9 +538,31 @@
     <div class="activity-day-group" data-date="2026-10-14">
       <div class="activity-day-header">
         <div class="activity-dot activity-dot-day"></div>
-        <span class="activity-day-label">Oct 14 &middot; 4 commits</span>
+        <span class="activity-day-label">Oct 14 &middot; 6 commits</span>
       </div>
       <div class="activity-day-commits">
+        <div class="activity-entry">
+          <div class="activity-dot"></div>
+          <div class="activity-content">
+            <span class="activity-message">Anonymized files now keep their raw names by default. A name holding a known identity value (patient name or ID, ECG ID, or the patient folder name when folders are anonymized) is flagged as risk in the catalog. The new --anonymize-file-names option names each file after its patient and ECG pseudonyms, as before. Switching it on or off renames the existing copies on the next run with the same pseudonyms, and the catalog records the choice in a new column. With names kept, the stats count distinct ECGs from the catalog instead of the file names.</span>
+            <div class="activity-meta">
+              <a class="activity-hash" href="https://github.com/UMMISCO/ECGDataKit/commit/aaf1474" target="_blank" rel="noopener">aaf1474</a>
+              <span class="activity-author">Ahmad Fall</span>
+              <span class="activity-changes">1 files +1 -1</span>
+            </div>
+          </div>
+        </div>
+        <div class="activity-entry">
+          <div class="activity-dot"></div>
+          <div class="activity-content">
+            <span class="activity-message">Anonymized files now keep their raw names by default. A name holding a known identity value (patient name or ID, ECG ID, or the patient folder name when folders are anonymized) is flagged as risk in the catalog. The new --anonymize-file-names option names each file after its patient and ECG pseudonyms, as before. Switching it on or off renames the existing copies on the next run with the same pseudonyms, and the catalog records the choice in a new column. With names kept, the stats count distinct ECGs from the catalog instead of the file names.</span>
+            <div class="activity-meta">
+              <a class="activity-hash" href="https://github.com/UMMISCO/ECGDataKit/commit/18d450c" target="_blank" rel="noopener">18d450c</a>
+              <span class="activity-author">Ahmad Fall</span>
+              <span class="activity-changes">12 files +1086 -53</span>
+            </div>
+          </div>
+        </div>
         <div class="activity-entry">
           <div class="activity-dot"></div>
           <div class="activity-content">

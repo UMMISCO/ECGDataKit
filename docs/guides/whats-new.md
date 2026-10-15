@@ -2,6 +2,25 @@
 
 ## 2.0.4
 
+### Parsing
+
+- **XLE: representative beat.** The averaged beat stored in the XLE
+  header is now read into `record.median_beats`, 1 s at 5000 Hz, with a
+  warning. The file stores the sum of the averaged beats as
+  sample-to-sample changes. The parser adds them up and divides by the
+  number of beats averaged. The beat follows the leads: `CR1` to `CR6` by
+  default, the Wilson correction and the missing leads when they are
+  requested.
+- **XLE: scale of the representative beat.** Its scale is not stored. It
+  is set to the scale of the leads divided by 1.6, the ratio found between
+  the beat and the median beat of the leads on sample files. The beat is
+  converted to mV with the leads, and the scale warning mentions the
+  factor. See [XLE ECG](formats.md#xle-ecg-experimental) for how it was
+  found.
+- **XLE: values stored with the beat.** Its QRS onset and offset and the
+  number of beats averaged go to `record.annotations`. The number of QRS
+  complexes detected goes to `record.measurements.qrs_count`.
+
 ### Anonymization
 
 - **File names are kept by default.** Each anonymized file keeps its raw

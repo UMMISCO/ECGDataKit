@@ -44,7 +44,7 @@ These formats provide per-lead scaling information: leads are auto-converted to 
 | Mortara ELI | `UNITS_PER_MV` per channel | uV |
 | Philips Sierra XML | `resolution` attribute | uV |
 | AliveCor Kardia JSON | `amplitudeResolution` (nanovolts per count) | uV |
-| XLE (experimental) | Not stored: 0.9375 µV per count, not validated by the manufacturer's documentation (a warning is issued at conversion) | uV |
+| XLE (experimental) | Not stored: 0.9375 µV per count for the leads, 0.9375 / 1.6 µV per count for the representative beat, neither validated by the manufacturer's documentation (a warning is issued at conversion) | uV |
 
 ### Formats without scaling metadata
 
