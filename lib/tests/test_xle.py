@@ -48,8 +48,8 @@ def average_beat() -> np.ndarray:
 
 def average_table(beats: int = 40, rows: int = 5000) -> np.ndarray:
     """5000 rows x 9 as stored: on 8 channels the change from the previous
-    row of the sum of *beats* copies of :func:`average_beat`, then the number
-    of beats summed (half of them in the last 1000 rows, none after *rows*)."""
+    row of the sum of *beats* copies of :func:`average_beat`, then the count
+    column (*beats*, half of it in the last 1000 rows, 0 after *rows*)."""
     sums = average_beat() * beats
     changes = np.diff(sums, axis=0, prepend=0)
     counts = np.where(np.arange(5000) < 4000, beats, beats // 2)
@@ -280,7 +280,7 @@ class TestRepresentativeBeat:
         for k, beat in enumerate(record.median_beats):
             assert beat.sampling_rate == 5000
             np.testing.assert_allclose(beat.samples, average_beat()[:, k])
-        assert record.raw_metadata["median_beat_counts"] == table[:, 8].tolist()
+        assert "median_beat_counts" not in record.raw_metadata
         assert record.annotations == {"median_qrs_onset_ms": "380",
                                       "median_qrs_offset_ms": "470",
                                       "median_beats_averaged": "40"}
@@ -290,14 +290,28 @@ class TestRepresentativeBeat:
         assert meta["median_scale_stated"] is False
         assert meta["median_lead_order_stated"] is False
 
-    def test_ends_where_no_beat_is_summed(self, tmp_path):
+    def test_ends_where_the_count_falls_to_zero(self, tmp_path):
         table = average_table(rows=4500)
         table[4500:, :8] = 123_456_789   # rows after the end are not read
         path = make_xle(tmp_path / "rec.xle", ecg_like(), average=table)
         record = parse(path, auto_scale=False)
         for k, beat in enumerate(record.median_beats):
             np.testing.assert_allclose(beat.samples, average_beat()[:4500, k])
-        assert len(record.raw_metadata["median_beat_counts"]) == 4500
+
+    def test_count_glitch_inside_the_beat_is_ignored(self, tmp_path):
+        table = average_table()
+        table[1312, 8] = 40 + 2 ** 27   # one corrupted count, as seen in a sample file
+        path = make_xle(tmp_path / "rec.xle", ecg_like(), average=table)
+        record = parse(path, auto_scale=False)
+        np.testing.assert_allclose(record.median_beats[0].samples, average_beat()[:, 0])
+
+    def test_comment_stops_before_the_beat(self, tmp_path):
+        # a comment filling its field with no NUL, then beat data
+        path = make_xle(tmp_path / "rec.xle", ecg_like(), average=average_table(),
+                        values={"Comment": "x" * 40})
+        record = parse(path)
+        comment = record.raw_metadata["comment"]
+        assert set(comment) == {"x"} and len(comment) < 30
 
     def test_converted_with_the_beat_scale(self, tmp_path):
         path = make_xle(tmp_path / "rec.xle", ecg_like(), average=average_table())

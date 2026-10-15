@@ -18,8 +18,10 @@ recorder's own software.
   averaged (32-bit), then 5000 rows of nine 32-bit values (each stored as two
   16-bit little-endian words, high word first). A row holds, on the 8
   channels, the change from the previous instant of the sum of the averaged
-  beats, then the number of beats still summed at that instant (0 or less
-  once the beat has ended). The other header bytes are not decoded.
+  beats, then a per-sample count whose meaning is not confirmed. The count
+  starts at the number of beats averaged, and on the sample files it falls
+  to 0 or below where the beat data ends. The other header bytes are not
+  decoded.
 * Signal: 8 channels interleaved, signed 16-bit little-endian, 16 bytes
   per sample instant. Only the low 16 bits of each value are stored, so a
   value that drifts past +32767 continues from -32768: consecutive
@@ -39,16 +41,15 @@ Not stored in the file, and taken from outside it:
   harmonics). ``raw_metadata["sampling_rate_stated"]`` is ``False``.
 
 The averaged beat goes to ``median_beats``: the stored changes are added up
-and divided by the number of beats averaged, up to the first row with no beat
-summed, at 5000 Hz (the QRS bounds stored in ms and in beat samples differ by
+and divided by the number of beats averaged, up to the first row whose count
+is 0 or below, at 5000 Hz (the QRS bounds stored in ms and in beat samples differ by
 a factor of 5), with the channels in the order of the leads. Its voltage
 scale is not stored either: it is set to the scale of the leads divided by
 1.6, the ratio between the beat and the median beat of the leads in counts
 on the sample files (it would be 8/5 if each 1000 Hz sample were the sum of
 five 5000 Hz samples divided by 8). The beat stays in raw counts with this
-resolution, so ``auto_scale`` converts it, with the scale warning. The number
-of beats summed at each instant goes to ``raw_metadata["median_beat_counts"]``.
-Its QRS bounds go to ``annotations`` (``median_qrs_onset_ms``,
+resolution, so ``auto_scale`` converts it, with the scale warning. Its QRS
+bounds go to ``annotations`` (``median_qrs_onset_ms``,
 ``median_qrs_offset_ms``, with ``median_beats_averaged``) and the number of
 QRS complexes detected to ``measurements.qrs_count``. Reading it issues a
 warning.
@@ -107,7 +108,7 @@ _FIELDS = (
     ("History", 2876),
     ("Comment", 2916),
 )
-_TEXT_END = 3200
+_TEXT_END = 0xB88  # end of the Comment field: the representative beat follows
 _SEX = {"M": "M", "F": "F", "W": "F"}  # W: weiblich
 # Recording date (8 characters) and time (5 characters), byte-swapped
 _DATE_OFFSET = 182972
@@ -117,7 +118,7 @@ _QRS_OFFSET = 0xB8A  # QRS onset, offset (ms), then the same in beat samples
 _COUNTS_OFFSET = 0xB94  # QRS complexes detected, then averaged
 _AVERAGE_OFFSET = 0xB9C
 _AVERAGE_ROWS = 5000
-_AVERAGE_COLUMNS = 9  # 8 channels, then the number of beats summed
+_AVERAGE_COLUMNS = 9  # 8 channels, then a count whose meaning is not confirmed
 _AVERAGE_RATE = 5000
 _AVERAGE_WARNING = (
     "XLE representative beat (experimental): the averaged beat stored in the "
@@ -195,23 +196,23 @@ def _int32(data: bytes, offset: int, count: int) -> np.ndarray:
     return words[0::2] * 65536 + (words[1::2] & 0xFFFF)
 
 
-def _average(data: bytes) -> tuple[np.ndarray, np.ndarray, dict[str, int]] | None:
-    """Averaged beat (samples x 8), the number of beats summed at each
-    sample, and the values stored with it, or ``None`` when it is empty."""
+def _average(data: bytes) -> tuple[np.ndarray, dict[str, int]] | None:
+    """Averaged beat (samples x 8) and the values stored with it, or
+    ``None`` when it is empty."""
     table = _int32(data, _AVERAGE_OFFSET, _AVERAGE_ROWS * _AVERAGE_COLUMNS)
     table = table.reshape(_AVERAGE_ROWS, _AVERAGE_COLUMNS)
     counts = table[:, -1]
     onset, offset = np.frombuffer(data, dtype="<u2", count=2, offset=_QRS_OFFSET)
     detected, averaged = _int32(data, _COUNTS_OFFSET, 2)
-    # the beat ends at the first row with no beat summed, the rows after it
-    # are not part of it
+    # on the sample files the beat data ends where the count falls to 0 or
+    # below, and the rows after it hold zeros or unrelated values
     ended = np.flatnonzero(counts <= 0)
     end = int(ended[0]) if ended.size else _AVERAGE_ROWS
     if end == 0 or averaged <= 0:
         return None
     beat = np.cumsum(table[:end, :-1], axis=0) / averaged
-    return beat, counts[:end], {"qrs_onset_ms": int(onset), "qrs_offset_ms": int(offset),
-                                "detected": int(detected), "averaged": int(averaged)}
+    return beat, {"qrs_onset_ms": int(onset), "qrs_offset_ms": int(offset),
+                  "detected": int(detected), "averaged": int(averaged)}
 
 
 def _lead_set(samples: np.ndarray, wilson: bool, missing: bool) -> list[tuple[str, np.ndarray]]:
@@ -350,7 +351,7 @@ class XLEParser(Parser):
         )
         if average is not None:
             warnings.warn(_AVERAGE_WARNING, UserWarning, stacklevel=2)
-            beat, counts, stored_values = average
+            beat, stored_values = average
             for label, values in _lead_set(beat, self.wilson_correction,
                                            self.compute_missing_leads):
                 record.median_beats.append(Lead(
@@ -383,7 +384,6 @@ class XLEParser(Parser):
             meta["median_scale_stated"] = False
             meta["median_scale_factor"] = _AVERAGE_GAIN
             meta["median_lead_order_stated"] = False
-            meta["median_beat_counts"] = counts.tolist()
         meta["header_size"] = _HEADER_SIZE
         meta["samples_per_channel"] = frames
         meta["wraps_undone"] = wraps
