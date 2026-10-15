@@ -108,8 +108,8 @@ class TestHL7aECGParser:
         assert signal.sampling_rate == 500
         assert signal.resolution == 5.0
 
-    def test_median_beats(self, hl7_aecg_file: Path):
-        beats = HL7aECGParser().parse(hl7_aecg_file).median_beats
+    def test_representative_beats(self, hl7_aecg_file: Path):
+        beats = HL7aECGParser().parse(hl7_aecg_file).representative_beats
         assert [b.label for b in beats] == ["I", "II"]
         assert beats[0].sampling_rate == 500  # TIME_RELATIVE increment 2 ms
         np.testing.assert_array_equal(beats[1].samples, [4, 5, 6])
@@ -141,7 +141,7 @@ class TestHL7aECGParser:
         d = HL7aECGParser().parse(hl7_aecg_file).to_dict()
         assert set(d.keys()) == {
             "source_format", "file_format", "patient", "recording",
-            "leads", "interpretation", "measurements", "median_beats", "leads_enhanced",
+            "leads", "interpretation", "measurements", "representative_beats", "leads_enhanced",
             "annotations",
         }
 
@@ -443,10 +443,10 @@ class TestAnnotations:
         # Wave boundaries are reported, intervals are not computed from them
         assert (m.pr_interval, m.qrs_duration, m.qt_interval) == (None, None, None)
         assert {k: record.annotations[k] for k in (
-            "median_p_onset_ms", "median_qrs_onset_ms", "median_qrs_offset_ms",
-            "median_t_offset_ms")} == {
-            "median_p_onset_ms": "300", "median_qrs_onset_ms": "460",
-            "median_qrs_offset_ms": "545", "median_t_offset_ms": "890"}
+            "representative_beat_p_onset_ms", "representative_beat_qrs_onset_ms", "representative_beat_qrs_offset_ms",
+            "representative_beat_t_offset_ms")} == {
+            "representative_beat_p_onset_ms": "300", "representative_beat_qrs_onset_ms": "460",
+            "representative_beat_qrs_offset_ms": "545", "representative_beat_t_offset_ms": "890"}
 
     def test_unknown_measurement_unit_warns(self, tmp_path: Path):
         aset = "<annotationSet>" + _annotation("MDC_ECG_TIME_PD_QT", '<value value="4" unit="furlong"/>') + "</annotationSet>"

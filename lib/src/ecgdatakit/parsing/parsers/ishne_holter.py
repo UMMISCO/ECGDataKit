@@ -173,7 +173,7 @@ class ISHNEHolterParser(Parser):
         signal = self._read_signal(filename, layout, lead_meta.nleads)
         record.leads = self._build_leads(signal, lead_meta)
         # The base ISHNE .ecg format carries no median/representative beats
-        record.median_beats = []
+        record.representative_beats = []
         self._finalize_recording(record, lead_meta)
 
         comments = self._read_variable_block(filename, layout)

@@ -149,7 +149,7 @@ _MEASUREMENT_CODES: dict[str, str] = {
     "5.10.3-15": "t_axis",
 }
 
-_MEDIAN_GROUP_WORDS = ("MEDIAN", "REPRESENTATIVE", "AVERAGE")
+_BEAT_GROUP_WORDS = ("MEDIAN", "REPRESENTATIVE", "AVERAGE")
 
 
 def _text(value) -> str:
@@ -343,11 +343,11 @@ class DICOMWaveformParser(Parser):
             for g in groups
         ]
 
-        median_groups = [g for g in groups if g["is_median"]]
-        rhythm_groups = [g for g in groups if not g["is_median"]]
+        beat_groups = [g for g in groups if g["is_beat"]]
+        rhythm_groups = [g for g in groups if not g["is_beat"]]
         rhythm = rhythm_groups[0] if rhythm_groups else None
-        median = median_groups[0] if median_groups else None
-        skipped = len(groups) - (rhythm is not None) - (median is not None)
+        beat_group = beat_groups[0] if beat_groups else None
+        skipped = len(groups) - (rhythm is not None) - (beat_group is not None)
         if skipped:
             warnings.warn(
                 f"DICOM file has {skipped} additional multiplex group(s) that "
@@ -355,8 +355,8 @@ class DICOMWaveformParser(Parser):
                 stacklevel=3,
             )
 
-        if median is not None:
-            record.median_beats = median["leads"]
+        if beat_group is not None:
+            record.representative_beats = beat_group["leads"]
         if rhythm is not None:
             record.leads = rhythm["leads"]
             record.recording.acquisition.filters = rhythm["filters"]
@@ -366,9 +366,9 @@ class DICOMWaveformParser(Parser):
             rate = rhythm["sampling_frequency"]
             if rate > 0:
                 record.recording.duration = timedelta(seconds=rhythm["num_samples"] / rate)
-        elif median is not None:
-            record.recording.acquisition.filters = median["filters"]
-            record.recording.acquisition.signal = median["signal"]
+        elif beat_group is not None:
+            record.recording.acquisition.filters = beat_group["filters"]
+            record.recording.acquisition.signal = beat_group["signal"]
 
         channel_labels = {
             (g["index"], i + 1): lead.label for g in groups for i, lead in enumerate(g["leads"])
@@ -638,7 +638,7 @@ class DICOMWaveformParser(Parser):
         return {
             "index": index + 1,
             "label": label,
-            "is_median": any(word in upper for word in _MEDIAN_GROUP_WORDS),
+            "is_beat": any(word in upper for word in _BEAT_GROUP_WORDS),
             "leads": leads,
             "filters": filters,
             "channel_filters": channel_filters,

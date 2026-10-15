@@ -131,7 +131,7 @@ class TestSCPECGParser:
         record = SCPECGParser().parse(scp_ecg_file)
         assert set(record.to_dict()) == {
             "source_format", "file_format", "patient", "recording",
-            "leads", "interpretation", "measurements", "median_beats", "leads_enhanced",
+            "leads", "interpretation", "measurements", "representative_beats", "leads_enhanced",
             "annotations",
         }
         parsed = json.loads(record.to_json())
@@ -338,14 +338,14 @@ class TestLeadsAndEncoding:
 # ---------------------------------------------------------------------------
 
 
-def _reference_record(subtract: bool, median_avm: int = 2000):
+def _reference_record(subtract: bool, beat_avm: int = 2000):
     """Two leads at 500 Hz with three beats and a 40-sample reference beat."""
     n = 300
-    template = (np.hanning(40) * 300).astype(np.int64)  # median in median_avm units
+    template = (np.hanning(40) * 300).astype(np.int64)  # reference beat in beat_avm units
     templates = [template, template + np.arange(40)]
     fiducials = [50, 150, 250]  # 1-based sample numbers
     ref_fiducial = 20  # 1-based position of the fiducial in the template
-    scale = median_avm // 1000
+    scale = beat_avm // 1000
     originals = []
     residuals = []
     for lead in range(2):
@@ -360,7 +360,7 @@ def _reference_record(subtract: bool, median_avm: int = 2000):
         struct.pack("<HIII", 0, fc - ref_fiducial + 1, fc, fc - ref_fiducial + 40) for fc in fiducials
     )
     sec4 = struct.pack("<HHH", 80, ref_fiducial, len(fiducials)) + zones
-    sec5 = scp_signal_data(median_avm, 2000, 1, templates, huffman=False)
+    sec5 = scp_signal_data(beat_avm, 2000, 1, templates, huffman=False)
     data = create_scp_ecg_binary(
         lead_codes=[1, 2], signals=residuals, avm=1000,
         lead_flags=0x05 if subtract else 0x04, sections={4: sec4, 5: sec5},
@@ -369,14 +369,14 @@ def _reference_record(subtract: bool, median_avm: int = 2000):
 
 
 class TestReferenceBeats:
-    def test_median_beats(self, tmp_path: Path):
+    def test_representative_beats(self, tmp_path: Path):
         data, originals, template = _reference_record(subtract=False)
         record = _parse(tmp_path, data)
-        assert [b.label for b in record.median_beats] == ["I", "II"]
-        np.testing.assert_array_equal(record.median_beats[0].samples, template)
-        np.testing.assert_array_equal(record.median_beats[1].samples, template + np.arange(40))
-        assert record.median_beats[0].resolution == 2.0
-        assert record.median_beats[0].sampling_rate == 500
+        assert [b.label for b in record.representative_beats] == ["I", "II"]
+        np.testing.assert_array_equal(record.representative_beats[0].samples, template)
+        np.testing.assert_array_equal(record.representative_beats[1].samples, template + np.arange(40))
+        assert record.representative_beats[0].resolution == 2.0
+        assert record.representative_beats[0].sampling_rate == 500
         np.testing.assert_array_equal(record.leads[0].samples, originals[0])
         assert record.measurements.qrs_count == 3
         assert record.raw_metadata["qrs_locations"][0] == {
@@ -447,7 +447,7 @@ class TestMeasurementsAndStatements:
         # Section 7 stores wave boundaries: intervals are not computed from them
         assert (m.pr_interval, m.qrs_duration, m.qt_interval) == (None, None, None)
         names = ("p_onset", "p_offset", "qrs_onset", "qrs_offset", "t_offset")
-        assert {n: record.annotations[f"median_{n}_ms"] for n in names} == {
+        assert {n: record.annotations[f"representative_beat_{n}_ms"] for n in names} == {
             "p_onset": "100", "p_offset": "200", "qrs_onset": "260",
             "qrs_offset": "350", "t_offset": "650"}
         assert m.qtc_bazett == 410  # formula code 1 = Bazett
@@ -655,7 +655,7 @@ class TestEdgeCases:
         assert "vendor_sections" not in record.raw_metadata
 
     def test_subtraction_keeps_the_stored_multiplier(self, tmp_path: Path):
-        data, _, _ = _reference_record(subtract=True, median_avm=1500)
+        data, _, _ = _reference_record(subtract=True, beat_avm=1500)
         lead = _parse(tmp_path, data).leads[0]
         assert lead.resolution == 0.5  # gcd(1000, 1500) nV
         assert lead.adc_resolution == 1000.0 and lead.adc_resolution_unit == "nV"
@@ -667,5 +667,5 @@ class TestEdgeCases:
         path = _write(tmp_path, data)
         with pytest.warns(UserWarning, match="shorter than one sample"):
             record = SCPECGParser().parse(path)
-        assert record.median_beats == []
+        assert record.representative_beats == []
         assert len(record.leads[0].samples) == 500

@@ -4,7 +4,7 @@
 <div class="activity-dashboard">
   <div class="activity-stats">
     <div class="activity-stat-card">
-      <div class="activity-stat-value">93</div>
+      <div class="activity-stat-value">94</div>
       <div class="activity-stat-label">Commits</div>
     </div>
     <div class="activity-stat-card">
@@ -267,7 +267,7 @@
       <rect x="544" y="34" width="13" height="13" rx="2" fill="#9be9a8"><title>2026-10-12: 1 commits</title></rect>
       <rect x="544" y="50" width="13" height="13" rx="2" fill="#9be9a8"><title>2026-10-13: 2 commits</title></rect>
       <rect x="544" y="66" width="13" height="13" rx="2" fill="#30a14e"><title>2026-10-14: 6 commits</title></rect>
-      <rect x="544" y="82" width="13" height="13" rx="2" fill="#9be9a8"><title>2026-10-15: 2 commits</title></rect>
+      <rect x="544" y="82" width="13" height="13" rx="2" fill="#40c463"><title>2026-10-15: 3 commits</title></rect>
     </svg>
     <svg class="activity-heatmap-svg dark" width="560" height="130" xmlns="http://www.w3.org/2000/svg">
       <text x="32" y="12" class="activity-svg-month">Mar</text>
@@ -509,7 +509,7 @@
       <rect x="544" y="34" width="13" height="13" rx="2" fill="#0e4429"><title>2026-10-12: 1 commits</title></rect>
       <rect x="544" y="50" width="13" height="13" rx="2" fill="#0e4429"><title>2026-10-13: 2 commits</title></rect>
       <rect x="544" y="66" width="13" height="13" rx="2" fill="#26a641"><title>2026-10-14: 6 commits</title></rect>
-      <rect x="544" y="82" width="13" height="13" rx="2" fill="#0e4429"><title>2026-10-15: 2 commits</title></rect>
+      <rect x="544" y="82" width="13" height="13" rx="2" fill="#006d32"><title>2026-10-15: 3 commits</title></rect>
     </svg>
     <div class="activity-heatmap-legend">
       <span>Less</span>
@@ -538,9 +538,20 @@
     <div class="activity-day-group" data-date="2026-10-15">
       <div class="activity-day-header">
         <div class="activity-dot activity-dot-day"></div>
-        <span class="activity-day-label">Oct 15 &middot; 2 commits</span>
+        <span class="activity-day-label">Oct 15 &middot; 3 commits</span>
       </div>
       <div class="activity-day-commits">
+        <div class="activity-entry">
+          <div class="activity-dot"></div>
+          <div class="activity-content">
+            <span class="activity-message">XLE files now give their representative beat: the averaged beat stored in the header goes to the median beats, 1 s at 5000 Hz, with a warning. The file stores the sum of the averaged beats as sample-to-sample changes: they are added up and divided by the number of beats averaged, up to the first sample whose stored count is 0 or below. It follows the leads, CR1 to CR6 by default, with the Wilson correction and the missing leads when they are asked for. Its scale is not stored: it is the scale of the leads divided by 1.6, the ratio found between the beat and the median beat of the leads on sample files, so it converts to mV with the leads and the scale warning says so. Its QRS bounds and the number of beats averaged go to the annotations, and the number of QRS complexes detected to the measurements. The patient text is now read only up to the end of the Comment field, so a long comment can no longer run into the beat data, in the parser and in the anonymizer.</span>
+            <div class="activity-meta">
+              <a class="activity-hash" href="https://github.com/UMMISCO/ECGDataKit/commit/2523d8d" target="_blank" rel="noopener">2523d8d</a>
+              <span class="activity-author">Ahmad Fall</span>
+              <span class="activity-changes">4 files +73 -29</span>
+            </div>
+          </div>
+        </div>
         <div class="activity-entry">
           <div class="activity-dot"></div>
           <div class="activity-content">

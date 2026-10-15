@@ -287,11 +287,21 @@ class TestECGRecord:
         d = record.to_dict()
         assert set(d.keys()) == {
             "source_format", "file_format", "patient", "recording",
-            "leads", "interpretation", "measurements", "median_beats", "leads_enhanced",
+            "leads", "interpretation", "measurements", "representative_beats", "leads_enhanced",
             "annotations",
         }
         assert d["source_format"] == "test"
         assert len(d["leads"]) == 2
+
+    def test_median_beats_is_a_deprecated_alias(self):
+        record = self._make_record()
+        beats = [Lead(label="II", samples=np.array([1.0, 2.0]), sampling_rate=500)]
+        with pytest.warns(DeprecationWarning, match="use representative_beats"):
+            record.median_beats = beats
+        assert record.representative_beats is beats
+        with pytest.warns(DeprecationWarning, match="use representative_beats"):
+            assert record.median_beats is beats
+        assert "median_beats" not in record.to_dict()
 
     def test_to_dict_without_samples(self):
         record = self._make_record()
@@ -318,7 +328,7 @@ class TestECGRecord:
         d = record.to_dict()
         assert list(d.keys()) == [
             "source_format", "file_format", "patient", "recording",
-            "leads", "interpretation", "measurements", "median_beats", "leads_enhanced",
+            "leads", "interpretation", "measurements", "representative_beats", "leads_enhanced",
             "annotations",
         ]
 
@@ -567,7 +577,7 @@ class TestJsonSafety:
         rec = self._record()
         rec.leads.append(Lead(label="II", samples=np.arange(70000, dtype=np.float64) / 3,
                               sampling_rate=500))
-        rec.median_beats.append(Lead(label="I", samples=np.array([0.25]), sampling_rate=500))
+        rec.representative_beats.append(Lead(label="I", samples=np.array([0.25]), sampling_rate=500))
         buf = io.StringIO()
         assert rec.to_json(include_samples=include_samples, fp=buf) is None
         streamed = json.loads(buf.getvalue())

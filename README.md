@@ -165,21 +165,21 @@ Every parser returns the same `ECGRecord`, so downstream code stays identical no
 
 ```
 ECGRecord
-  patient          PatientInfo             ID, name, birth date, sex, race, age, weight, height, medications, history, pacemaker
-  recording        RecordingInfo           date, end date, duration, technician, physician, room, location
-    ├─ device      DeviceInfo              manufacturer, model, serial number, software version, institution
-    └─ acquisition AcquisitionSetup
-         ├─ signal SignalCharacteristics   sampling rate, resolution, bits/sample, encoding, compression, channels
-         └─ filters FilterSettings         highpass, lowpass, notch frequencies
-  leads            list[Lead]              label, samples (float64), sampling rate, resolution, units, is_raw
-  measurements     GlobalMeasurements      HR, PR, QRS, QT, QTc (Bazett/Fridericia), P/QRS/T axes, RR interval
-  interpretation   Interpretation          statements, severity, source, interpreter
-  median_beats     list[Lead]              median/template beats, when available
-  leads_enhanced   list[Lead]              the same leads filtered by the device, when the file stores them (AliveCor)
-  annotations      dict[str, str]          additional key-value annotations
-  source_format    str                     parser identifier (e.g. "sierra_xml")
-  file_format      FileFormatInfo          file format version and creation date
-  raw_metadata     dict                    original format-specific metadata
+  patient               PatientInfo             ID, name, birth date, sex, race, age, weight, height, medications, history, pacemaker
+  recording             RecordingInfo           date, end date, duration, technician, physician, room, location
+    ├─ device           DeviceInfo              manufacturer, model, serial number, software version, institution
+    └─ acquisition      AcquisitionSetup
+         ├─ signal      SignalCharacteristics   sampling rate, resolution, bits/sample, encoding, compression, channels
+         └─ filters     FilterSettings          highpass, lowpass, notch frequencies
+  leads                 list[Lead]              label, samples (float64), sampling rate, resolution, units, is_raw
+  measurements          GlobalMeasurements      HR, PR, QRS, QT, QTc (Bazett/Fridericia), P/QRS/T axes, RR interval
+  interpretation        Interpretation          statements, severity, source, interpreter
+  representative_beats  list[Lead]              representative beats (median, average or template), when available
+  leads_enhanced        list[Lead]              the same leads filtered by the device, when the file stores them (AliveCor)
+  annotations           dict[str, str]          additional key-value annotations
+  source_format         str                     parser identifier (e.g. "sierra_xml")
+  file_format           FileFormatInfo          file format version and creation date
+  raw_metadata          dict                    original format-specific metadata
 ```
 
 ## Author

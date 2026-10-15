@@ -838,14 +838,16 @@ class ECGRecord:
     """Machine or physician interpretation."""
     measurements: GlobalMeasurements = field(default_factory=GlobalMeasurements)
     """Global ECG interval/axis measurements."""
-    median_beats: list[Lead] = field(default_factory=list)
-    """Median/template beats if available."""
+    representative_beats: list[Lead] = field(default_factory=list)
+    """Representative beats (median, average or template beats), when the
+    file stores them."""
     annotations: dict[str, str] = field(default_factory=dict)
     """Values the file stores that have no field in the model, one value per
     key. A value that fits ``measurements`` is stored there, not here. Wave
-    boundaries of the representative beat start with ``median_`` (for example
-    ``median_p_onset_ms``). Keys end with their unit when the file or its
-    specification states it (``_ms``, ``_samples``, ``_s``)."""
+    boundaries of the representative beat start with ``representative_beat_``
+    (for example ``representative_beat_p_onset_ms``). Keys end with their unit
+    when the file or its specification states it (``_ms``, ``_samples``,
+    ``_s``)."""
     source_format: str = ""
     """Parser identifier (e.g. ``"hl7_aecg"``, ``"dicom"``)."""
     raw_metadata: dict = field(default_factory=dict)
@@ -855,6 +857,19 @@ class ECGRecord:
     leads_enhanced: list[Lead] = field(default_factory=list)
     """The same leads as filtered by the device, when the file also stores
     that version (AliveCor ``enhanced``). Empty for other formats."""
+
+    @property
+    def median_beats(self) -> list[Lead]:
+        """Deprecated name of :attr:`representative_beats`."""
+        warnings.warn("ECGRecord.median_beats is deprecated, use representative_beats",
+                      DeprecationWarning, stacklevel=2)
+        return self.representative_beats
+
+    @median_beats.setter
+    def median_beats(self, value: list[Lead]) -> None:
+        warnings.warn("ECGRecord.median_beats is deprecated, use representative_beats",
+                      DeprecationWarning, stacklevel=2)
+        self.representative_beats = value
 
     def __repr__(self) -> str:
         lines = ["ECGRecord:"]
@@ -932,10 +947,10 @@ class ECGRecord:
                     f"{lead.sampling_rate} Hz, {status}"
                 )
 
-        # Median beats
-        if self.median_beats:
-            lines.append("  median_beats:")
-            for beat in self.median_beats:
+        # Representative beats
+        if self.representative_beats:
+            lines.append("  representative_beats:")
+            for beat in self.representative_beats:
                 lines.append(
                     f"    - {beat.label}: {len(beat.samples)} samples"
                 )
@@ -953,16 +968,17 @@ class ECGRecord:
         return "\n".join(lines)
 
     def _with_signals(
-        self, leads: list[Lead], median_beats: list[Lead], leads_enhanced: list[Lead],
+        self, leads: list[Lead], representative_beats: list[Lead], leads_enhanced: list[Lead],
     ) -> ECGRecord:
         """Return a copy with new lead lists and its own copy of the metadata."""
         meta = copy.deepcopy(dataclasses.replace(
-            self, leads=[], median_beats=[], leads_enhanced=[]))
+            self, leads=[], representative_beats=[], leads_enhanced=[]))
         return dataclasses.replace(
-            meta, leads=leads, median_beats=median_beats, leads_enhanced=leads_enhanced)
+            meta, leads=leads, representative_beats=representative_beats,
+            leads_enhanced=leads_enhanced)
 
     def to_physical(self) -> ECGRecord:
-        """Convert all leads, median beats and enhanced leads from raw ADC to
+        """Convert all leads, representative beats and enhanced leads from raw ADC to
         physical units.
 
         Returns a new :class:`ECGRecord` with its own copy of the metadata.
@@ -984,7 +1000,7 @@ class ECGRecord:
             return lead.to_physical()
 
         leads = [convert(lead) for lead in self.leads]
-        beats = [convert(beat) for beat in self.median_beats]
+        beats = [convert(beat) for beat in self.representative_beats]
         enhanced = [convert(lead) for lead in self.leads_enhanced]
         if skipped:
             warnings.warn(
@@ -998,7 +1014,7 @@ class ECGRecord:
         return self._with_signals(leads, beats, enhanced)
 
     def convert_units(self, target: str) -> ECGRecord:
-        """Convert all leads, median beats and enhanced leads to the specified
+        """Convert all leads, representative beats and enhanced leads to the specified
         voltage unit.
 
         Returns a new :class:`ECGRecord` with its own copy of the metadata.
@@ -1017,7 +1033,7 @@ class ECGRecord:
         """
         return self._with_signals(
             [lead.convert_units(target) for lead in self.leads],
-            [beat.convert_units(target) for beat in self.median_beats],
+            [beat.convert_units(target) for beat in self.representative_beats],
             [lead.convert_units(target) for lead in self.leads_enhanced],
         )
 
@@ -1069,7 +1085,9 @@ class ECGRecord:
             "leads": [lead.to_dict(include_samples=include_samples) for lead in self.leads],
             "interpretation": self.interpretation.to_dict(),
             "measurements": self.measurements.to_dict(),
-            "median_beats": [b.to_dict(include_samples=include_samples) for b in self.median_beats],
+            "representative_beats": [
+                b.to_dict(include_samples=include_samples) for b in self.representative_beats
+            ],
             "leads_enhanced": [
                 lead.to_dict(include_samples=include_samples) for lead in self.leads_enhanced
             ],
@@ -1112,10 +1130,11 @@ class ECGRecord:
             if i:
                 fp.write(",")
             fp.write(dump(key) + ":")
-            if key not in ("leads", "median_beats", "leads_enhanced") or not include_samples:
+            signal_keys = ("leads", "representative_beats", "leads_enhanced")
+            if key not in signal_keys or not include_samples:
                 fp.write(dump(value))
                 continue
-            signals = {"leads": self.leads, "median_beats": self.median_beats,
+            signals = {"leads": self.leads, "representative_beats": self.representative_beats,
                        "leads_enhanced": self.leads_enhanced}[key]
             fp.write("[")
             for j, (lead_meta, lead) in enumerate(zip(value, signals)):

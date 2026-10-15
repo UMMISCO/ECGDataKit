@@ -229,8 +229,9 @@ class HL7aECGParser(Parser):
             raise CorruptedFileError(f"No ECG lead sequence in the rhythm series of {file_path}")
         meta["rhythm_time"] = rhythm_meta
         if derived is not None:
-            record.median_beats, beat_meta = self._read_sequence_set(derived, "median", file_path)
-            meta["median_time"] = beat_meta
+            record.representative_beats, beat_meta = self._read_sequence_set(
+                derived, "representative beat", file_path)
+            meta["representative_beat_time"] = beat_meta
 
         self._complete_dates(record, rhythm_meta)
         self._read_device(rhythm, record.recording)
@@ -766,7 +767,7 @@ class HL7aECGParser(Parser):
             return
         record.raw_metadata["fiducials_ms"] = dict(fid)
         for name, value in fid.items():
-            record.annotations[f"median_{name}_ms"] = f"{value:g}"
+            record.annotations[f"representative_beat_{name}_ms"] = f"{value:g}"
 
     def _convert(self, value: str, unit: str, quantity: str, code: str) -> float | None:
         v = _float(value)

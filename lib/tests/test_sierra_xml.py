@@ -461,8 +461,8 @@ class TestVersion103:
         assert record.file_format.version == "1.03"
 
     def test_repbeats_in_repbeat_text(self, record, leads):
-        assert len(record.median_beats) == 12
-        beat = record.median_beats[2]
+        assert len(record.representative_beats) == 12
+        beat = record.representative_beats[2]
         assert beat.label == "III"
         assert beat.sampling_rate == 1000
         assert beat.resolution == 1.0
@@ -567,7 +567,7 @@ class TestMetadata:
         assert record.leads[0].annotations == {"pmeasflag": "True", "pamp": "55"}
 
     def test_repbeats(self, xli_file, leads):
-        beats = SierraXMLParser().parse(xli_file).median_beats
+        beats = SierraXMLParser().parse(xli_file).representative_beats
         assert [b.label for b in beats] == LABELS
         beat = beats[1]
         assert beat.sampling_rate == 500
@@ -576,7 +576,7 @@ class TestMetadata:
         assert len(beat.samples) == 600
         np.testing.assert_array_equal(beat.samples, leads[1][:600] // 2)
         assert beat.annotations == {"qrsdur": "92", "qtint": "380", "repbeatmethod": "mean"}
-        scaled = FileParser().parse(xli_file).median_beats[1]
+        scaled = FileParser().parse(xli_file).representative_beats[1]
         assert scaled.units == "mV"
         np.testing.assert_allclose(scaled.samples, (leads[1][:600] // 2) * 0.0025)
 
@@ -698,7 +698,7 @@ class TestWarnings:
         with pytest.warns(UserWarning, match="Huffman") as caught:
             record = SierraXMLParser().parse(path)
         assert caught[0].filename == __file__
-        assert record.median_beats == []
+        assert record.representative_beats == []
         assert len(record.leads) == 12
 
     def test_repbeats_without_rate_or_resolution_flagged(self, tmp_path, leads):
@@ -711,15 +711,15 @@ class TestWarnings:
         assert any("no sampling rate" in m for m in messages)
         assert any("no resolution" in m for m in messages)
         assert all(w.filename == __file__ for w in caught)
-        beat = record.median_beats[0]
+        beat = record.representative_beats[0]
         assert (beat.sampling_rate, beat.resolution) == (500, 5.0)
-        assert record.raw_metadata["median_sampling_rate_stated"] is False
-        assert record.raw_metadata["median_resolution_stated"] is False
+        assert record.raw_metadata["representative_beat_sampling_rate_stated"] is False
+        assert record.raw_metadata["representative_beat_resolution_stated"] is False
 
     def test_stated_repbeat_values_not_flagged(self, xli_file):
         record = SierraXMLParser().parse(xli_file)
-        assert "median_sampling_rate_stated" not in record.raw_metadata
-        assert "median_resolution_stated" not in record.raw_metadata
+        assert "representative_beat_sampling_rate_stated" not in record.raw_metadata
+        assert "representative_beat_resolution_stated" not in record.raw_metadata
 
 
 class TestSecurity:

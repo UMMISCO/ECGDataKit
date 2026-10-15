@@ -304,7 +304,7 @@ def _mortara_b64(lead_index: int, n: int) -> str:
 
 
 MORTARA_RHYTHM_N = 500     # 1 s at 500 Hz
-MORTARA_MEDIAN_N = 300
+MORTARA_BEAT_N = 300
 
 MORTARA_XML = (
     '<?xml version="1.0" encoding="UTF-8"?>\n'
@@ -338,9 +338,9 @@ MORTARA_XML = (
     '  <TYPICAL_CYCLE R_PEAK="150" P_ONSET="-208" P_OFFSET="-97" Q_ONSET="-45" Q_OFFSET="48" '
     'T_OFFSET="411" P_DURATION="111" PR_DURATION="163" QRS_DURATION="93" QT="456" QTC="463" '
     'QTB="469" QTF="464" P_AXIS="57" QRS_AXIS="-35" T_AXIS="40" BITS="16" FORMAT="SIGNED" '
-    f'UNITS_PER_MV="200" DURATION="{MORTARA_MEDIAN_N}" SAMPLE_FREQ="250" ENCODING="BASE64">\n'
-    f'    <TYPICAL_CYCLE_CHANNEL NAME="I" DATA="{_mortara_b64(0, MORTARA_MEDIAN_N)}" />\n'
-    f'    <TYPICAL_CYCLE_CHANNEL NAME="II" DATA="{_mortara_b64(1, MORTARA_MEDIAN_N)}" />\n'
+    f'UNITS_PER_MV="200" DURATION="{MORTARA_BEAT_N}" SAMPLE_FREQ="250" ENCODING="BASE64">\n'
+    f'    <TYPICAL_CYCLE_CHANNEL NAME="I" DATA="{_mortara_b64(0, MORTARA_BEAT_N)}" />\n'
+    f'    <TYPICAL_CYCLE_CHANNEL NAME="II" DATA="{_mortara_b64(1, MORTARA_BEAT_N)}" />\n'
     '  </TYPICAL_CYCLE>\n'
     + "".join(
         f'  <CHANNEL OFFSET="0" BITS="16" FORMAT="SIGNED" UNITS_PER_MV="400" '
@@ -993,7 +993,7 @@ def dicom_file_baseline(tmp_path: Path) -> Path:
 
 @pytest.fixture
 def dicom_12lead_file(tmp_path: Path) -> Path:
-    """12-lead ECG with a rhythm group, a median group and annotations."""
+    """12-lead ECG with a rhythm group, a representative beat group and annotations."""
     from pydicom.dataset import Dataset
     from pydicom.sequence import Sequence
 
@@ -1002,7 +1002,7 @@ def dicom_12lead_file(tmp_path: Path) -> Path:
         [dicom_channel(src, sensitivity="2.5", correction="1.02") for src in DICOM_LEAD_SOURCES],
         label="RHYTHM",
     )
-    median = dicom_group(
+    beat_group = dicom_group(
         dicom_12lead_samples(600),
         [dicom_channel(src, sensitivity="2.5") for src in DICOM_LEAD_SOURCES],
         sampling_rate="1000",
@@ -1043,7 +1043,7 @@ def dicom_12lead_file(tmp_path: Path) -> Path:
     ]
     return write_dicom_ecg(
         tmp_path / "ecg12.dcm",
-        [rhythm, median],
+        [rhythm, beat_group],
         annotations,
         PatientName="Doe^Jane^Q",
         PatientID="DCM12",

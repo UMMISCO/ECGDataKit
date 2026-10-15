@@ -54,7 +54,7 @@ def normalize_minmax(
 
     * :class:`Lead` — single lead.
     * ``list[Lead]`` — multiple leads (e.g. a 12-lead ECG).
-    * :class:`ECGRecord` — all leads and median beats in the record.
+    * :class:`ECGRecord` — all leads and representative beats in the record.
     * ``list[ECGRecord]`` — multiple records.
     * numpy array: 1-D ``(n_samples,)``, 2-D ``(n_leads, n_samples)`` or
       3-D ``(n_ecgs, n_leads, n_samples)``; each row along the last axis is
@@ -91,7 +91,7 @@ def normalize_zscore(
 
     * :class:`Lead` — single lead.
     * ``list[Lead]`` — multiple leads (e.g. a 12-lead ECG).
-    * :class:`ECGRecord` — all leads and median beats in the record.
+    * :class:`ECGRecord` — all leads and representative beats in the record.
     * ``list[ECGRecord]`` — multiple records.
     * numpy array: 1-D ``(n_samples,)``, 2-D ``(n_leads, n_samples)`` or
       3-D ``(n_ecgs, n_leads, n_samples)``; each row along the last axis is
@@ -129,7 +129,7 @@ def normalize_amplitude(
 
     * :class:`Lead` — single lead.
     * ``list[Lead]`` — multiple leads (e.g. a 12-lead ECG).
-    * :class:`ECGRecord` — all leads and median beats in the record.
+    * :class:`ECGRecord` — all leads and representative beats in the record.
     * ``list[ECGRecord]`` — multiple records.
     * numpy array: 1-D ``(n_samples,)``, 2-D ``(n_leads, n_samples)`` or
       3-D ``(n_ecgs, n_leads, n_samples)``; each row along the last axis is
@@ -205,7 +205,7 @@ def _normalize_record(record: ECGRecord, fn: _LeadFn) -> ECGRecord:
     return dataclasses.replace(
         record,
         leads=[fn(ld) for ld in record.leads],
-        median_beats=[fn(mb) for mb in record.median_beats],
+        representative_beats=[fn(mb) for mb in record.representative_beats],
         leads_enhanced=[fn(ld) for ld in record.leads_enhanced],
     )
 

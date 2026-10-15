@@ -89,7 +89,7 @@ class TestDICOMWaveformParser:
         record = DICOMWaveformParser().parse(dicom_file)
         assert set(record.to_dict().keys()) == {
             "source_format", "file_format", "patient", "recording",
-            "leads", "interpretation", "measurements", "median_beats", "leads_enhanced",
+            "leads", "interpretation", "measurements", "representative_beats", "leads_enhanced",
             "annotations",
         }
         parsed = json.loads(record.to_json())
@@ -130,13 +130,13 @@ class TestDICOM12Lead:
             raw = FileParser().parse(dicom_12lead_file, auto_scale=False)
         assert raw.leads[0].samples[0] == 100.0
 
-    def test_median_group(self, dicom_12lead_file: Path):
+    def test_representative_beat_group(self, dicom_12lead_file: Path):
         record = DICOMWaveformParser().parse(dicom_12lead_file)
         assert len(record.leads[0].samples) == 1000
-        assert len(record.median_beats) == 12
-        assert record.median_beats[0].sampling_rate == 1000
-        assert len(record.median_beats[0].samples) == 600
-        assert record.median_beats[2].label == "III"
+        assert len(record.representative_beats) == 12
+        assert record.representative_beats[0].sampling_rate == 1000
+        assert len(record.representative_beats[0].samples) == 600
+        assert record.representative_beats[2].label == "III"
         labels = [g["label"] for g in record.raw_metadata["multiplex_groups"]]
         assert labels == ["RHYTHM", "MEDIAN BEAT"]
 

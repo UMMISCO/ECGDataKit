@@ -726,7 +726,7 @@ class MFERParser(Parser):
         record = self._record
         meta = self._meta
         rhythm = [f for f in self._frames if f["wfm"] != _WFM_DOMINANT_BEAT]
-        median = [f for f in self._frames if f["wfm"] == _WFM_DOMINANT_BEAT]
+        beat_frames = [f for f in self._frames if f["wfm"] == _WFM_DOMINANT_BEAT]
         meta["frames"] = [
             {"channels": len(f["channels"]), "samples": len(f["channels"][0]) if f["channels"] else 0,
              "pointer": f["pointer"], "waveform_type": f["wfm"]}
@@ -734,7 +734,7 @@ class MFERParser(Parser):
         ]
 
         groups = []
-        for frames in (rhythm, median):
+        for frames in (rhythm, beat_frames):
             if not frames:
                 groups.append(([], []))
                 continue
@@ -755,7 +755,7 @@ class MFERParser(Parser):
             groups.append(self._frames_to_leads(frames[:run]))
 
         (leads, rates), (beats, _) = groups
-        record.median_beats = beats
+        record.representative_beats = beats
         # Pacing bits in a status channel are device detections, not a patient
         # attribute: the channel stays in raw_metadata["status_channels"]
         statuses = meta.get("status_channels", {})
@@ -768,7 +768,7 @@ class MFERParser(Parser):
             raise CorruptedFileError("MFER: waveform frames contain no samples")
 
         ref = leads or beats
-        defs = rhythm[0]["defs"] if rhythm else median[0]["defs"]
+        defs = rhythm[0]["defs"] if rhythm else beat_frames[0]["defs"]
         dtp = defs[0].get("dtp", 0) if defs else 0
         record.recording.acquisition.signal = SignalCharacteristics(
             sampling_rate=ref[0].sampling_rate if ref else 0,

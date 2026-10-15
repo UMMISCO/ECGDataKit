@@ -171,7 +171,7 @@ class TestNormalizeECGRecord:
                 make_lead([1, 2, 3, 4, 5], label="I"),
                 make_lead([10, 20, 30, 40, 50], label="II"),
             ],
-            median_beats=[
+            representative_beats=[
                 make_lead([2, 4, 6], label="I"),
             ],
         )
@@ -187,12 +187,12 @@ class TestNormalizeECGRecord:
         assert result.leads[0].label == "I"
         assert result.leads[1].label == "II"
 
-    def test_minmax_normalizes_median_beats(self):
+    def test_minmax_normalizes_representative_beats(self):
         rec = self._make_record()
         result = normalize_minmax(rec)
-        assert len(result.median_beats) == 1
-        assert result.median_beats[0].samples.min() == pytest.approx(-1.0)
-        assert result.median_beats[0].samples.max() == pytest.approx(1.0)
+        assert len(result.representative_beats) == 1
+        assert result.representative_beats[0].samples.min() == pytest.approx(-1.0)
+        assert result.representative_beats[0].samples.max() == pytest.approx(1.0)
 
     def test_zscore_record(self):
         rec = self._make_record()

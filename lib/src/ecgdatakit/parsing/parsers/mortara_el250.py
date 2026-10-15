@@ -10,7 +10,7 @@ EDFbrowser (``mortara2edf.cpp``) and ecg2dcm:
 - ``<SUBJECT>``: LAST_NAME, FIRST_NAME, ID, GENDER, DOB (yyyyMMdd), DOB_XML.
 - ``<SOURCE>``: device, software versions, filters, TRANSMISSION_TIME.
 - ``<AUTOMATIC_INTERPRETATION><STATEMENT TEXT REASON/>``: machine statements.
-- ``<TYPICAL_CYCLE>``: global measurements, fiducials and median beats
+- ``<TYPICAL_CYCLE>``: global measurements, fiducials and representative beats
   (``<TYPICAL_CYCLE_CHANNEL>``).
 - ``<CHANNEL>``: rhythm leads, Base64 int16 LE, physical mV =
   raw / UNITS_PER_MV, DURATION = number of samples.
@@ -70,7 +70,7 @@ _ROOT_MEASUREMENTS = {"VENT_RATE": "heart_rate", "AVERAGE_RR": "rr_interval",
 _CYCLE_MEASUREMENTS = {"PR_DURATION": "pr_interval", "QRS_DURATION": "qrs_duration",
                        "QT": "qt_interval", "QTB": "qtc_bazett", "QTF": "qtc_fridericia",
                        "P_AXIS": "p_axis", "QRS_AXIS": "qrs_axis", "T_AXIS": "t_axis"}
-# Median beat wave boundaries, unit not documented
+# Representative beat wave boundaries, unit not documented
 _CYCLE_BOUNDARIES = {"R_PEAK", "P_ONSET", "P_OFFSET", "Q_ONSET", "Q_OFFSET", "T_OFFSET"}
 
 
@@ -165,7 +165,7 @@ class MortaraEL250Parser(Parser):
         record.leads = leads
 
         cycle = root.find("TYPICAL_CYCLE")
-        record.median_beats = self._read_typical_cycle(cycle, leads, file_path, raw)
+        record.representative_beats = self._read_typical_cycle(cycle, leads, file_path, raw)
 
         record.recording = self._read_recording(root, leads)
         record.recording.device = self._read_device(src)
@@ -303,21 +303,21 @@ class MortaraEL250Parser(Parser):
         if cycle.get("SAMPLE_FREQ"):
             rate = self._rate(cycle.get("SAMPLE_FREQ"), "TYPICAL_CYCLE", file_path)
         else:
-            # Not stated for the median beats: the rhythm rate is used and reported
+            # Not stated for the representative beats: the rhythm rate is used and reported
             rate = leads[0].sampling_rate
-            raw["median_sampling_rate_stated"] = False
+            raw["representative_beat_sampling_rate_stated"] = False
             warnings.warn(
                 f"Mortara TYPICAL_CYCLE has no SAMPLE_FREQ, the rhythm rate ({rate} Hz) "
-                "is used for the median beats",
+                "is used for the representative beats",
                 stacklevel=3,
             )
         upmv = cycle.get("UNITS_PER_MV")
         if _number(upmv) is None:
-            # Not stated for the median beats: they stay in raw counts with no unit
+            # Not stated for the representative beats: they stay in raw counts with no unit
             upmv = None
-            raw["median_scale_stated"] = False
+            raw["representative_beat_scale_stated"] = False
             warnings.warn(
-                "Mortara TYPICAL_CYCLE has no UNITS_PER_MV, the median beats are left "
+                "Mortara TYPICAL_CYCLE has no UNITS_PER_MV, the representative beats are left "
                 "in raw counts",
                 stacklevel=3,
             )
@@ -472,7 +472,7 @@ class MortaraEL250Parser(Parser):
             if number is not None:
                 setattr(m, fields[key], number)
             elif value and key in _CYCLE_BOUNDARIES:
-                annotations[f"median_{key.lower()}"] = value
+                annotations[f"representative_beat_{key.lower()}"] = value
             elif value:
                 annotations[key.lower()] = value
         comment = root.get("COMMENT", "").strip()

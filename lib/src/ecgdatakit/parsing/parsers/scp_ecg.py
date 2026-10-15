@@ -443,12 +443,12 @@ class SCPECGParser(Parser):
         if ctx.protocol:
             record.file_format = FileFormatInfo(version=f"{ctx.protocol / 10:.1f}")
 
-        median = None
+        reference = None
         if 5 in ctx.sections:
-            median = self._parse_section5(ctx, record)
+            reference = self._parse_section5(ctx, record)
         if 6 not in ctx.sections:
             raise CorruptedFileError("SCP-ECG: Section 6 (rhythm data) is missing")
-        self._parse_section6(ctx, record, median)
+        self._parse_section6(ctx, record, reference)
 
         if 7 in ctx.sections:
             self._parse_section7(ctx, record)
@@ -897,25 +897,26 @@ class SCPECGParser(Parser):
             n = round(ctx.ref_length_ms * 1000 / interval)
             if n < 1:
                 ctx.warn(f"SCP-ECG: reference beat length {ctx.ref_length_ms} ms is shorter "
-                         "than one sample, median beats skipped")
+                         "than one sample, representative beats skipped")
                 return None
             counts = [n] * len(ctx.leads)
         elif ctx.tables is not None:
             ctx.warn("SCP-ECG: Section 5 is Huffman encoded but the reference beat "
-                     "length (Section 4) is missing, median beats skipped")
+                     "length (Section 4) is missing, representative beats skipped")
             return None
         avm, interval, diff, _, beats = self._decode_leads(ctx, 5, counts)
         if avm == 0:
-            ctx.warn("SCP-ECG: Section 5 amplitude multiplier is 0, median beats left unscaled")
-        record.median_beats = [
+            ctx.warn("SCP-ECG: Section 5 amplitude multiplier is 0, representative beats left unscaled")
+        record.representative_beats = [
             self._make_lead(label, beat, rate, avm)
             for label, beat in zip(self._labels(ctx), beats)
         ]
-        record.raw_metadata["median_encoding"] = ("amplitudes", "first_difference", "second_difference")[diff]
-        record.raw_metadata["median_sample_interval_us"] = interval
+        record.raw_metadata["representative_beat_encoding"] = (
+            "amplitudes", "first_difference", "second_difference")[diff]
+        record.raw_metadata["representative_beat_sample_interval_us"] = interval
         return {"avm": avm, "interval": interval, "beats": beats}
 
-    def _parse_section6(self, ctx: _Context, record: ECGRecord, median: dict | None) -> None:
+    def _parse_section6(self, ctx: _Context, record: ECGRecord, reference: dict | None) -> None:
         body = ctx.sections[6].body(ctx.data)
         if len(body) < 6:
             raise CorruptedFileError("SCP-ECG: Section 6 is too short")
@@ -924,7 +925,7 @@ class SCPECGParser(Parser):
         # Byte 6 is the bimodal flag up to version 2.x, reserved from 3.0
         bimodal = bool(body[5]) and ctx.protocol < 30
         subtraction = bool(ctx.lead_flags & 0x01)
-        if bimodal and (median is None or median["interval"] != interval):
+        if bimodal and (reference is None or reference["interval"] != interval):
             raise UnsupportedFormatError(
                 "SCP-ECG: bimodal compression (decimated rhythm data) is not supported"
             )
@@ -933,7 +934,7 @@ class SCPECGParser(Parser):
         )
         res_avm = avm
         if subtraction:
-            leads, res_avm = self._add_reference_beats(ctx, leads, avm, median, interval)
+            leads, res_avm = self._add_reference_beats(ctx, leads, avm, reference, interval)
         if res_avm == 0:
             ctx.warn("SCP-ECG: Section 6 amplitude multiplier is 0, leads left unscaled")
         labels = self._labels(ctx)
@@ -968,24 +969,24 @@ class SCPECGParser(Parser):
 
     def _add_reference_beats(
         self, ctx: _Context, residuals: list[np.ndarray], avm: int,
-        median: dict | None, interval: int,
+        reference: dict | None, interval: int,
     ) -> tuple[list[np.ndarray], int]:
         """Add reference beat type 0 back into the Section 6 residuals."""
-        if median is None or not ctx.qrs:
+        if reference is None or not ctx.qrs:
             raise CorruptedFileError(
                 "SCP-ECG: reference beat subtraction is used but Section 4 or 5 is missing"
             )
-        if median["interval"] != interval:
+        if reference["interval"] != interval:
             raise UnsupportedFormatError(
                 "SCP-ECG: reference beat and rhythm data have different sample rates"
             )
-        ref_avm = median["avm"]
+        ref_avm = reference["avm"]
         if avm == 0 or ref_avm == 0:
             raise CorruptedFileError("SCP-ECG: amplitude multiplier 0 with reference beat subtraction")
         # Express both in a common integer unit of gcd(AVM5, AVM6) nV
         common = math.gcd(avm, ref_avm)
         out = []
-        for lead_def, residual, beat in zip(ctx.leads, residuals, median["beats"]):
+        for lead_def, residual, beat in zip(ctx.leads, residuals, reference["beats"]):
             signal = residual * (avm // common)
             beat = beat * (ref_avm // common)
             for qrs in ctx.qrs:
@@ -1040,7 +1041,7 @@ class SCPECGParser(Parser):
             names = ("p_onset", "p_offset", "qrs_onset", "qrs_offset", "t_offset")
             for name, value in zip(names, (p_on, p_off, qrs_on, qrs_off, t_off)):
                 if ok(value):
-                    record.annotations[f"median_{name}_ms"] = str(value)
+                    record.annotations[f"representative_beat_{name}_ms"] = str(value)
             raw["measurement_blocks"] = [
                 dict(zip(("p_onset", "p_offset", "qrs_onset", "qrs_offset", "t_offset",
                           "p_axis", "qrs_axis", "t_axis"), b))

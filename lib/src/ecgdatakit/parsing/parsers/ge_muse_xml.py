@@ -66,13 +66,13 @@ _MEASUREMENT_MAP = {
     "TAxis": "t_axis",
     "QRSCount": "qrs_count",
 }
-# Median beat wave boundaries, unit not stated in the file
+# Representative beat wave boundaries, unit not stated in the file
 _BOUNDARY_KEYS = {
-    "POnset": "median_p_onset",
-    "POffset": "median_p_offset",
-    "QOnset": "median_q_onset",
-    "QOffset": "median_q_offset",
-    "TOffset": "median_t_offset",
+    "POnset": "representative_beat_p_onset",
+    "POffset": "representative_beat_p_offset",
+    "QOnset": "representative_beat_q_onset",
+    "QOffset": "representative_beat_q_offset",
+    "TOffset": "representative_beat_t_offset",
 }
 
 
@@ -160,7 +160,7 @@ class GEMuseXMLParser(Parser):
 
         record.recording = self._read_recording(test, root, meta)
         record.patient = self._read_patient(demo, record.recording.date, meta)
-        record.leads, record.median_beats = self._read_waveforms(root, record, file_path)
+        record.leads, record.representative_beats = self._read_waveforms(root, record, file_path)
         if not record.leads:
             raise CorruptedFileError(f"No rhythm waveform in {file_path}")
         record.measurements = self._read_measurements(root, record)

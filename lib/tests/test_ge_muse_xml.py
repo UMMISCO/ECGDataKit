@@ -102,8 +102,8 @@ class TestGEMuseXMLParser:
             raw = FileParser().parse(ge_muse_xml_file, auto_scale=False)
         np.testing.assert_array_equal(raw.leads[0].samples, MUSE_RHYTHM_I)
 
-    def test_median_beats(self, ge_muse_xml_file: Path):
-        beats = GEMuseXMLParser().parse(ge_muse_xml_file).median_beats
+    def test_representative_beats(self, ge_muse_xml_file: Path):
+        beats = GEMuseXMLParser().parse(ge_muse_xml_file).representative_beats
         assert [b.label for b in beats] == ["I", "II"]
         np.testing.assert_array_equal(beats[0].samples, [1, 2, 3])
 
@@ -139,7 +139,7 @@ class TestGEMuseXMLParser:
         record = GEMuseXMLParser().parse(ge_muse_xml_file)
         assert set(record.to_dict()) == {
             "source_format", "file_format", "patient", "recording",
-            "leads", "interpretation", "measurements", "median_beats", "leads_enhanced",
+            "leads", "interpretation", "measurements", "representative_beats", "leads_enhanced",
             "annotations",
         }
         assert len(json.loads(record.to_json())["leads"]) == 2

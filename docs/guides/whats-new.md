@@ -2,10 +2,37 @@
 
 ## 2.0.4
 
+### Breaking change: representative beats
+
+The beats a file stores to stand for the recording are not always
+medians. Depending on the format they are a median, an average, a typical
+cycle or a reference beat. They are now named after what they have in
+common.
+
+- **`record.median_beats` is now `record.representative_beats`.**
+  `to_dict()` and `to_json()` write the key `"representative_beats"`
+  instead of `"median_beats"`. Reading or setting `record.median_beats`
+  still works for now but issues a `DeprecationWarning`. As an argument,
+  `ECGRecord(median_beats=...)` or `dataclasses.replace(record,
+  median_beats=...)`, the old name is no longer accepted.
+- **Annotation keys of the representative beat start with
+  `representative_beat_`** instead of `median_`, in every parser. For
+  example `median_qrs_onset_ms` is now `representative_beat_qrs_onset_ms`
+  and `median_p_onset` is now `representative_beat_p_onset`.
+- **`raw_metadata` keys about the representative beat start with
+  `representative_beat_`** too: `representative_beat_sampling_rate_stated`,
+  `representative_beat_scale_stated`, `representative_beat_resolution_stated`,
+  `representative_beat_lead_order_stated`, `representative_beat_scale_factor`,
+  `representative_beat_encoding`, `representative_beat_sample_interval_us` and
+  `representative_beat_time`.
+
+Code that reads these keys, or JSON files saved by an earlier version,
+needs the new names.
+
 ### Parsing
 
 - **XLE: representative beat.** The averaged beat stored in the XLE
-  header is now read into `record.median_beats`, 1 s at 5000 Hz, with a
+  header is now read into `record.representative_beats`, 1 s at 5000 Hz, with a
   warning. The file stores the sum of the averaged beats as
   sample-to-sample changes. The parser adds them up and divides by the
   number of beats averaged. The beat follows the leads: `CR1` to `CR6` by
@@ -18,8 +45,10 @@
   factor. See [XLE ECG](formats.md#xle-ecg-experimental) for how it was
   found.
 - **XLE: values stored with the beat.** Its QRS onset and offset and the
-  number of beats averaged go to `record.annotations`. The number of QRS
-  complexes detected goes to `record.measurements.qrs_count`.
+  number of beats averaged go to `record.annotations`
+  (`representative_beat_qrs_onset_ms`, `representative_beat_qrs_offset_ms`,
+  `representative_beat_beats_averaged`). The number of QRS complexes
+  detected goes to `record.measurements.qrs_count`.
 
 ### Anonymization
 

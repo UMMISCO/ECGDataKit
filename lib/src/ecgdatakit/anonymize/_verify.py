@@ -1,7 +1,7 @@
 """Check of each anonymized file before it is published.
 
 Both files are read with ecgdatakit. The anonymized file must be read by
-the same parser, hold the same samples bit for bit (leads, median beats,
+the same parser, hold the same samples bit for bit (leads, representative beats,
 enhanced leads), have only the pseudonym in the patient name and ID fields,
 and give every other field the raw value with the identity text replaced.
 """
@@ -76,7 +76,7 @@ def verify(raw: Path, anonymized: Path, replacer: Replacer, patient_code: str,
             f"read by {after.file_format.parser} after anonymization, "
             f"{before.file_format.parser} before")
     _same_signals(before.leads, after.leads, "leads")
-    _same_signals(before.median_beats, after.median_beats, "median beats")
+    _same_signals(before.representative_beats, after.representative_beats, "representative beats")
     _same_signals(before.leads_enhanced, after.leads_enhanced, "enhanced leads")
 
     old = before.to_dict(include_samples=False)

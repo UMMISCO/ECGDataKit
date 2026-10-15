@@ -40,19 +40,20 @@ Not stored in the file, and taken from outside it:
   (heart cycle intervals, and mains interference at 50 Hz and its
   harmonics). ``raw_metadata["sampling_rate_stated"]`` is ``False``.
 
-The averaged beat goes to ``median_beats``: the stored changes are added up
-and divided by the number of beats averaged, up to the first row whose count
-is 0 or below, at 5000 Hz (the QRS bounds stored in ms and in beat samples differ by
-a factor of 5), with the channels in the order of the leads. Its voltage
+The averaged beat goes to ``representative_beats``: the stored changes are
+added up and divided by the number of beats averaged, up to the first row
+whose count is 0 or below, at 5000 Hz (the QRS bounds stored in ms and in
+beat samples differ by a factor of 5), with the channels in the order of
+the leads. Its voltage
 scale is not stored either: it is set to the scale of the leads divided by
 1.6, the ratio between the beat and the median beat of the leads in counts
 on the sample files (it would be 8/5 if each 1000 Hz sample were the sum of
 five 5000 Hz samples divided by 8). The beat stays in raw counts with this
 resolution, so ``auto_scale`` converts it, with the scale warning. Its QRS
-bounds go to ``annotations`` (``median_qrs_onset_ms``,
-``median_qrs_offset_ms``, with ``median_beats_averaged``) and the number of
-QRS complexes detected to ``measurements.qrs_count``. Reading it issues a
-warning.
+bounds go to ``annotations`` (``representative_beat_qrs_onset_ms``,
+``representative_beat_qrs_offset_ms``, with
+``representative_beat_beats_averaged``) and the number of QRS complexes
+detected to ``measurements.qrs_count``. Reading it issues a warning.
 
 ``XLEParser(wilson_correction=True)`` refers the chest leads to Wilson's
 central terminal, ``V = CR - (I + II) / 3``, and names them ``V1`` to
@@ -354,7 +355,7 @@ class XLEParser(Parser):
             beat, stored_values = average
             for label, values in _lead_set(beat, self.wilson_correction,
                                            self.compute_missing_leads):
-                record.median_beats.append(Lead(
+                record.representative_beats.append(Lead(
                     label=label,
                     samples=np.ascontiguousarray(values),
                     sampling_rate=_AVERAGE_RATE,
@@ -362,9 +363,10 @@ class XLEParser(Parser):
                     resolution_unit="uV",
                     is_raw=True,
                 ))
-            record.annotations["median_qrs_onset_ms"] = str(stored_values["qrs_onset_ms"])
-            record.annotations["median_qrs_offset_ms"] = str(stored_values["qrs_offset_ms"])
-            record.annotations["median_beats_averaged"] = str(stored_values["averaged"])
+            for key, value in (("qrs_onset_ms", stored_values["qrs_onset_ms"]),
+                               ("qrs_offset_ms", stored_values["qrs_offset_ms"]),
+                               ("beats_averaged", stored_values["averaged"])):
+                record.annotations[f"representative_beat_{key}"] = str(value)
             record.measurements.qrs_count = stored_values["detected"]
 
         meta = record.raw_metadata
@@ -380,10 +382,10 @@ class XLEParser(Parser):
             "Wilson central terminal" if self.wilson_correction else "right arm")
         meta["computed_leads"] = computed
         if average is not None:
-            meta["median_sampling_rate_stated"] = False
-            meta["median_scale_stated"] = False
-            meta["median_scale_factor"] = _AVERAGE_GAIN
-            meta["median_lead_order_stated"] = False
+            meta["representative_beat_sampling_rate_stated"] = False
+            meta["representative_beat_scale_stated"] = False
+            meta["representative_beat_scale_factor"] = _AVERAGE_GAIN
+            meta["representative_beat_lead_order_stated"] = False
         meta["header_size"] = _HEADER_SIZE
         meta["samples_per_channel"] = frames
         meta["wraps_undone"] = wraps

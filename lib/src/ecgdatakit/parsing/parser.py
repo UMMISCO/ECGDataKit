@@ -280,7 +280,7 @@ class FileParser:
 
         # Buffers used by more than one lead must not be modified in place
         users: dict[int, int] = {}
-        for lead in record.leads + record.median_beats + record.leads_enhanced:
+        for lead in record.leads + record.representative_beats + record.leads_enhanced:
             key = root(np.asarray(lead.samples))
             users[key] = users.get(key, 0) + 1
 
@@ -334,7 +334,7 @@ class FileParser:
             )
 
         record.leads = [scale(lead, True) for lead in record.leads]
-        record.median_beats = [scale(beat, False) for beat in record.median_beats]
+        record.representative_beats = [scale(beat, False) for beat in record.representative_beats]
         record.leads_enhanced = [scale(lead, False) for lead in record.leads_enhanced]
 
         if raw_labels:

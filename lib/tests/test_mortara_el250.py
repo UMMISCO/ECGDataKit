@@ -11,7 +11,7 @@ from pathlib import Path
 import numpy as np
 import pytest
 
-from tests.conftest import MORTARA_MEDIAN_N, MORTARA_RHYTHM_N, MORTARA_XML, mortara_counts
+from tests.conftest import MORTARA_BEAT_N, MORTARA_RHYTHM_N, MORTARA_XML, mortara_counts
 from ecgdatakit.exceptions import CorruptedFileError, UnsupportedFormatError
 from ecgdatakit.models import ECGRecord
 from ecgdatakit.parsing.parser import FileParser
@@ -105,12 +105,12 @@ class TestMortaraEL250Parser:
             assert lead.adc_resolution_unit == "counts/mV"
             assert lead.is_raw is True and lead.units == ""
 
-    def test_median_beats_use_typical_cycle_scale(self, mortara_file: Path):
-        beats = MortaraEL250Parser().parse(mortara_file).median_beats
+    def test_representative_beats_use_typical_cycle_scale(self, mortara_file: Path):
+        beats = MortaraEL250Parser().parse(mortara_file).representative_beats
         assert [b.label for b in beats] == ["I", "II"]
         assert beats[0].sampling_rate == 250
         assert beats[0].resolution == pytest.approx(5.0)  # UNITS_PER_MV=200
-        np.testing.assert_array_equal(beats[1].samples, mortara_counts(1, MORTARA_MEDIAN_N))
+        np.testing.assert_array_equal(beats[1].samples, mortara_counts(1, MORTARA_BEAT_N))
 
     def test_auto_scale_gives_mv(self, mortara_file: Path):
         with warnings.catch_warnings():
@@ -120,7 +120,7 @@ class TestMortaraEL250Parser:
         assert lead.units == "mV"
         np.testing.assert_allclose(lead.samples, mortara_counts(1, MORTARA_RHYTHM_N) / 400.0)
         np.testing.assert_allclose(
-            record.median_beats[0].samples, mortara_counts(0, MORTARA_MEDIAN_N) / 200.0)
+            record.representative_beats[0].samples, mortara_counts(0, MORTARA_BEAT_N) / 200.0)
 
     def test_raw_counts_without_auto_scale(self, mortara_file: Path):
         with pytest.warns(UserWarning, match="raw ADC"):
@@ -135,7 +135,7 @@ class TestMortaraEL250Parser:
         assert m.qtc_bazett == 469 and m.qtc_fridericia == 464
         assert (m.p_axis, m.qrs_axis, m.t_axis) == (57, -35, 40)
         assert record.raw_metadata["qtc"] == 463
-        assert record.annotations["median_q_onset"] == "-45"
+        assert record.annotations["representative_beat_q_onset"] == "-45"
         assert record.annotations["comment"] == "Chest pain"
 
     def test_machine_statements(self, mortara_file: Path):
@@ -186,13 +186,13 @@ class TestMortaraEL250Parser:
     def test_rhythm_scale_read_per_channel(self, tmp_path: Path):
         xml = re.sub(r"<TYPICAL_CYCLE .*?</TYPICAL_CYCLE>", "", MORTARA_XML, flags=re.S)
         record = _parse(tmp_path, xml)
-        assert record.median_beats == []
+        assert record.representative_beats == []
         assert record.leads[0].resolution == pytest.approx(2.5)
 
     def test_empty_typical_cycle(self, tmp_path: Path):
         xml = re.sub(r"<TYPICAL_CYCLE .*?</TYPICAL_CYCLE>", "<TYPICAL_CYCLE />",
                      MORTARA_XML, flags=re.S)
-        assert _parse(tmp_path, xml).median_beats == []
+        assert _parse(tmp_path, xml).representative_beats == []
 
     @pytest.mark.parametrize("mutation", [
         ('DURATION="500"', 'DURATION="400"'),
@@ -235,22 +235,22 @@ class TestMortaraEL250Parser:
         assert [lead.label for lead in _parse(tmp_path, xml).leads] == ["I", "II", "II_2"]
 
 
-def test_median_rate_not_stated_uses_rhythm_rate(tmp_path: Path):
-    xml = MORTARA_XML.replace(f'DURATION="{MORTARA_MEDIAN_N}" SAMPLE_FREQ="250" ',
-                              f'DURATION="{MORTARA_MEDIAN_N}" ')
+def test_representative_beat_rate_not_stated_uses_rhythm_rate(tmp_path: Path):
+    xml = MORTARA_XML.replace(f'DURATION="{MORTARA_BEAT_N}" SAMPLE_FREQ="250" ',
+                              f'DURATION="{MORTARA_BEAT_N}" ')
     with pytest.warns(UserWarning, match="no SAMPLE_FREQ"):
         record = _parse(tmp_path, xml)
-    assert record.median_beats[0].sampling_rate == record.leads[0].sampling_rate
-    assert record.raw_metadata["median_sampling_rate_stated"] is False
+    assert record.representative_beats[0].sampling_rate == record.leads[0].sampling_rate
+    assert record.raw_metadata["representative_beat_sampling_rate_stated"] is False
 
 
-def test_median_scale_not_stated_stays_raw(tmp_path: Path):
+def test_representative_beat_scale_not_stated_stays_raw(tmp_path: Path):
     xml = MORTARA_XML.replace('UNITS_PER_MV="200" DURATION', 'DURATION')
     with pytest.warns(UserWarning, match="no UNITS_PER_MV"):
         record = _parse(tmp_path, xml)
-    beat = record.median_beats[0]
+    beat = record.representative_beats[0]
     assert beat.is_raw and beat.resolution_unit == ""
-    assert record.raw_metadata["median_scale_stated"] is False
+    assert record.raw_metadata["representative_beat_scale_stated"] is False
 
 
 def test_undeclared_latin1_text_decoded(tmp_path: Path):

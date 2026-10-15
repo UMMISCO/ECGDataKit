@@ -265,37 +265,37 @@ class TestRepresentativeBeat:
     def test_none_without_average(self, tmp_path):
         path = make_xle(tmp_path / "rec.xle", ecg_like())
         record, messages = caught_messages(XLEParser().parse, path)
-        assert record.median_beats == []
+        assert record.representative_beats == []
         assert not has(messages, AVERAGE)
         assert record.annotations == {}
         assert record.measurements.qrs_count is None
-        assert "median_scale_stated" not in record.raw_metadata
+        assert "representative_beat_scale_stated" not in record.raw_metadata
 
     def test_beat_rebuilt_and_averaged(self, tmp_path):
         table = average_table()
         path = make_xle(tmp_path / "rec.xle", ecg_like(), average=table)
         record, messages = caught_messages(XLEParser().parse, path)
         assert has(messages, AVERAGE)
-        assert [beat.label for beat in record.median_beats] == CR_LEADS
-        for k, beat in enumerate(record.median_beats):
+        assert [beat.label for beat in record.representative_beats] == CR_LEADS
+        for k, beat in enumerate(record.representative_beats):
             assert beat.sampling_rate == 5000
             np.testing.assert_allclose(beat.samples, average_beat()[:, k])
-        assert "median_beat_counts" not in record.raw_metadata
-        assert record.annotations == {"median_qrs_onset_ms": "380",
-                                      "median_qrs_offset_ms": "470",
-                                      "median_beats_averaged": "40"}
+        assert "representative_beat_beat_counts" not in record.raw_metadata
+        assert record.annotations == {"representative_beat_qrs_onset_ms": "380",
+                                      "representative_beat_qrs_offset_ms": "470",
+                                      "representative_beat_beats_averaged": "40"}
         assert record.measurements.qrs_count == 45
         meta = record.raw_metadata
-        assert meta["median_sampling_rate_stated"] is False
-        assert meta["median_scale_stated"] is False
-        assert meta["median_lead_order_stated"] is False
+        assert meta["representative_beat_sampling_rate_stated"] is False
+        assert meta["representative_beat_scale_stated"] is False
+        assert meta["representative_beat_lead_order_stated"] is False
 
     def test_ends_where_the_count_falls_to_zero(self, tmp_path):
         table = average_table(rows=4500)
         table[4500:, :8] = 123_456_789   # rows after the end are not read
         path = make_xle(tmp_path / "rec.xle", ecg_like(), average=table)
         record = parse(path, auto_scale=False)
-        for k, beat in enumerate(record.median_beats):
+        for k, beat in enumerate(record.representative_beats):
             np.testing.assert_allclose(beat.samples, average_beat()[:4500, k])
 
     def test_count_glitch_inside_the_beat_is_ignored(self, tmp_path):
@@ -303,7 +303,7 @@ class TestRepresentativeBeat:
         table[1312, 8] = 40 + 2 ** 27   # one corrupted count, as seen in a sample file
         path = make_xle(tmp_path / "rec.xle", ecg_like(), average=table)
         record = parse(path, auto_scale=False)
-        np.testing.assert_allclose(record.median_beats[0].samples, average_beat()[:, 0])
+        np.testing.assert_allclose(record.representative_beats[0].samples, average_beat()[:, 0])
 
     def test_comment_stops_before_the_beat(self, tmp_path):
         # a comment filling its field with no NUL, then beat data
@@ -317,15 +317,15 @@ class TestRepresentativeBeat:
         path = make_xle(tmp_path / "rec.xle", ecg_like(), average=average_table())
         record, messages = caught_messages(FileParser().parse, path)   # auto_scale=True
         assert has(messages, SCALE) and has(messages, "0.9375 / 1.6 uV per count")
-        beat = record.median_beats[0]
+        beat = record.representative_beats[0]
         assert not beat.is_raw and beat.units == "mV"
         np.testing.assert_allclose(beat.samples, average_beat()[:, 0] * 0.9375 / 1.6 / 1000)
-        assert record.raw_metadata["median_scale_factor"] == 1.6
+        assert record.raw_metadata["representative_beat_scale_factor"] == 1.6
 
     def test_raw_counts_keep_the_beat_scale(self, tmp_path):
         path = make_xle(tmp_path / "rec.xle", ecg_like(), average=average_table())
         record = parse(path, auto_scale=False)
-        beat = record.median_beats[0]
+        beat = record.representative_beats[0]
         assert beat.is_raw and beat.units == ""
         assert (beat.resolution, beat.resolution_unit) == (0.9375 / 1.6, "uV")
         np.testing.assert_allclose(beat.samples, average_beat()[:, 0])
@@ -342,7 +342,7 @@ class TestRepresentativeBeat:
         with warnings.catch_warnings():
             warnings.simplefilter("ignore")
             record = XLEParser(wilson_correction=True, compute_missing_leads=True).parse(path)
-        beats = {beat.label: beat.samples for beat in record.median_beats}
+        beats = {beat.label: beat.samples for beat in record.representative_beats}
         assert list(beats) == TWELVE_LEADS
         mean = average_beat()
         i, ii = mean[:, 0], mean[:, 1]
@@ -357,7 +357,7 @@ class TestRepresentativeBeat:
         with warnings.catch_warnings():
             warnings.simplefilter("ignore")
             record = XLEParser(wilson_correction=True).parse(path)
-        assert [beat.label for beat in record.median_beats] == V_LEADS
+        assert [beat.label for beat in record.representative_beats] == V_LEADS
 
 
 @pytest.mark.parametrize("name", ALL_FORMATS)

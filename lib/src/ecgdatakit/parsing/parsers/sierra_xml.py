@@ -72,14 +72,14 @@ _SEX_MAP = {"male": "M", "m": "M", "female": "F", "f": "F"}
 # <pacestatus> values; "Unknown" and anything else leave has_pacemaker unset
 _PACED = {"yes", "paced", "pacemaker", "true"}
 _NOT_PACED = {"no", "notpaced", "not paced", "nopacemaker", "no pacemaker", "false"}
-# Median beat wave boundaries in the global measurements, unit not documented
+# Representative beat wave boundaries in the global measurements, unit not documented
 _BOUNDARY_KEYS = {
-    "ponset": "median_p_onset",
-    "poffset": "median_p_offset",
-    "qonset": "median_q_onset",
-    "qoffset": "median_q_offset",
-    "tonset": "median_t_onset",
-    "toffset": "median_t_offset",
+    "ponset": "representative_beat_p_onset",
+    "poffset": "representative_beat_p_offset",
+    "qonset": "representative_beat_q_onset",
+    "qoffset": "representative_beat_q_offset",
+    "tonset": "representative_beat_t_onset",
+    "toffset": "representative_beat_t_offset",
 }
 
 _LIMB_LEADS = list(STANDARD_LEADS[:6])
@@ -336,7 +336,7 @@ class SierraXMLParser(Parser):
         record.patient = self._read_patient(root, record)
         record.leads = self._read_leads(parsed, signal_node)
         rhythm = record.leads[0] if record.leads else None
-        record.median_beats = self._read_representative_beats(
+        record.representative_beats = self._read_representative_beats(
             _get(waveforms, "repbeats"),
             rhythm.sampling_rate if rhythm else 0,
             rhythm.adc_resolution if rhythm else 0.0,
@@ -629,7 +629,7 @@ class SierraXMLParser(Parser):
             rate = rhythm_rate
             if not rate or rate <= 0:
                 raise CorruptedFileError("Missing or invalid representative beat sampling rate")
-            raw["median_sampling_rate_stated"] = False
+            raw["representative_beat_sampling_rate_stated"] = False
             warnings.warn(
                 f"Sierra XML: <repbeats> has no sampling rate, the rhythm rate ({rate} Hz) "
                 "is used for the representative beats",
@@ -638,7 +638,7 @@ class SierraXMLParser(Parser):
         resolution = _to_float(_attr(repbeats, "resolution"))
         if resolution is None or resolution <= 0:
             resolution = rhythm_resolution or None
-            raw["median_resolution_stated"] = False
+            raw["representative_beat_resolution_stated"] = False
             warnings.warn(
                 "Sierra XML: <repbeats> has no resolution, "
                 + (f"the rhythm resolution ({resolution} uV) is used for the representative beats"

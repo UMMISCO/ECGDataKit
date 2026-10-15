@@ -111,7 +111,7 @@ class TestMFERFixture:
         record = MFERParser().parse(mfer_file)
         assert set(record.to_dict().keys()) == {
             "source_format", "file_format", "patient", "recording",
-            "leads", "interpretation", "measurements", "median_beats", "leads_enhanced",
+            "leads", "interpretation", "measurements", "representative_beats", "leads_enhanced",
             "annotations",
         }
         parsed = json.loads(record.to_json())
@@ -297,7 +297,7 @@ class TestMFERSpecExamples:
         assert record.patient.has_pacemaker is None  # pacing detections are not a patient attribute
         assert record.raw_metadata["status_channels"]["Status"].tolist() == [0, 0, 4, 0]
 
-    def test_dominant_beat_frame_goes_to_median_beats(self, tmp_path: Path):
+    def test_dominant_beat_frame_goes_to_representative_beats(self, tmp_path: Path):
         record = _parse(
             tmp_path,
             mfer_tlv(0x08, b"\x01"),
@@ -306,7 +306,7 @@ class TestMFERSpecExamples:
             mfer_tlv(0x1E, np.arange(3, dtype=">i2").tobytes()),
         )
         assert len(record.leads[0].samples) == 6
-        assert record.median_beats[0].samples.tolist() == [0.0, 1.0, 2.0]
+        assert record.representative_beats[0].samples.tolist() == [0.0, 1.0, 2.0]
 
     def test_frames_are_concatenated(self, tmp_path: Path):
         record = _parse(
