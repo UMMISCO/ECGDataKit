@@ -650,6 +650,14 @@ class HL7aECGParser(Parser):
         lead_meas = {**machine.lead_measurements, **expert.lead_measurements}
         if lead_meas:
             record.raw_metadata["lead_measurements"] = lead_meas
+        # Per-lead values also go to the lead they were measured on: the
+        # representative beat for values on the beat, the strip otherwise
+        for leads, key in ((record.leads, "strip_lead_measurements"),
+                           (record.representative_beats, "beat_lead_measurements")):
+            per_lead = {**getattr(machine, key), **getattr(expert, key)}
+            for lead in leads:
+                if lead.label in per_lead:
+                    lead.annotations.update(per_lead[lead.label])
 
     @staticmethod
     def _classify_set(
@@ -713,6 +721,9 @@ class HL7aECGParser(Parser):
         elif upper in ("MDC_ECG_WAVC", "MDC_ECG_WAVC_TYPE"):
             if relative and not in_beat:
                 self._fiducial(ann, value, sink)
+        elif not in_beat and value is not None and _float(_attr(value, "value")) is not None and (
+                self._scoped_measurement(ann, code, value, sink, relative)):
+            return
         elif code in _MEASUREMENT_MAP and value is not None and _attr(value, "value"):
             field, quantity = _MEASUREMENT_MAP[code]
             converted = self._convert(_attr(value, "value"), _attr(value, "unit"), quantity, code)
@@ -734,31 +745,96 @@ class HL7aECGParser(Parser):
 
     @staticmethod
     def _lead_roi(ann: ET.Element) -> str:
-        """Lead code when the annotation is restricted to one lead."""
+        """Lead code when the annotation is restricted to one lead.
+
+        ``MDC_ECG_LEAD_CONFIG`` names the whole lead configuration, so an
+        annotation bound to it is global, not restricted to a lead.
+        """
         for boundary in ann.findall("support/supportingROI/component/boundary"):
             code = _attr(_child(boundary, "code"), "code")
-            if "_ECG_LEAD_" in code.upper():
+            if "_ECG_LEAD_" in code.upper() and code.upper() != "MDC_ECG_LEAD_CONFIG":
                 return code
         return ""
+
+    @staticmethod
+    def _roi_scope(ann: ET.Element) -> tuple[set[str], bool]:
+        """Leads and time base of the regions of interest under a measurement.
+
+        Writers such as AMPS CalECG put the region of interest on the wave
+        annotation nested under the measurement, not on the measurement:
+        ``QT -> WAVC_QRSTWAVE -> ROI(lead II, 366..854 ms)``. Returns the lead
+        codes found there (``MDC_ECG_LEAD_CONFIG`` excluded) and whether a
+        region is placed in absolute time, i.e. on one beat of the strip.
+        """
+        leads: set[str] = set()
+        absolute = False
+        for boundary in ann.iter("boundary"):
+            code = _attr(_child(boundary, "code"), "code").upper()
+            if code == "TIME_ABSOLUTE":
+                absolute = True
+            elif "_ECG_LEAD_" in code and code != "MDC_ECG_LEAD_CONFIG":
+                leads.add(code)
+        return leads, absolute
+
+    def _scoped_measurement(
+        self, ann: ET.Element, code: str, value: ET.Element, sink: _AnnotationSink,
+        relative: bool,
+    ) -> bool:
+        """Store a measurement whose nested regions make it per beat or per lead.
+
+        A measurement placed in absolute time measures one beat of the strip,
+        so it goes with the per-beat values. One placed on a single lead goes
+        with that lead's measurements. Neither may fill the global
+        measurements. Returns ``False`` for a global measurement, which the
+        caller stores as before.
+        """
+        leads, absolute = self._roi_scope(ann)
+        if absolute and not relative:
+            if code in _MEASUREMENT_MAP:
+                field, quantity = _MEASUREMENT_MAP[code]
+                converted = self._convert(_attr(value, "value"), _attr(value, "unit"), quantity, code)
+                if converted is not None:
+                    sink.beat_values.setdefault(field, []).append(converted)
+            else:
+                sink.beat_extra.setdefault(code, []).append(
+                    (_float(_attr(value, "value")), _attr(value, "unit")))
+            return True
+        if len(leads) == 1:
+            lead_code = next(iter(leads))
+            label = self._lead_label(lead_code) or lead_code
+            store = sink.lead_measurements.setdefault(label, {})
+            store[code] = _code_text(value)
+            target = sink.beat_lead_measurements if relative else sink.strip_lead_measurements
+            target.setdefault(label, {})[code] = store[code]
+            return True
+        return False
 
     def _fiducial(self, ann: ET.Element, value: ET.Element | None, sink: _AnnotationSink) -> None:
         """Record representative-beat wave boundaries (relative time, ms)."""
         wave = _attr(value, "code").upper()
+        # (onset name, offset name) of each wave
         names = {
-            "MDC_ECG_WAVC_PWAVE": "p",
-            "MDC_ECG_WAVC_QRSWAVE": "qrs",
-            "MDC_ECG_WAVC_TWAVE": "t",
+            "MDC_ECG_WAVC_PWAVE": ("p_onset", "p_offset"),
+            "MDC_ECG_WAVC_QRSWAVE": ("qrs_onset", "qrs_offset"),
+            "MDC_ECG_WAVC_TWAVE": ("t_onset", "t_offset"),
+            # QT region: QRS onset to T end
+            "MDC_ECG_WAVC_QRSTWAVE": ("qrs_onset", "t_offset"),
         }
         if wave not in names:
             return
-        boundary = _child(ann, "support/supportingROI/component/boundary")
+        boundaries = ann.findall("support/supportingROI/component/boundary")
+        # A region bound to a lead, or to the lead configuration, locates an
+        # amplitude or a single-lead value, not the global wave boundaries
+        if any("_ECG_LEAD_" in _attr(_child(b, "code"), "code").upper() for b in boundaries):
+            return
+        boundary = boundaries[0] if boundaries else None
         if boundary is None or _attr(_child(boundary, "code"), "code").upper() != "TIME_RELATIVE":
             return
-        for edge, key in (("low", "onset"), ("high", "offset")):
+        for edge, key in zip(("low", "high"), names[wave]):
             el = _child(boundary, f"value/{edge}")
             ms = self._convert(_attr(el, "value"), _attr(el, "unit"), "time", "boundary")
             if ms is not None:
-                sink.fiducials.setdefault(f"{names[wave]}_{key}", ms)
+                sink.fiducials.setdefault(key, ms)
 
     @staticmethod
     def _report_fiducials(fid: dict, record: ECGRecord) -> None:
@@ -805,3 +881,6 @@ class _AnnotationSink:
         self.extra: dict[str, str] = {}
         self.beat_extra: dict[str, list[tuple[float, str]]] = {}
         self.lead_measurements: dict[str, dict[str, str]] = {}
+        # The same values split by series, to attach them to the right leads
+        self.strip_lead_measurements: dict[str, dict[str, str]] = {}
+        self.beat_lead_measurements: dict[str, dict[str, str]] = {}

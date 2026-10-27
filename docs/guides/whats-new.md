@@ -49,6 +49,23 @@ needs the new names.
   (`representative_beat_qrs_onset_ms`, `representative_beat_qrs_offset_ms`,
   `representative_beat_beats_averaged`). The number of QRS complexes
   detected goes to `record.measurements.qrs_count`.
+- **HL7 aECG: measurements whose region is on the nested wave.** Some
+  writers, such as AMPS CalECG, put the lead and the time of a measurement
+  on the wave annotation nested under it. These measurements were read as
+  global, so `record.measurements` kept the first one found: the QT of the
+  first beat of the strip in lead II instead of the global QT of the
+  representative beat, and the amplitudes of lead I as record values. Now:
+    - a measurement placed in absolute time goes to
+      `raw_metadata["beat_measurements"]`, with the other per-beat values;
+    - a measurement placed on one lead goes to that lead's `annotations`,
+      on the representative beat or on the strip, and to
+      `raw_metadata["lead_measurements"]`;
+    - only a measurement with no lead, or bound to `MDC_ECG_LEAD_CONFIG`,
+      fills `record.measurements` or `record.annotations`.
+- **HL7 aECG: T end of the representative beat.** A QT region
+  (`MDC_ECG_WAVC_QRSTWAVE`) gives `representative_beat_qrs_onset_ms` and
+  `representative_beat_t_offset_ms`. Regions bound to a lead, such as the
+  points of an amplitude, no longer give wave boundaries.
 
 ### Anonymization
 
