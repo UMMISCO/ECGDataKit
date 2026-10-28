@@ -448,6 +448,58 @@ class TestAnnotations:
             "representative_beat_p_onset_ms": "300", "representative_beat_qrs_onset_ms": "460",
             "representative_beat_qrs_offset_ms": "545", "representative_beat_t_offset_ms": "890"}
 
+    def test_regions_nested_under_measurements(self, tmp_path: Path):
+        # AMPS CalECG layout: the region of interest sits on the wave nested
+        # under each measurement, and global values are bound to LEAD_CONFIG
+        def roi(*boundaries):
+            return ("<support><supportingROI>" + "".join(
+                f"<component><boundary><code code=\"{code}\"/>{value}</boundary></component>"
+                for code, value in boundaries) + "</supportingROI></support>")
+
+        def span(low, high):
+            return f'<value><low value="{low}" unit="ms"/><high value="{high}" unit="ms"/></value>'
+
+        def measure(code, value, unit, wave, *boundaries):
+            return _annotation(code, f'<value value="{value}" unit="{unit}"/>', children=_annotation(
+                "MDC_ECG_WAVC_TYPE", f'<value code="{wave}"/>', support=roi(*boundaries)))
+
+        strip = ("<annotationSet>"
+                 + measure("MDC_ECG_TIME_PD_QT", 391, "ms", "MDC_ECG_WAVC_QRSTWAVE",
+                           ("TIME_ABSOLUTE", ""), ("MDC_ECG_LEAD_II", ""))
+                 + measure("MDC_ECG_TIME_PD_QT", 395, "ms", "MDC_ECG_WAVC_QRSTWAVE",
+                           ("TIME_ABSOLUTE", ""), ("MDC_ECG_LEAD_II", ""))
+                 + _annotation("MDC_ECG_TIME_PD_RR", '<value value="900" unit="ms"/>')
+                 + "</annotationSet>")
+        beat = ("<annotationSet>"
+                + measure("MDC_ECG_TIME_PD_QT", 410, "ms", "MDC_ECG_WAVC_QRSTWAVE",
+                          ("TIME_RELATIVE", span(300, 710)), ("MDC_ECG_LEAD_I", ""))
+                + measure("MDC_ECG_TIME_PD_QT", 380, "ms", "MDC_ECG_WAVC_QRSTWAVE",
+                          ("TIME_RELATIVE", span(300, 680)), ("MDC_ECG_LEAD_II", ""))
+                + measure("MDC_ECG_TIME_PD_QT", 400, "ms", "MDC_ECG_WAVC_QRSTWAVE",
+                          ("TIME_RELATIVE", span(300, 700)))
+                + measure("MDC_ECG_TIME_PD_QRS", 90, "ms", "MDC_ECG_WAVC_QRSWAVE",
+                          ("TIME_RELATIVE", span(300, 390)))
+                + measure("MDC_ECG_AMPL_R", 800, "uV", "MDC_ECG_WAVC_RWAVE",
+                          ("TIME_RELATIVE", span(80, 580)), ("MDC_ECG_LEAD_I", '<value value="800" unit="uV"/>'))
+                + measure("MDC_ECG_AMPL_R", 600, "uV", "MDC_ECG_WAVC_RWAVE",
+                          ("TIME_RELATIVE", span(80, 580)), ("MDC_ECG_LEAD_CONFIG", '<value value="600" unit="uV"/>'))
+                + "</annotationSet>")
+        xml = _with_annotation_sets(strip).replace(
+            "        </derivedSeries>", f"          <subjectOf>{beat}</subjectOf>\n        </derivedSeries>")
+        record = _parse(tmp_path, xml)
+        m = record.measurements
+        # Global values only: not the first beat of the strip nor the first lead
+        assert (m.qt_interval, m.qrs_duration, m.rr_interval) == (400, 90, 900)
+        assert record.raw_metadata["beat_measurements"]["qt_interval"] == [391, 395]
+        beats = {b.label: b.annotations for b in record.representative_beats}
+        assert beats["I"] == {"MDC_ECG_TIME_PD_QT": "410 ms", "MDC_ECG_AMPL_R": "800 uV"}
+        assert beats["II"] == {"MDC_ECG_TIME_PD_QT": "380 ms"}
+        assert record.annotations["MDC_ECG_AMPL_R"] == "600 uV"
+        # The global QT region gives T end; the amplitude regions give no boundary
+        assert record.raw_metadata["fiducials_ms"] == {
+            "qrs_onset": 300, "t_offset": 700, "qrs_offset": 390}
+        assert all(not lead.annotations for lead in record.leads)
+
     def test_unknown_measurement_unit_warns(self, tmp_path: Path):
         aset = "<annotationSet>" + _annotation("MDC_ECG_TIME_PD_QT", '<value value="4" unit="furlong"/>') + "</annotationSet>"
         with pytest.warns(UserWarning, match="furlong"):
