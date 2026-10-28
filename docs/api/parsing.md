@@ -1,6 +1,6 @@
 # Parsing
 
-Import: `from ecgdatakit import FileParser, parse_batch, BatchParseWarning`
+Import: `from ecgdatakit import FileParser, parse_batch, BatchParseWarning, read_ishne_annotations`
 
 | | |
 |---|---|
@@ -8,6 +8,7 @@ Import: `from ecgdatakit import FileParser, parse_batch, BatchParseWarning`
 | {class}`~ecgdatakit.parsing.parser.Parser` | Base class for all ECG format parsers |
 | {func}`~ecgdatakit.parsing.batch.parse_batch` | Parse multiple ECG files in parallel |
 | {class}`~ecgdatakit.parsing.batch.BatchParseWarning` | Warning for a file skipped by `parse_batch(on_error="warn")` |
+| {func}`~ecgdatakit.parsing.parsers.ishne_holter.read_ishne_annotations` | Read the beat annotations of an ISHNE Holter (`.ann`) |
 
 ```{eval-rst}
 .. currentmodule:: ecgdatakit.parsing.parser
@@ -130,4 +131,12 @@ nothing, so match records to files with `record.raw_metadata["filepath"]`.
 
 scaling
 models
+```
+
+## read_ishne_annotations
+
+```{eval-rst}
+.. currentmodule:: ecgdatakit.parsing.parsers.ishne_holter
+
+.. autofunction:: read_ishne_annotations
 ```

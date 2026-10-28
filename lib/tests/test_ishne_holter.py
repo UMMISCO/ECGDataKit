@@ -15,8 +15,8 @@ import pytest
 from ecgdatakit.exceptions import ChecksumWarning, CorruptedFileError
 from ecgdatakit.models import ECGRecord
 from ecgdatakit.parsing.parser import FileParser
-from ecgdatakit.parsing.parsers.ishne_holter import ISHNEHolterParser
-from tests.conftest import create_ishne_binary
+from ecgdatakit.parsing.parsers.ishne_holter import ISHNEHolterParser, read_ishne_annotations
+from tests.conftest import create_ishne_ann, create_ishne_binary
 
 
 class TestISHNEHolterParser:
@@ -345,3 +345,88 @@ class TestISHNEEmptyData:
         record, caught = _parse(p)
         assert any("odd number of data bytes" in str(x.message) for x in caught)
         assert len(record.leads[0].samples) == 10
+
+
+# ---------------------------------------------------------------------------
+# Beat annotation files (.ann)
+# ---------------------------------------------------------------------------
+
+def _ann(tmp_path: Path, records, first=0, name="rec.ann", **kwargs) -> Path:
+    p = tmp_path / name
+    p.write_bytes(create_ishne_ann(records, first=first, **kwargs))
+    return p
+
+
+class TestISHNEAnnotations:
+    def test_positions_from_the_first_position_and_the_intervals(self, ishne_ann_file: Path):
+        ann = read_ishne_annotations(ishne_ann_file)
+        assert ann.samples.tolist() == [60, 90, 180]
+        assert ann.labels == ["N", "V", "N"]
+        assert ann.sub_labels == ["", "", ""]
+        assert ann.sampling_rate == 200
+        np.testing.assert_allclose(ann.times, [0.3, 0.45, 0.9])
+        assert ann.source_format == "ishne_annotations"
+        assert ann.raw_metadata["first_annotation_position"] == 10
+        assert ann.raw_metadata["checksum_valid"] is True
+
+    def test_timeout_record_is_time_not_a_beat(self, tmp_path: Path):
+        ann = read_ishne_annotations(_ann(tmp_path, [(b"N", b"\0", 100), (b"!", b"\0", 65535), (b"N", b"\0", 10)]))
+        assert ann.samples.tolist() == [100, 100 + 65535 + 10]
+        assert ann.labels == ["N", "N"]
+        assert ann.raw_metadata["timeout_records"] == 1
+
+    def test_empty_label_record_keeps_its_interval(self, tmp_path: Path):
+        ann = read_ishne_annotations(_ann(tmp_path, [(b"\0", b"\0", 40), (b"S", b"A", 60)]))
+        assert ann.samples.tolist() == [100]
+        assert (ann.labels, ann.sub_labels) == (["S"], ["A"])
+        assert ann.raw_metadata["empty_label_records"] == 1
+
+    def test_sampling_rate_comes_from_the_header(self, tmp_path: Path):
+        ann = read_ishne_annotations(_ann(tmp_path, [(b"N", b"\0", 180)], sr=180))
+        assert ann.sampling_rate == 180
+        assert ann.times.tolist() == [1.0]
+
+    def test_trailing_bytes_warn(self, tmp_path: Path):
+        p = _ann(tmp_path, [(b"N", b"\0", 5)])
+        p.write_bytes(p.read_bytes() + b"\x01\x02")
+        with pytest.warns(UserWarning, match="trailing byte"):
+            ann = read_ishne_annotations(p)
+        assert len(ann) == 1
+
+    def test_no_annotation(self, tmp_path: Path):
+        ann = read_ishne_annotations(_ann(tmp_path, []))
+        assert len(ann) == 0
+        assert ann.counts() == {}
+        assert "count: 0" in str(ann)
+
+    def test_an_ecg_file_is_not_an_annotation_file(self, ishne_file: Path):
+        with pytest.raises(CorruptedFileError, match="magic"):
+            read_ishne_annotations(ishne_file)
+
+    def test_checksum_mismatch_warns(self, tmp_path: Path):
+        p = _ann(tmp_path, [(b"N", b"\0", 5)])
+        data = bytearray(p.read_bytes())
+        data[30] ^= 0xFF  # inside the patient name, covered by the CRC
+        p.write_bytes(bytes(data))
+        with pytest.warns(ChecksumWarning):
+            ann = read_ishne_annotations(p)
+        assert ann.raw_metadata["checksum_valid"] is False
+
+    def test_counts_dict_and_summary(self, tmp_path: Path):
+        ann = read_ishne_annotations(_ann(tmp_path, [(b"N", b"\0", 5), (b"V", b"\0", 5), (b"N", b"\0", 5)]))
+        assert ann.counts() == {"N": 2, "V": 1}
+        d = ann.to_dict()
+        assert d["samples"] == [5, 10, 15] and d["labels"] == ["N", "V", "N"]
+        json.dumps(d)
+        assert "labels: N 2, V 1" in str(ann)
+        assert ann.LABELS["X"] == "artefact"
+
+    def test_patient_fields_are_not_returned(self, ishne_ann_file: Path):
+        text = json.dumps(read_ishne_annotations(ishne_ann_file).to_dict())
+        assert "Test" not in text and "P0001" not in text
+
+    def test_top_level_export(self):
+        import ecgdatakit
+        assert ecgdatakit.read_ishne_annotations is read_ishne_annotations
+        assert ecgdatakit.BeatAnnotations.__name__ == "BeatAnnotations"
+

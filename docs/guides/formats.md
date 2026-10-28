@@ -42,6 +42,19 @@ A binary format defined by the International Society for Holter and Noninvasive 
 
 **Dependencies:** None (the CRC-16 check uses the standard library). Some recorders store a constant instead of a real checksum: the mismatch is reported as `ChecksumWarning` and `raw_metadata["checksum_valid"]`.
 
+The number of samples is taken from the file size: some writers store a nominal or wrong count in the header (both are kept in `raw_metadata`). Leads whose code is 0 (unknown) or 1 (generic bipolar) have no name in the file and are named `Lead 1`, `Lead 2`...
+
+**Beat annotations.** A Holter often comes with a beat annotation file of the same name, `.ann`, in the layout the THEW defines ([ECG Annotations file](http://thew-project.org/papers/ishneAnn.pdf)): the ISHNE header of the recording with the magic `ANN  1.0`, the position of the first annotation, then one 4-byte record per beat (label, second label, samples since the previous beat). {func}`~ecgdatakit.read_ishne_annotations` reads it into a {class}`~ecgdatakit.models.BeatAnnotations`: positions in samples of the recording, labels (`N` normal, `V` ventricular, `S` supraventricular, `X` artefact, `U` unknown...) and second labels. A `!` record (timeout) only extends an interval longer than 65535 samples and is not returned as a beat.
+
+```python
+from ecgdatakit import FileParser, read_ishne_annotations
+
+record = FileParser.parse("TDP1_001.ecg")
+beats = read_ishne_annotations("TDP1_001.ann")
+beats.counts()      # {'N': 65063, 'V': 536, 'S': 404}
+beats.times[:3]     # seconds from the start of the recording
+```
+
 ## Mortara ELI (EL250/ELI280)
 
 XML format produced by Mortara/Welch Allyn ELI series ECG devices (ELI 250, ELI 280). Stores multi-channel waveform data with per-channel metadata in a straightforward XML structure.
