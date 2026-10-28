@@ -67,8 +67,28 @@ needs the new names.
   `representative_beat_t_offset_ms`. Regions bound to a lead, such as the
   points of an amplitude, no longer give wave boundaries.
 
+- **ISHNE Holter: beat annotations.** New
+  `read_ishne_annotations(path)` reads the `.ann` file of a Holter, in the
+  THEW layout, into the new `BeatAnnotations` model: position of each beat
+  in samples, its label and second label, and `times` in seconds. The
+  intervals are samples of the recording, the first annotation position is
+  read from the file, and `!` (timeout) records only extend the interval.
+- **ISHNE Holter: faster reading.** The samples are mapped from the file
+  instead of being read into memory first, so a 24 h Holter parses about
+  twice as fast.
+
 ### Anonymization
 
+- **ISHNE beat annotations.** The `.ann` file next to an ISHNE recording
+  is anonymized with it: its header holds the same patient fields, which
+  are replaced the same way, its beats are copied unchanged, and it is
+  named after the anonymized recording. It is listed in the `companions`
+  column and no longer counted as unsupported.
+- **Placeholder names are not identity values.** A field holding `none`,
+  `null`, `unknown`, `n/a`, `-`, `?` or `anonymous` is no one's name or
+  ID. Such values were replaced everywhere they occurred, so a THEW Holter,
+  whose name fields say `none`, failed verification because its
+  compression field also says `none`.
 - **File names are kept by default.** Each anonymized file keeps its raw
   name. A name holding a known identity value (the patient's name or ID,
   the ECG ID, or the patient folder name with

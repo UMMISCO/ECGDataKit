@@ -8,6 +8,7 @@ import json
 import warnings
 from dataclasses import dataclass, field, fields
 from datetime import date, datetime, timedelta
+from typing import ClassVar
 
 import numpy as np
 from numpy.typing import NDArray
@@ -1146,3 +1147,82 @@ class ECGRecord:
             fp.write("]")
         fp.write("}")
         return None
+
+
+@dataclass
+class BeatAnnotations:
+    """Beat labels of a recording, as its annotation file stores them.
+
+    One entry per annotation, in time order: its position in samples of the
+    recording (from its first sample), its label, and the second label some
+    formats use to refine it. Labels are the file's own codes; :attr:`LABELS`
+    gives the meaning of the generic ones of the THEW/ISHNE annotation format.
+    """
+
+    samples: NDArray[np.int64]
+    """Position of each annotation, in samples from the start of the recording."""
+    labels: list[str]
+    """Beat label of each annotation (``"N"``, ``"V"``...)."""
+    sub_labels: list[str]
+    """Second label of each annotation, ``""`` when the file has none."""
+    sampling_rate: int
+    """Samples per second (Hz) of the recording the positions refer to."""
+    source_format: str = ""
+    """Format of the annotation file (e.g. ``"ishne_annotations"``)."""
+    raw_metadata: dict = field(default_factory=dict)
+    """Format-specific details of the file."""
+
+    LABELS: ClassVar[dict[str, str]] = {
+        "N": "normal beat",
+        "V": "premature ventricular contraction",
+        "S": "supraventricular premature or ectopic beat",
+        "C": "calibration pulse",
+        "B": "bundle branch block beat",
+        "P": "paced beat",
+        "X": "artefact",
+        "U": "unknown",
+    }
+    """Generic beat labels of the THEW/ISHNE annotation format."""
+
+    def __post_init__(self) -> None:
+        self.samples = np.asarray(self.samples, dtype=np.int64)
+        if not len(self.samples) == len(self.labels) == len(self.sub_labels):
+            raise ValueError(
+                f"BeatAnnotations: {len(self.samples)} positions, {len(self.labels)} labels "
+                f"and {len(self.sub_labels)} sub-labels, they must be as many"
+            )
+
+    def __len__(self) -> int:
+        return len(self.samples)
+
+    @property
+    def times(self) -> NDArray[np.float64]:
+        """Position of each annotation in seconds from the start of the recording."""
+        return self.samples / float(self.sampling_rate)
+
+    def counts(self) -> dict[str, int]:
+        """Number of annotations per label, most frequent first."""
+        values, n = np.unique(np.asarray(self.labels, dtype=object), return_counts=True)
+        order = np.argsort(-n, kind="stable")
+        return {str(values[i]): int(n[i]) for i in order}
+
+    def __str__(self) -> str:
+        lines = ["BeatAnnotations:", f"  count: {len(self)}", f"  sampling_rate: {self.sampling_rate}"]
+        if self.source_format:
+            lines.append(f"  source_format: {self.source_format}")
+        if len(self):
+            lines.append(f"  span: {_format_value(timedelta(seconds=float(self.times[-1] - self.times[0])))}")
+            lines.append("  labels: " + ", ".join(f"{k} {v}" for k, v in self.counts().items()))
+        return "\n".join(lines)
+
+    def to_dict(self) -> dict:
+        """Plain-Python representation (JSON-serialisable)."""
+        return {
+            "source_format": self.source_format,
+            "sampling_rate": self.sampling_rate,
+            "samples": self.samples.tolist(),
+            "labels": list(self.labels),
+            "sub_labels": list(self.sub_labels),
+            "raw_metadata": _json_safe(self.raw_metadata),
+        }
+

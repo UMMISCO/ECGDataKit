@@ -57,12 +57,19 @@ def name_tokens(*names: str, min_len: int = MIN_NAME_TOKEN) -> list[str]:
     return sorted(tokens, key=lambda t: (-len(t), t))
 
 
+#: Values a writer puts in a field it has nothing for (THEW Holters say "none"
+#: for both names). They are no one's identity: replacing them would also
+#: change every other field that holds the same word (a compression "none")
+_PLACEHOLDERS = {"none", "null", "nil", "unknown", "n/a", "-", "?", "anonymous"}
+
+
 @dataclass
 class Identity:
     """Identity values stored in one file.
 
     Every value is kept as written in the file, so the CSV catalog holds the
-    exact original text.
+    exact original text. Placeholders such as ``none`` or ``unknown`` are not
+    identity values and are left out.
     """
 
     patient_ids: list[str] = field(default_factory=list)
@@ -73,7 +80,7 @@ class Identity:
     def add(self, kind: str, value: str | None) -> None:
         value = (value or "").strip()
         values = getattr(self, kind)
-        if value and value not in values:
+        if value and value.lower() not in _PLACEHOLDERS and value not in values:
             values.append(value)
 
     def merge(self, other: Identity) -> None:

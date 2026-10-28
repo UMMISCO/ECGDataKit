@@ -447,6 +447,30 @@ def create_ishne_binary(
     return pre_header + header_bytes + data.tobytes()
 
 
+def create_ishne_ann(records: list[tuple[bytes, bytes, int]], first: int = 0, **ecg_kwargs) -> bytes:
+    """Build an ISHNE beat annotation file (THEW layout) in memory.
+
+    The header is the one of :func:`create_ishne_binary` with the ``ANN  1.0``
+    magic (the CRC does not cover the magic, so it stays valid), then the
+    first annotation position and one (label, sub-label, toc) record each.
+    """
+    import struct
+
+    ecg = create_ishne_binary(**ecg_kwargs)
+    body = struct.pack("<i", first) + b"".join(
+        struct.pack("<ccH", label, sub, toc) for label, sub, toc in records)
+    return b"ANN  1.0" + ecg[8:522] + body
+
+
+@pytest.fixture
+def ishne_ann_file(tmp_path: Path) -> Path:
+    """An ISHNE recording and its beat annotations, side by side."""
+    (tmp_path / "test_holter.ecg").write_bytes(create_ishne_binary())
+    p = tmp_path / "test_holter.ann"
+    p.write_bytes(create_ishne_ann([(b"N", b"\0", 50), (b"V", b"\0", 30), (b"N", b"\0", 90)], first=10))
+    return p
+
+
 @pytest.fixture
 def hl7_aecg_file(tmp_path: Path) -> Path:
     """Write a minimal HL7 aECG XML file and return its path."""

@@ -8,6 +8,10 @@ for names with same-length replacement. ISHNE has no ECG ID.
 The header CRC (CRC-CCITT over bytes 10 to the end of the variable block)
 is recomputed only when the stored one was valid, in the same byte order.
 Only the header is held in memory: the samples are copied as a stream.
+
+A beat annotation file next to the recording (same name, ``.ann``, magic
+``ANN  1.0``) carries the same header: it is a companion of the ``.ecg``,
+rewritten the same way and named after it.
 """
 
 from __future__ import annotations
@@ -30,6 +34,7 @@ _ISHNE_FIRST = (28, 40)
 _ISHNE_LAST = (68, 40)
 _ISHNE_ID = (108, 20)
 _ISHNE_FIXED = 522
+_ANN_MAGIC = b"ANN  1.0"
 
 
 def _ishne_text(data: bytes, field: tuple[int, int]) -> str:
@@ -47,13 +52,26 @@ class ISHNEHandler(Handler):
     parser = "ISHNEHolterParser"
 
     def identity(self, path: Path) -> Identity:
-        with open(path, "rb") as f:
-            head = f.read(_ISHNE_FIXED)
         identity = Identity()
-        identity.add("first_names", _ishne_text(head, _ISHNE_FIRST))
-        identity.add("last_names", _ishne_text(head, _ISHNE_LAST))
-        identity.add("patient_ids", _ishne_text(head, _ISHNE_ID))
+        for source in [Path(path), *self.companions(path)]:
+            with open(source, "rb") as f:
+                head = f.read(_ISHNE_FIXED)
+            identity.add("first_names", _ishne_text(head, _ISHNE_FIRST))
+            identity.add("last_names", _ishne_text(head, _ISHNE_LAST))
+            identity.add("patient_ids", _ishne_text(head, _ISHNE_ID))
         return identity
+
+    def companions(self, path: Path) -> list[Path]:
+        """The beat annotation file of the recording (``TDP1_001.ann``), if any."""
+        path = Path(path)
+        found = []
+        for p in path.parent.iterdir():
+            if p == path or not p.is_file() or p.stem != path.stem or p.suffix.lower() != ".ann":
+                continue
+            with open(p, "rb") as f:
+                if f.read(len(_ANN_MAGIC)) == _ANN_MAGIC:
+                    found.append(p)
+        return sorted(found)
 
     @staticmethod
     def _header_end(data: bytes) -> int:
@@ -62,6 +80,17 @@ class ISHNEHandler(Handler):
 
     def rewrite(self, path, out_path, identity: Identity, codes: Codes,
                 replacer: Replacer) -> Rewrite:
+        result = Rewrite()
+        head, end = self._header(path, codes, identity, replacer)
+        result.outputs[Path(out_path)] = Spliced(head, Path(path), end)
+        for companion in self.companions(path):
+            head, end = self._header(companion, codes, identity, replacer)
+            target = Path(out_path).with_name(Path(out_path).stem + companion.suffix)
+            result.outputs[target] = Spliced(head, companion, end)
+        return result
+
+    def _header(self, path, codes: Codes, identity: Identity, replacer: Replacer) -> tuple[bytes, int]:
+        """The anonymized header of an ISHNE file (``.ecg`` or ``.ann``) and where it ends."""
         with open(path, "rb") as f:
             data = bytearray(f.read(_ISHNE_FIXED))
             end = self._header_end(data)
@@ -87,9 +116,7 @@ class ISHNEHandler(Handler):
             if stored == swapped and stored != old_crc:
                 crc = ((crc & 0xFF) << 8) | (crc >> 8)
             struct.pack_into("<H", data, 8, crc)
-        result = Rewrite()
-        result.outputs[Path(out_path)] = Spliced(bytes(data), Path(path), len(data))
-        return result
+        return bytes(data), len(data)
 
     def free_text(self, data: bytes) -> list[str]:
         end = min(self._header_end(data), len(data))

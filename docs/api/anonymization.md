@@ -113,7 +113,7 @@ named after the patient shows that name. The catalog column
 | GE MUSE XML | `PatientLastName`, `PatientFirstName` | `PatientID`, `SecondaryID` | `PharmaUniqueECGID` |
 | Philips Sierra XML | `name/lastname`, `firstname`, `middlename` | `patientid`, `uniquepatientid`, `MRN` | `documentname` |
 | Mortara ELI XML | `SUBJECT` name attributes, demographic fields 1 and 7 | `SUBJECT@ID`, demographic field 2 | none |
-| ISHNE Holter | first and last name fields | ID field | none |
+| ISHNE Holter (and its `.ann` beat annotations) | first and last name fields | ID field | none |
 | EDF / EDF+ | EDF+ name subfield | EDF+ patient code, or the whole plain EDF patient field | EDF+ admin code |
 | SCP-ECG | tags 0, 1, 3 | tag 2 | tag 31 |
 | MFER | MWF_PNM | MWF_PID | MWF_UID |
