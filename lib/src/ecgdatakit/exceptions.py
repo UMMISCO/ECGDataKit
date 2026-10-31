@@ -32,6 +32,11 @@ class RawSamplesError(ECGDataKitError):
     """
 
 
+class ExportError(ECGDataKitError):
+    """A record cannot be written to the target format, or the written file
+    does not conform to the format's schema."""
+
+
 class ChecksumWarning(UserWarning):
     """Stored checksum does not match the computed one.
 

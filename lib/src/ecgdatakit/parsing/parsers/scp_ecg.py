@@ -1012,8 +1012,13 @@ class SCPECGParser(Parser):
         nblocks, nspikes = body[0], body[1]
         rr, pp = _u16(body, 2), _u16(body, 4)
         pos = 6
-        if pos + 16 * nblocks + 10 * nspikes > len(body):
-            raise CorruptedFileError("SCP-ECG: Section 7 measurement blocks are truncated")
+        truncated = pos + 16 * nblocks + 10 * nspikes > len(body)
+        if truncated:
+            # Only the blocks that fit are read, the spikes and optional parts are skipped
+            fit = min(nblocks, (len(body) - pos) // 16)
+            ctx.warn(f"SCP-ECG: Section 7 declares {nblocks} measurement blocks and {nspikes} "
+                     f"pacemaker spikes in {len(body)} bytes, {fit} blocks read")
+            nblocks, nspikes = fit, 0
         gm = record.measurements
         raw = record.raw_metadata
 
@@ -1066,7 +1071,7 @@ class SCPECGParser(Parser):
             raw["pacemaker_spikes"] = spikes
 
         # Optional parts (QRS types, additional measurements): read when complete
-        if pos + 2 <= len(body):
+        if not truncated and pos + 2 <= len(body):
             nqrs = _u16(body, pos)
             if pos + 2 + nqrs <= len(body):
                 raw["qrs_types"] = list(body[pos + 2: pos + 2 + nqrs])

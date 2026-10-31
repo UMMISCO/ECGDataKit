@@ -464,6 +464,19 @@ class TestMeasurementsAndStatements:
             "source": "internal", "qrs_index": 3, "pulse_width_us": 500,
         }
 
+    def test_section7_more_blocks_declared_than_stored(self, tmp_path: Path):
+        body = struct.pack("<BBHH", 10, 0, 926, 926)
+        body += struct.pack("<5H3h", 228, 332, 410, 484, 840, 76, 89, 58) + bytes(16)
+        data = create_scp_ecg_binary(sections={7: body})
+        with pytest.warns(UserWarning, match="declares 10 measurement blocks .* 2 blocks read"):
+            record = SCPECGParser().parse(_write(tmp_path, data))
+        assert record.measurements.rr_interval == 926
+        assert record.measurements.qrs_axis == 89
+        assert record.annotations["representative_beat_qrs_onset_ms"] == "410"
+        assert len(record.raw_metadata["measurement_blocks"]) == 2
+        assert "qrs_types" not in record.raw_metadata
+        assert len(record.leads) > 0
+
     def test_heart_rate_not_computed_from_rr(self, tmp_path: Path):
         body = struct.pack("<BBHH", 1, 0, 1000, 1000) + struct.pack("<5H3h", *([29999] * 5), 999, 60, 999)
         record = _parse(tmp_path, create_scp_ecg_binary(sections={7: body}))

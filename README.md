@@ -74,6 +74,17 @@ Parsers report what the file stores. They never compute clinical values (interva
 ecgdatakit anonymize run /path/to/source
 ```
 
+### Export
+
+`HL7aECGExporter` writes a record read from any supported format as an HL7 Annotated ECG XML file that conforms to the official HL7 schema. EDAN ARC Holter files are the exception, since they do not state a voltage scale. See [Export](https://ecgdatakit.ummisco.fr/api/export.html) in the docs.
+
+```python
+from ecgdatakit import FileParser
+from ecgdatakit.exporter import HL7aECGExporter
+
+HL7aECGExporter().export(FileParser.parse("recording.dcm"), "recording.xml")
+```
+
 ## Installation
 
 ```bash
@@ -97,6 +108,9 @@ pip install "ecgdatakit[dicom]"
 
 # With anonymization (ecgdatakit anonymize)
 pip install "ecgdatakit[anonymize]"
+
+# With HL7 aECG schema checking of exported files (lxml)
+pip install "ecgdatakit[export]"
 
 # With the experimental DeepFADE denoising autoencoder (requires torch)
 pip install "ecgdatakit[denoising]"

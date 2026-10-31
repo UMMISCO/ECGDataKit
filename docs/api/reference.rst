@@ -10,3 +10,4 @@ Every public class and function, by package.
    reference/processing
    reference/plotting
    reference/anonymization
+   reference/export

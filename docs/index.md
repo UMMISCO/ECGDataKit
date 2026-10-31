@@ -28,6 +28,7 @@ api/exceptions
 api/processing
 api/plotting
 api/anonymization
+api/export
 api/reference
 ```
 

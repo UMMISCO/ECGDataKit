@@ -54,6 +54,8 @@ plotting = ["matplotlib>=3.7", "scipy>=1.10"]
 plotting-interactive = ["plotly>=5.15", "scipy>=1.10"]
 # watchdog: file-system events for the anonymization daemon
 anonymize = ["shortuuid>=1.0", "watchdog>=3.0"]
+# lxml: checking exported HL7 aECG files against the HL7 schema
+export = ["lxml>=4.9"]
 all = [
     "pydicom>=2.4",
     "scipy>=1.10",
@@ -64,8 +66,10 @@ all = [
     "neurokit2",
     "shortuuid>=1.0",
     "watchdog>=3.0",
+    "lxml>=4.9",
 ]
-dev = ["pytest>=9.0", "pytest-cov>=7.0", "ruff>=0.15"]
+# lxml: the tests check every exported HL7 aECG document against the schema
+dev = ["pytest>=9.0", "pytest-cov>=7.0", "ruff>=0.15", "lxml>=4.9"]
 docs = [
     "sphinx>=8.0",
     "furo>=2024.8",

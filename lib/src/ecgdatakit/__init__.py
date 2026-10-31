@@ -26,6 +26,7 @@ from ecgdatakit.exceptions import (
     ChecksumError,
     ChecksumWarning,
     RawSamplesError,
+    ExportError,
 )
 from ecgdatakit.parsing.batch import BatchParseWarning, parse_batch
 
@@ -52,6 +53,7 @@ __all__ = [
     "ChecksumError",
     "ChecksumWarning",
     "RawSamplesError",
+    "ExportError",
     "BatchParseWarning",
     "parse_batch",
 ]

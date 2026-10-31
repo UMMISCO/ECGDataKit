@@ -24,6 +24,8 @@ The HL7 annotated ECG standard (**ANSI/HL7 V3 aECG**) is an XML-based format wid
 
 **Dependencies:** No optional dependency (XML is read with the core dependency `defusedxml`).
 
+ECGDataKit also writes this format: a record read from any supported format can be exported as HL7 aECG (see {doc}`../api/export`).
+
 ## Philips Sierra XML
 
 The proprietary XML format produced by Philips/Sierra ECG management systems. Found on devices like the PageWriter TC series and IntelliSpace ECG. Contains lead data, patient info, and interpretation statements.

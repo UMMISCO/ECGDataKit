@@ -29,8 +29,35 @@ common.
 Code that reads these keys, or JSON files saved by an earlier version,
 needs the new names.
 
+### Export (new)
+
+- **New `ecgdatakit.exporter` package.** Exporters write the `ECGRecord`
+  of any parser to another format, so ECG files can be converted
+  between formats. EDAN ARC Holter files cannot be exported, since they
+  do not state a voltage scale.
+- **HL7 aECG export.** `HL7aECGExporter().export(record, "out.xml")`
+  writes an HL7 Annotated ECG document (`PORT_MT020001`): rhythm leads,
+  representative beats, patient, device, filters, global measurements,
+  interpretation statements and wave boundaries. Samples that are a whole
+  number of ADC counts, or of a fraction of a count, are written exactly.
+  A lead with no voltage scale, NaN samples or no MDC lead code raises
+  `ExportError`. XLE chest leads (`CR1` to `CR6`) have no MDC code: read
+  XLE files with `wilson_correction=True` to export them. See {doc}`../api/export`.
+- **Checked against the HL7 schema.** The schema is not shipped with
+  ECGDataKit. `fetch_hl7_aecg_schema()` downloads it once (hash-checked)
+  and `validate_hl7_aecg(path)` checks a file.
+  `HL7aECGExporter(validate=True)` checks every document it writes. The
+  tests check an export of each supported format except EDAN ARC Holter.
+  Checking needs lxml:
+  `pip install "ecgdatakit[export]"`.
+- **New `ExportError` exception.**
+
 ### Parsing
 
+- **HL7 aECG: more MDC measurement codes.** The global QTc codes
+  `MDC_ECG_TIME_PD_QTC_BAZETT` and `MDC_ECG_TIME_PD_QTC_FREDERICA`, and
+  the global PR code `MDC_ECG_TIME_PD_PQ_GL`, are now read into
+  `record.measurements`.
 - **XLE: representative beat.** The averaged beat stored in the XLE
   header is now read into `record.representative_beats`, 1 s at 5000 Hz, with a
   warning. The file stores the sum of the averaged beats as
@@ -49,6 +76,9 @@ needs the new names.
   (`representative_beat_qrs_onset_ms`, `representative_beat_qrs_offset_ms`,
   `representative_beat_beats_averaged`). The number of QRS complexes
   detected goes to `record.measurements.qrs_count`.
+- **XLE: patient text.** The patient fields are now read only up to the
+  end of the Comment field, in the parser and in the anonymizer, so a
+  long comment can no longer run into the beat data.
 
 ### Anonymization
 

@@ -22,6 +22,9 @@ Import: `from ecgdatakit import ECGDataKitError, UnsupportedFormatError, ...`
 {class}`~ecgdatakit.exceptions.RawSamplesError`
 : Operation requires physical-unit samples but the lead still contains raw ADC values. Call `to_physical()` first.
 
+{class}`~ecgdatakit.exceptions.ExportError`
+: A record cannot be written to the target format (for example a lead with no voltage scale), or the written document does not conform to the format's schema. See {doc}`export`.
+
 A missing optional dependency (for example pydicom for DICOM files) raises `ImportError` with the install command.
 
 ## Warnings
@@ -60,5 +63,6 @@ except RawSamplesError:
 .. autoexception:: MissingElementError
 .. autoexception:: ChecksumError
 .. autoexception:: RawSamplesError
+.. autoexception:: ExportError
 .. autoexception:: ChecksumWarning
 ```
