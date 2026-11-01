@@ -816,6 +816,32 @@ class FileFormatInfo:
 
 
 @dataclass
+class ECGFile:
+    """One of the files that hold the samples of a record split into several files."""
+
+    name: str = ""
+    """File name, without its folder."""
+    start: datetime | None = None
+    """Start of the file in the recording."""
+    end: datetime | None = None
+    """End of the file in the recording."""
+    samples: int = 0
+    """Number of samples per lead in the file."""
+
+    def __repr__(self) -> str:
+        return _yaml_repr(self)
+
+    def to_dict(self) -> dict:
+        """Convert to a JSON-serialisable dictionary."""
+        return {
+            "name": self.name,
+            "start": self.start.isoformat() if self.start else None,
+            "end": self.end.isoformat() if self.end else None,
+            "samples": self.samples,
+        }
+
+
+@dataclass
 class ECGRecord:
     """Unified ECG record returned by all parsers.
 
@@ -858,6 +884,11 @@ class ECGRecord:
     leads_enhanced: list[Lead] = field(default_factory=list)
     """The same leads as filtered by the device, when the file also stores
     that version (AliveCor ``enhanced``). Empty for other formats."""
+    ecg_files: list[ECGFile] = field(default_factory=list)
+    """Files that hold the samples, in recording order, when the record is
+    split into several files (Cardionics Holter chain). The leads join the
+    samples of these files in this order. Empty for a record read from a
+    single file."""
 
     @property
     def median_beats(self) -> list[Lead]:
@@ -961,6 +992,13 @@ class ECGRecord:
             lines.append("  annotations:")
             for k, v in self.annotations.items():
                 lines.append(f"    {k}: {_short(v)}")
+
+        if self.ecg_files:
+            lines.append("  ecg_files:")
+            for f in self.ecg_files:
+                span = (f", {_format_value(f.start)} to {_format_value(f.end)}"
+                        if f.start and f.end else "")
+                lines.append(f"    - {f.name}: {f.samples} samples{span}")
 
         # Raw metadata indicator
         if self.raw_metadata:
@@ -1093,6 +1131,7 @@ class ECGRecord:
                 lead.to_dict(include_samples=include_samples) for lead in self.leads_enhanced
             ],
             "annotations": dict(self.annotations),
+            "ecg_files": [f.to_dict() for f in self.ecg_files],
         })
 
     def to_json(

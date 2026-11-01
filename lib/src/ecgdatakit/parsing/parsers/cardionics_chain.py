@@ -37,7 +37,7 @@ from pathlib import Path
 import numpy as np
 
 from ecgdatakit.exceptions import CorruptedFileError, ECGDataKitError
-from ecgdatakit.models import ECGRecord, FileFormatInfo
+from ecgdatakit.models import ECGFile, ECGRecord, FileFormatInfo
 from ecgdatakit.parsing.parser import Parser
 
 # Imported as a module so that parser discovery does not list ISHNEHolterParser twice
@@ -329,10 +329,18 @@ class CardionicsChainParser(Parser):
         record.representative_beats = []
         record.annotations = dict(first.annotations)
 
+        origin = record.recording.date
         chunk_meta = []
         position = 0
         for c in chunks:
             segment = c.segment
+            end_s = segment.end_s if segment.end_s is not None else segment.start_s + c.samples / rate
+            record.ecg_files.append(ECGFile(
+                name=segment.name,
+                start=origin + timedelta(seconds=segment.start_s) if origin else None,
+                end=origin + timedelta(seconds=end_s) if origin else None,
+                samples=c.samples,
+            ))
             chunk_meta.append({
                 "name": segment.name,
                 "filepath": str(c.path),

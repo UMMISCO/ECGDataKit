@@ -191,6 +191,7 @@ ECGRecord
   interpretation        Interpretation          statements, severity, source, interpreter
   representative_beats  list[Lead]              representative beats (median, average or template), when available
   leads_enhanced        list[Lead]              the same leads filtered by the device, when the file stores them (AliveCor)
+  ecg_files             list[ECGFile]           name, start, end and samples of each file, when the record spans several files
   annotations           dict[str, str]          additional key-value annotations
   source_format         str                     parser identifier (e.g. "sierra_xml")
   file_format           FileFormatInfo          file format version and creation date

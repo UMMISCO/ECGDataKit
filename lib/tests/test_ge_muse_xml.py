@@ -140,7 +140,7 @@ class TestGEMuseXMLParser:
         assert set(record.to_dict()) == {
             "source_format", "file_format", "patient", "recording",
             "leads", "interpretation", "measurements", "representative_beats", "leads_enhanced",
-            "annotations",
+            "annotations", "ecg_files",
         }
         assert len(json.loads(record.to_json())["leads"]) == 2
 

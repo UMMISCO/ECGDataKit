@@ -112,7 +112,7 @@ class TestMFERFixture:
         assert set(record.to_dict().keys()) == {
             "source_format", "file_format", "patient", "recording",
             "leads", "interpretation", "measurements", "representative_beats", "leads_enhanced",
-            "annotations",
+            "annotations", "ecg_files",
         }
         parsed = json.loads(record.to_json())
         assert len(parsed["leads"]) == 2

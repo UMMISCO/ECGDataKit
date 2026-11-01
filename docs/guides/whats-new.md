@@ -52,6 +52,14 @@ needs the new names.
   `pip install "ecgdatakit[export]"`.
 - **New `ExportError` exception.**
 
+### Data model
+
+- **New `record.ecg_files` field.** When a record is read from several
+  files, it lists them in recording order as `ECGFile` entries: file
+  name, start, end and number of samples per lead. `to_dict()` and
+  `to_json()` write it under `"ecg_files"`. It is empty for a record read
+  from a single file.
+
 ### Parsing
 
 - **New format: Cardionics Holter chain (`.chn`).**

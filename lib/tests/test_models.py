@@ -13,6 +13,7 @@ from ecgdatakit.exceptions import RawSamplesError
 from ecgdatakit.models import (
     AcquisitionSetup,
     DeviceInfo,
+    ECGFile,
     ECGRecord,
     FilterSettings,
     GlobalMeasurements,
@@ -267,6 +268,47 @@ class TestLead:
         assert d["annotations"] == {"pamp": "100", "pdur": "80"}
 
 
+class TestECGFile:
+    def test_defaults(self):
+        f = ECGFile()
+        assert (f.name, f.start, f.end, f.samples) == ("", None, None, 0)
+        assert repr(f) == "ECGFile:\n  samples: 0"
+
+    def test_to_dict(self):
+        f = ECGFile("rec_1.ecg", datetime(2023, 1, 1, 8), datetime(2023, 1, 1, 8, 15), 450000)
+        assert f.to_dict() == {
+            "name": "rec_1.ecg",
+            "start": "2023-01-01T08:00:00",
+            "end": "2023-01-01T08:15:00",
+            "samples": 450000,
+        }
+        assert ECGFile("rec.ecg").to_dict()["start"] is None
+
+    def test_record_lists_its_files(self):
+        files = [ECGFile("rec.ecg", datetime(2023, 1, 1, 8), datetime(2023, 1, 1, 8, 15), 450000),
+                 ECGFile("rec_1.ecg", samples=1000)]
+        record = ECGRecord(ecg_files=files)
+        assert record.to_dict()["ecg_files"] == [f.to_dict() for f in files]
+        assert ("  ecg_files:\n"
+                "    - rec.ecg: 450000 samples, 2023-01-01 08:00:00 to 2023-01-01 08:15:00\n"
+                "    - rec_1.ecg: 1000 samples") in repr(record)
+
+    def test_empty_by_default(self):
+        record = ECGRecord()
+        assert record.ecg_files == []
+        assert record.to_dict()["ecg_files"] == []
+        assert "ecg_files" not in repr(record)
+
+    def test_kept_by_conversions(self):
+        record = ECGRecord(
+            leads=[Lead("I", np.array([1.0]), 500, resolution=1.0, resolution_unit="uV")],
+            ecg_files=[ECGFile("rec.ecg", samples=1)],
+        )
+        converted = record.to_physical().convert_units("mV")
+        assert converted.ecg_files == record.ecg_files
+        assert converted.ecg_files is not record.ecg_files
+
+
 class TestECGRecord:
     def _make_record(self) -> ECGRecord:
         rec = RecordingInfo(date=datetime(2023, 1, 1))
@@ -288,7 +330,7 @@ class TestECGRecord:
         assert set(d.keys()) == {
             "source_format", "file_format", "patient", "recording",
             "leads", "interpretation", "measurements", "representative_beats", "leads_enhanced",
-            "annotations",
+            "annotations", "ecg_files",
         }
         assert d["source_format"] == "test"
         assert len(d["leads"]) == 2
@@ -329,7 +371,7 @@ class TestECGRecord:
         assert list(d.keys()) == [
             "source_format", "file_format", "patient", "recording",
             "leads", "interpretation", "measurements", "representative_beats", "leads_enhanced",
-            "annotations",
+            "annotations", "ecg_files",
         ]
 
     def test_patient_dict_keys_stable(self):

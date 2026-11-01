@@ -98,7 +98,7 @@ class TestWFDBParser:
         assert set(d.keys()) == {
             "source_format", "file_format", "patient", "recording",
             "leads", "interpretation", "measurements", "representative_beats", "leads_enhanced",
-            "annotations",
+            "annotations", "ecg_files",
         }
 
     def test_to_json_roundtrip(self, wfdb_file: Path):

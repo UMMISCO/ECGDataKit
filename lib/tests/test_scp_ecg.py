@@ -132,7 +132,7 @@ class TestSCPECGParser:
         assert set(record.to_dict()) == {
             "source_format", "file_format", "patient", "recording",
             "leads", "interpretation", "measurements", "representative_beats", "leads_enhanced",
-            "annotations",
+            "annotations", "ecg_files",
         }
         parsed = json.loads(record.to_json())
         assert parsed["file_format"]["version"] == "2.0"

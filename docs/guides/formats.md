@@ -77,14 +77,16 @@ Checks:
 - A chain without an `End` record issues a `UserWarning`. The last chunk and the total length are then not checked.
 - Warnings and errors raised while reading a chunk name the chunk.
 
-`raw_metadata["chunks"]` lists the chunks in order. Each entry gives the chunk file (`name`, `filepath`), the index of its first sample in the joined leads (`first_sample`), its number of samples (`samples`), its start time from its ISHNE header (`start`), its times in the chain (`start_s`, `end_s`, in seconds from the start of the recording), the values of its chain record (`nominal_s`, `written_at`), `listed` (`False` for the first chunk, which has no record, so its `nominal_s` and `written_at` are `None`), its own annotations (`annotations`) and its own `raw_metadata` (`ishne`). `raw_metadata["end_record"]`, `raw_metadata["end_elapsed_s"]` and `raw_metadata["end_written_at"]` describe the `End` record.
+`record.ecg_files` lists the chunks in order, as {class}`~ecgdatakit.models.ECGFile` entries: file name, start and end in the recording (from the chain times, or from the samples for the last chunk of a chain without `End`), and number of samples. The first chunk starts at `record.recording.date`.
+
+`raw_metadata["chunks"]` gives more detail on each chunk. Each entry gives the chunk file (`name`, `filepath`), the index of its first sample in the joined leads (`first_sample`), its number of samples (`samples`), its start time from its ISHNE header (`start`), its times in the chain (`start_s`, `end_s`, in seconds from the start of the recording), the values of its chain record (`nominal_s`, `written_at`), `listed` (`False` for the first chunk, which has no record, so its `nominal_s` and `written_at` are `None`), its own annotations (`annotations`) and its own `raw_metadata` (`ishne`). `raw_metadata["end_record"]`, `raw_metadata["end_elapsed_s"]` and `raw_metadata["end_written_at"]` describe the `End` record.
 
 ```python
 from ecgdatakit import FileParser
 
 record = FileParser.parse("recording.chn")
-for chunk in record.raw_metadata["chunks"]:
-    print(chunk["name"], chunk["first_sample"], chunk["start"])
+for f in record.ecg_files:
+    print(f.name, f.start, f.end, f.samples)
 ```
 
 **Dependencies:** None.

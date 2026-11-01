@@ -74,7 +74,7 @@ With `validate=True` every document is checked before it is returned, and one th
 
 Leads, measurements and waves are coded with the MDC codes of ISO/IEEE 11073. A lead with no MDC code (`CR1` for example) raises `ExportError`. With `skip_unknown_leads=True` it is left out with a warning.
 
-Not written: the detail of each interpretation statement, the severity, the QRS count, the wave boundaries whose unit is not stated (keys without `_ms`), `leads_enhanced`, the other patient and recording fields (race, weight, height, medications, pacemaker, referring physician, room), other annotations and `raw_metadata`.
+Not written: the detail of each interpretation statement, the severity, the QRS count, the wave boundaries whose unit is not stated (keys without `_ms`), `leads_enhanced`, `ecg_files`, the other patient and recording fields (race, weight, height, medications, pacemaker, referring physician, room), other annotations and `raw_metadata`.
 
 Leads at different sampling rates or lengths go to separate sequence sets, since a sequence set has a single time sequence. ECGDataKit's HL7 aECG parser reads only the first sequence set of a series, so it reads back only the leads of the first one.
 

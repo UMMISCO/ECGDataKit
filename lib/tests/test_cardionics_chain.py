@@ -155,6 +155,21 @@ class TestRecorderChain:
         ]
         assert chunks[0]["ishne"]["checksum_valid"] is True
 
+    def test_ecg_files(self, tmp_path: Path):
+        record, _ = parse(write_recording(tmp_path))
+        assert [(f.name, f.start, f.end, f.samples) for f in record.ecg_files] == [
+            (f"{PREFIX}.ecg", START, START + timedelta(seconds=900), 9000),
+            (f"{PREFIX}_1.ecg", START + timedelta(seconds=900), START + timedelta(seconds=1800), 9000),
+            (f"{PREFIX}_2.ecg", START + timedelta(seconds=1800), START + timedelta(seconds=1951), 1510),
+        ]
+        assert sum(f.samples for f in record.ecg_files) == len(record.leads[0].samples)
+        assert record.to_dict(include_samples=False)["ecg_files"][1] == {
+            "name": f"{PREFIX}_1.ecg",
+            "start": "2009-09-17T08:36:06",
+            "end": "2009-09-17T08:51:06",
+            "samples": 9000,
+        }
+
     def test_second_recorder_chain(self, tmp_path: Path):
         prefix = "111011131235ABC-DE"
         written = [(13, 27, 37, 687), (13, 42, 37, 812), (13, 57, 37, 546), (14, 12, 37, 437),
@@ -277,6 +292,7 @@ class TestTimeline:
         assert record.raw_metadata["end_record"] is False
         assert record.raw_metadata["end_elapsed_s"] is None
         assert record.raw_metadata["chunks"][-1]["end_s"] is None
+        assert record.ecg_files[-1].end == START + timedelta(seconds=1840)
         assert record.recording.duration == timedelta(seconds=1840)
 
     def test_trailing_bytes_warn(self, tmp_path: Path):

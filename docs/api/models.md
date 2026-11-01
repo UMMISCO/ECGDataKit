@@ -60,6 +60,15 @@ Import: `from ecgdatakit import ECGRecord, Lead, PatientInfo, RecordingInfo, ...
    :member-order: bysource
 ```
 
+## ECGFile
+
+```{eval-rst}
+.. autoclass:: ECGFile
+   :members:
+   :undoc-members:
+   :member-order: bysource
+```
+
 ## FilterSettings
 
 ```{eval-rst}
