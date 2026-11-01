@@ -32,7 +32,7 @@ from __future__ import annotations
 import re
 import struct
 import warnings
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import numpy as np
@@ -153,7 +153,7 @@ def _epoch_to_datetime(seconds: int) -> datetime | None:
     """Convert a plausible Unix-epoch second count to a naive UTC datetime."""
     if not (_EPOCH_MIN <= seconds <= _EPOCH_MAX):
         return None
-    return datetime.fromtimestamp(seconds, tz=timezone.utc).replace(tzinfo=None)
+    return datetime.fromtimestamp(seconds, tz=UTC).replace(tzinfo=None)
 
 
 def _find_file(directory: Path, name: str) -> Path | None:

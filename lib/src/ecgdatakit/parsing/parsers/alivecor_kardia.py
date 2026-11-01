@@ -119,7 +119,7 @@ class AliveCorKardiaParser(Parser):
         recorded_at = _text(doc.get("recordedAt"))
         if recorded_at:
             try:
-                recording.date = datetime.fromisoformat(recorded_at.replace("Z", "+00:00"))
+                recording.date = datetime.fromisoformat(recorded_at)
             except ValueError:
                 warnings.warn(f"Kardia recordedAt {recorded_at!r} is not a valid date",
                               stacklevel=2)

@@ -11,7 +11,7 @@ authors = [{name = "Ahmad Fall", email = "ahmad.fall@ird.fr"}]
 maintainers = [{name = "Ahmad Fall", email = "ahmad.fall@ird.fr"}]
 license = "Apache-2.0"
 license-files = ["LICENSE"]
-requires-python = ">=3.10"
+requires-python = ">=3.12"
 dependencies = [
     "numpy>=1.24",
     "defusedxml>=0.7.1",
@@ -26,8 +26,6 @@ classifiers = [
     "Topic :: Scientific/Engineering :: Medical Science Apps.",
     "Topic :: Scientific/Engineering :: Bio-Informatics",
     "Programming Language :: Python :: 3",
-    "Programming Language :: Python :: 3.10",
-    "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
     "Programming Language :: Python :: 3.13",
     "Operating System :: OS Independent",
@@ -93,8 +91,12 @@ where = ["src"]
 [tool.setuptools.dynamic]
 version = {attr = "ecgdatakit.__version__"}
 
+[tool.uv]
+# neurokit2 caps setuptools below 82 but does not import it
+override-dependencies = ["setuptools>=84.1.0"]
+
 [tool.ruff]
-target-version = "py310"
+target-version = "py312"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

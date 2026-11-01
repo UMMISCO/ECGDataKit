@@ -22,7 +22,7 @@ import time
 import uuid
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 from ecgdatakit import __version__
@@ -59,7 +59,7 @@ _SAVE_EVERY = 200
 
 
 def _now() -> str:
-    return datetime.now(timezone.utc).astimezone().isoformat(timespec="seconds")
+    return datetime.now(UTC).astimezone().isoformat(timespec="seconds")
 
 
 def _hidden(name: str) -> bool:

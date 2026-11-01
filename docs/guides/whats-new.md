@@ -2,6 +2,12 @@
 
 ## 2.0.4
 
+### Breaking change: Python 3.12 or later
+
+ECGDataKit now needs Python 3.12 or later. Python 3.10 has reached its end
+of life, and the fixed releases of Pillow and filelock no longer support
+3.10 and 3.11. On an older Python, pip keeps installing ECGDataKit 2.0.3.
+
 ### Breaking change: representative beats
 
 The beats a file stores to stand for the recording are not always
