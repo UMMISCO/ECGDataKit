@@ -1,26 +1,26 @@
 """Cardionics Holter chain parser.
 
 Cardionics recorders split a Holter recording into ISHNE Holter files of a
-fixed length (chunks) and list them in a ``.chn`` file.
+fixed length (chunks). The first chunk has the name of the ``.chn`` file
+with the ``.ecg`` extension. Each time the recorder starts a new chunk, it
+adds a record to the ``.chn`` file.
 
-* Records of 276 bytes, little-endian, one per chunk in recording order.
+* Records of 276 bytes, little-endian, in recording order.
 * Bytes 0 to 3: nominal chunk length in seconds (unsigned 32-bit).
-* Bytes 4 to 7: time from the start of the recording to the end of the
+* Bytes 4 to 7: time from the start of the recording to the start of the
   chunk, in seconds (unsigned 32-bit).
 * Bytes 8 to 21: time the record was written, seven unsigned 16-bit
   values: day, month, year, hour, minute, second, millisecond.
 * Bytes 22 to 275: file name of the chunk, ended by a NUL.
-* The last record is named ``End``. Its elapsed time is the length of the
-  whole recording. The bytes after its name are not data.
+* The last record is named ``End``. Its time is the length of the whole
+  recording. The bytes after its name are not data.
 
-The last chunk is not named in the chain, the ``End`` record takes its
-place. When the recording goes on after the last listed chunk, the last
-chunk is the file numbered after the last listed one (``rec_3.ecg``
-after ``rec_2.ecg``). It is read when it exists, and it is required when
-the listed chunks are more than 2 s shorter than the recording.
-
-Each chunk is read with :class:`ISHNEHolterParser`. The leads of the
-chunks are joined in the order of the chain.
+A chunk lasts from its start to the start of the next one, or to the
+``End`` record for the last chunk. Each chunk is read with
+:class:`ISHNEHolterParser`, and the leads of the chunks are joined in the
+order of the chain. The samples of each chunk, and of all the chunks
+together, must last as long as the chain says, within 1 s since the chain
+stores whole seconds.
 """
 
 from __future__ import annotations
@@ -49,7 +49,7 @@ _NAME_OFFSET = 22
 _END = "end"
 _CHUNK_EXT = ".ecg"
 _TOLERANCE_S = 2.0
-_NUMBERED = re.compile(r"^(?P<stem>.*\D)(?P<number>\d+)(?P<ext>\.ecg)$", re.IGNORECASE)
+_LENGTH_TOLERANCE_MS = 1000
 
 # Lead fields that must match between chunks for their samples to be joined
 _LEAD_FIELDS = ("label", "sampling_rate", "resolution", "resolution_unit", "offset",
@@ -59,6 +59,7 @@ _PATIENT_FIELDS = ("patient_id", "first_name", "last_name", "birth_date", "sex")
 
 @dataclass
 class _Entry:
+    """One record of the chain."""
     nominal_s: int
     elapsed_s: int
     written_at: datetime | None
@@ -66,12 +67,22 @@ class _Entry:
 
 
 @dataclass
+class _Segment:
+    """One chunk of the recording, as the chain describes it."""
+    name: str
+    start_s: int
+    end_s: int | None
+    nominal_s: int | None
+    written_at: datetime | None
+    listed: bool
+
+
+@dataclass
 class _Chunk:
-    entry: _Entry
+    segment: _Segment
     path: Path
     record: ECGRecord
-    listed: bool
-    samples: int = 0
+    samples: int
 
 
 def _read_entry(data: bytes, offset: int) -> _Entry:
@@ -108,22 +119,15 @@ class CardionicsChainParser(Parser):
         path = Path(file_path)
         if not path.exists():
             raise FileNotFoundError(f"File not found: {path}")
-        entries, end = self._read_chain(path)
-        chunks = [self._read_chunk(path, entry, self._locate(path, entry.name), True)
-                  for entry in entries]
+        segments, end = self._read_chain(path)
+        chunks = [self._read_chunk(path, s, self._locate(path, s.name)) for s in segments]
         self._check_chunks(path, chunks)
-        rate = chunks[0].record.leads[0].sampling_rate
-        if end is not None and end.elapsed_s > entries[-1].elapsed_s:
-            held = sum(c.samples for c in chunks) / rate
-            last = self._last_chunk(path, entries[-1], end, held)
-            if last is not None:
-                chunks.append(last)
-                self._check_chunks(path, chunks)
-        self._check_timeline(path, chunks, rate)
+        self._check_duration(path, chunks)
+        self._check_timeline(path, chunks)
         return self._join(path, chunks, end)
 
     @staticmethod
-    def _read_chain(path: Path) -> tuple[list[_Entry], _Entry | None]:
+    def _read_chain(path: Path) -> tuple[list[_Segment], _Entry | None]:
         data = path.read_bytes()
         if len(data) < _RECORD:
             raise CorruptedFileError(f"Cardionics chain: {path.name} holds no complete record")
@@ -154,26 +158,31 @@ class CardionicsChainParser(Parser):
                 "may be incomplete",
                 stacklevel=3,
             )
-        if not entries:
-            raise CorruptedFileError(f"Cardionics chain: {path.name} lists no chunk")
         for entry in entries:
             if not entry.name.lower().endswith(_CHUNK_EXT):
                 raise CorruptedFileError(
                     f"Cardionics chain: {path.name} lists {entry.name!r}, not an ISHNE "
                     f"{_CHUNK_EXT} file"
                 )
-        names = [entry.name.lower() for entry in entries]
+
+        # The first chunk is not listed: it has the name of the chain
+        first = path.stem + _CHUNK_EXT
+        names = [first.lower()] + [entry.name.lower() for entry in entries]
         if len(set(names)) != len(names):
             raise CorruptedFileError(f"Cardionics chain: {path.name} lists a chunk twice")
-        elapsed = [0] + [entry.elapsed_s for entry in entries]
-        # The recording may stop when the last listed chunk ends
-        if any(b <= a for a, b in itertools.pairwise(elapsed)) or (
-                end is not None and end.elapsed_s < elapsed[-1]):
-            stored = elapsed[1:] + ([end.elapsed_s] if end is not None else [])
+        starts = [0] + [entry.elapsed_s for entry in entries]
+        bounds = starts + ([end.elapsed_s] if end is not None else [])
+        if any(b <= a for a, b in itertools.pairwise(bounds)):
             raise CorruptedFileError(
-                f"Cardionics chain: elapsed times of {path.name} do not increase: {stored}"
+                f"Cardionics chain: times of {path.name} do not increase: {bounds[1:]}"
             )
-        return entries, end
+        segments = [_Segment(first, 0, None, None, None, False)] + [
+            _Segment(e.name, e.elapsed_s, None, e.nominal_s, e.written_at, True)
+            for e in entries
+        ]
+        for segment, stop in zip(segments, bounds[1:]):
+            segment.end_s = stop
+        return segments, end
 
     @staticmethod
     def _locate(chain: Path, name: str) -> Path | None:
@@ -186,12 +195,10 @@ class CardionicsChainParser(Parser):
                      if p.name.lower() == wanted and p.is_file()), None)
 
     @staticmethod
-    def _read_chunk(chain: Path, entry: _Entry, path: Path | None, listed: bool) -> _Chunk:
+    def _read_chunk(chain: Path, segment: _Segment, path: Path | None) -> _Chunk:
+        where = f"Cardionics chain: chunk {segment.name} of {chain.name}"
         if path is None:
-            raise CorruptedFileError(
-                f"Cardionics chain: chunk {entry.name} of {chain.name} is missing"
-            )
-        where = f"Cardionics chain: chunk {entry.name} of {chain.name}"
+            raise CorruptedFileError(f"{where} is missing")
         caught: list[warnings.WarningMessage] = []
         try:
             with warnings.catch_warnings(record=True) as caught:
@@ -208,97 +215,92 @@ class CardionicsChainParser(Parser):
             for w in caught:
                 warnings.warn(f"{where}: {w.message}", w.category, stacklevel=3)
         if not record.leads:
-            raise CorruptedFileError(
-                f"Cardionics chain: chunk {entry.name} of {chain.name} holds no lead"
-            )
-        return _Chunk(entry, path, record, listed, len(record.leads[0].samples))
-
-    def _last_chunk(self, chain: Path, last: _Entry, end: _Entry,
-                    held: float) -> _Chunk | None:
-        """The chunk after the last listed one, which the End record replaces.
-
-        ``None`` when it does not exist and the listed chunks already hold the
-        recording, within the tolerance.
-        """
-        required = end.elapsed_s - held > _TOLERANCE_S
-        match = _NUMBERED.match(last.name)
-        if match is None:
-            if required:
-                raise CorruptedFileError(
-                    f"Cardionics chain: {chain.name} ends at {end.elapsed_s} s, its listed "
-                    f"chunks hold {held:.1f} s, and the chunk after {last.name} cannot be "
-                    "named from it"
-                )
-            return None
-        digits = match["number"]
-        name = f"{match['stem']}{str(int(digits) + 1).zfill(len(digits))}{match['ext']}"
-        path = self._locate(chain, name)
-        if path is None:
-            if required:
-                raise CorruptedFileError(
-                    f"Cardionics chain: {chain.name} ends at {end.elapsed_s} s, its listed "
-                    f"chunks hold {held:.1f} s, and the last chunk {name} is missing"
-                )
-            return None
-        entry = _Entry(end.nominal_s, end.elapsed_s, end.written_at, name)
-        return self._read_chunk(chain, entry, path, False)
+            raise CorruptedFileError(f"{where} holds no lead")
+        return _Chunk(segment, path, record, len(record.leads[0].samples))
 
     @staticmethod
     def _check_chunks(chain: Path, chunks: list[_Chunk]) -> None:
         """Raise when a chunk does not continue the first one."""
-        first = chunks[0].record
+        first = chunks[0]
         for chunk in chunks[1:]:
             record = chunk.record
-            if len(record.leads) != len(first.leads):
+            where = f"Cardionics chain: chunk {chunk.segment.name} of {chain.name}"
+            if len(record.leads) != len(first.record.leads):
                 raise CorruptedFileError(
-                    f"Cardionics chain: chunk {chunk.entry.name} of {chain.name} has "
-                    f"{len(record.leads)} leads, {chunks[0].entry.name} has {len(first.leads)}"
+                    f"{where} has {len(record.leads)} leads, "
+                    f"{first.segment.name} has {len(first.record.leads)}"
                 )
-            for lead, ref in zip(record.leads, first.leads):
+            for lead, ref in zip(record.leads, first.record.leads):
                 for name in _LEAD_FIELDS:
                     if getattr(lead, name) != getattr(ref, name):
                         raise CorruptedFileError(
-                            f"Cardionics chain: lead {ref.label} of chunk {chunk.entry.name} "
-                            f"of {chain.name} has {name} {getattr(lead, name)!r}, "
-                            f"{chunks[0].entry.name} has {getattr(ref, name)!r}"
+                            f"{where}: lead {ref.label} has {name} {getattr(lead, name)!r}, "
+                            f"{first.segment.name} has {getattr(ref, name)!r}"
                         )
             for name in _PATIENT_FIELDS:
-                if getattr(record.patient, name) != getattr(first.patient, name):
+                if getattr(record.patient, name) != getattr(first.record.patient, name):
                     raise CorruptedFileError(
-                        f"Cardionics chain: chunk {chunk.entry.name} of {chain.name} holds "
-                        f"another patient ({name} differs from {chunks[0].entry.name})"
+                        f"{where} holds another patient "
+                        f"({name} differs from {first.segment.name})"
                     )
 
     @staticmethod
-    def _check_timeline(chain: Path, chunks: list[_Chunk], rate: int) -> None:
-        """Warn when the chunk lengths or start times do not match the chain."""
-        start = chunks[0].record.recording.date
-        lengths: list[str] = []
+    def _check_duration(chain: Path, chunks: list[_Chunk]) -> None:
+        """Raise when the samples do not last as long as the chain says.
+
+        Each chunk is checked against its start and end in the chain, then all
+        the chunks against the End record. Without an End record, the last
+        chunk and the total are not checked.
+        """
+        rate = chunks[0].record.leads[0].sampling_rate
+        wrong: list[str] = []
+        for chunk in chunks:
+            segment = chunk.segment
+            if segment.end_s is None:
+                continue
+            held_ms = round(1000 * chunk.samples / rate)
+            stated_ms = 1000 * (segment.end_s - segment.start_s)
+            if abs(held_ms - stated_ms) > _LENGTH_TOLERANCE_MS:
+                wrong.append(f"{segment.name} lasts {held_ms} ms, chain says {stated_ms} ms")
+        if wrong:
+            raise CorruptedFileError(
+                f"Cardionics chain: chunk lengths of {chain.name} do not match its "
+                f"times: {', '.join(wrong)}"
+            )
+        if chunks[-1].segment.end_s is None:
+            return
+        held_ms = round(1000 * sum(c.samples for c in chunks) / rate)
+        stated_ms = 1000 * chunks[-1].segment.end_s
+        if abs(held_ms - stated_ms) > _LENGTH_TOLERANCE_MS:
+            raise CorruptedFileError(
+                f"Cardionics chain: the samples of {chain.name} last {held_ms} ms, "
+                f"its chunks last {stated_ms} ms"
+            )
+
+    @staticmethod
+    def _check_timeline(chain: Path, chunks: list[_Chunk]) -> None:
+        """Warn when the chunk start times do not match the recording.
+
+        A chunk header holds the start of the recording or the start of the
+        chunk, both are accepted.
+        """
+        rate = chunks[0].record.leads[0].sampling_rate
+        origin = chunks[0].record.recording.date
         starts: list[str] = []
         before = 0
         for chunk in chunks:
-            begin_s = before / rate
-            before += chunk.samples
-            end_s = before / rate
-            if abs(end_s - chunk.entry.elapsed_s) > _TOLERANCE_S:
-                lengths.append(f"{chunk.entry.name} ends at {end_s:.1f} s, "
-                               f"chain says {chunk.entry.elapsed_s} s")
+            segment = chunk.segment
             date = chunk.record.recording.date
-            if start is not None and date is not None:
-                expected = start + timedelta(seconds=begin_s)
-                if abs((date - expected).total_seconds()) > _TOLERANCE_S:
-                    starts.append(f"{chunk.entry.name} starts at {date:%H:%M:%S}, "
-                                  f"expected {expected:%H:%M:%S}")
-        if lengths:
-            warnings.warn(
-                f"Cardionics chain: chunk lengths of {chain.name} do not match its "
-                f"elapsed times: {', '.join(lengths)}",
-                stacklevel=3,
-            )
+            if origin is not None and date is not None:
+                follows = origin + timedelta(seconds=before / rate)
+                if all(abs((date - t).total_seconds()) > _TOLERANCE_S for t in (origin, follows)):
+                    starts.append(f"{segment.name} starts at {date:%H:%M:%S}, expected "
+                                  f"{origin:%H:%M:%S} or {follows:%H:%M:%S}")
+            before += chunk.samples
         if starts:
             warnings.warn(
-                f"Cardionics chain: chunk start times of {chain.name} do not follow "
-                f"the samples of the previous chunks: {', '.join(starts)}",
+                f"Cardionics chain: chunk start times of {chain.name} do not match the "
+                f"recording: {', '.join(starts)}",
                 stacklevel=3,
             )
 
@@ -330,16 +332,18 @@ class CardionicsChainParser(Parser):
         chunk_meta = []
         position = 0
         for c in chunks:
+            segment = c.segment
             chunk_meta.append({
-                "name": c.entry.name,
+                "name": segment.name,
                 "filepath": str(c.path),
-                "listed": c.listed,
+                "listed": segment.listed,
                 "first_sample": position,
                 "samples": c.samples,
                 "start": c.record.recording.date,
-                "elapsed_s": c.entry.elapsed_s,
-                "nominal_s": c.entry.nominal_s,
-                "written_at": c.entry.written_at,
+                "start_s": segment.start_s,
+                "end_s": segment.end_s,
+                "nominal_s": segment.nominal_s,
+                "written_at": segment.written_at,
                 "annotations": c.record.annotations,
                 "ishne": c.record.raw_metadata,
             })

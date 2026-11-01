@@ -56,11 +56,12 @@ needs the new names.
 
 - **New format: Cardionics Holter chain (`.chn`).**
   Cardionics recorders split a Holter recording into ISHNE files of a
-  fixed length and list them in a `.chn` file. Parsing the `.chn` file
+  fixed length, described by a `.chn` file. Parsing the `.chn` file
   gives the whole recording: each ISHNE file is read with the ISHNE
   parser and the leads are joined in the order of the chain. A missing
-  file raises `CorruptedFileError`. Each ISHNE file can still be parsed
-  on its own. ECGDataKit now reads 14 formats (see
+  file, or samples that do not last as long as the chain says for a file
+  or for the whole recording, raise `CorruptedFileError`. Each ISHNE file
+  can still be parsed on its own. ECGDataKit now reads 14 formats (see
   [Cardionics Holter chain](formats.md#cardionics-holter-chain)).
 - **SCP-ECG: incomplete Section 7.** A file whose Section 7 declares more
   measurement blocks than it stores no longer fails. The blocks that fit
