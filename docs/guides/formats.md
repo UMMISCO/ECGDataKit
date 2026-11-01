@@ -1,6 +1,6 @@
 # Supported Formats
 
-ECGDataKit parses 13 ECG file formats via content-based detection, not file extensions. Parsers with a reliable magic number are tried first and loose sniffers last (`Parser.PRIORITY`).
+ECGDataKit parses 14 ECG file formats via content-based detection, not file extensions. Parsers with a reliable magic number are tried first and loose sniffers last (`Parser.PRIORITY`).
 
 | Format | File Types | Parser Class | Detection |
 |--------|-----------|--------------|-----------|
@@ -17,6 +17,7 @@ ECGDataKit parses 13 ECG file formats via content-based detection, not file exte
 | EDAN ARC Holter (experimental) | recording folder, `patient.hea` + `ecgraw.dat`, `.arc` | `EDANARCHolterParser` | `patient.hea` with sibling `ecgraw.dat`, or an `.arc` with a known signature |
 | AliveCor Kardia JSON | `.json` | `AliveCorKardiaParser` | JSON object with Kardia recording keys (`recordedAt`, `algorithmDetermination`, ...) |
 | XLE ECG (experimental) | `.xle` | `XLEParser` | `.xle` file with a 256 KiB header holding the patient field labels, and whole 16-byte frames after it |
+| Cardionics Holter chain | `.chn` + `.ecg` | `CardionicsChainParser` | `.chn` file whose first record holds a valid date and an `.ecg` file name or `End` |
 
 ## HL7 aECG
 
@@ -43,6 +44,36 @@ XML export format from GE Healthcare's MUSE ECG management system. Contains base
 A binary format defined by the International Society for Holter and Noninvasive Electrocardiology. Designed for long-duration Holter recordings. Contains a fixed-length header with patient info and signal metadata, followed by raw sample data.
 
 **Dependencies:** None (the CRC-16 check uses the standard library). Some recorders store a constant instead of a real checksum: the mismatch is reported as `ChecksumWarning` and `raw_metadata["checksum_valid"]`.
+
+## Cardionics Holter chain
+
+Cardionics Holter recorders split a recording into ISHNE Holter files of a fixed length (usually 15 minutes), called chunks below, and list them in a `.chn` file. Parsing the `.chn` file gives the whole recording. Each chunk can still be parsed on its own as an ISHNE Holter file.
+
+What the parser reads:
+
+- **Chain.** One 276-byte record per chunk, in recording order: the nominal chunk length, the time from the start of the recording to the end of the chunk, the time the record was written, and the file name of the chunk. The last record is named `End` and holds the length of the whole recording.
+- **Last chunk.** The `End` record takes the place of the last chunk, whose name is not stored. When the recording goes on after the last listed chunk, the last chunk is the file numbered after the last listed one (`rec_3.ecg` after `rec_2.ecg`). It is read when it exists, and it is required when the listed chunks are more than 2 s shorter than the recording.
+- **Signal.** Each chunk is read with `ISHNEHolterParser`, and the leads are joined in the order of the chain, not in the order of the file names. Patient, recording start, device and lead settings come from the first chunk. The duration is that of all the samples.
+- **Chunk files.** They are looked up in the folder of the `.chn` file, whatever their case. A folder stored in the chain is ignored.
+
+Checks:
+
+- A missing chunk, a chunk of another patient, a chunk whose leads, sampling rate or scale differ from the first one, or elapsed times that do not increase raise `CorruptedFileError`.
+- A chunk whose length does not match the elapsed times of the chain, or whose start time is more than 2 s away from the end of the previous chunks, issues a `UserWarning`. The samples are joined as stored.
+- A chain without an `End` record issues a `UserWarning`.
+- Warnings and errors raised while reading a chunk name the chunk.
+
+`raw_metadata["chunks"]` lists the chunks in order. Each entry gives the chunk file (`name`, `filepath`), the index of its first sample in the joined leads (`first_sample`), its number of samples (`samples`), its start time from its ISHNE header (`start`), the values stored in the chain (`elapsed_s`, `nominal_s`, `written_at`), `listed` (`False` for the last chunk found by its number), its own annotations (`annotations`) and its own `raw_metadata` (`ishne`). `raw_metadata["end_record"]`, `raw_metadata["end_elapsed_s"]` and `raw_metadata["end_written_at"]` describe the `End` record.
+
+```python
+from ecgdatakit import FileParser
+
+record = FileParser.parse("recording.chn")
+for chunk in record.raw_metadata["chunks"]:
+    print(chunk["name"], chunk["first_sample"], chunk["start"])
+```
+
+**Dependencies:** None.
 
 ## Mortara ELI (EL250/ELI280)
 

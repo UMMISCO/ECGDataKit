@@ -42,13 +42,14 @@ class TestFileParserDiscovery:
         assert "EDANARCHolterParser" in names
         assert "AliveCorKardiaParser" in names
         assert "XLEParser" in names
+        assert "CardionicsChainParser" in names
         # Removed from the release: no public spec and no real sample
         assert "BeneHeartR12Parser" not in names
         assert "GEMAC2000Parser" not in names
 
     def test_discovers_correct_count(self):
-        # 13 parsers (DICOM is discovered even without pydicom installed)
-        assert len(FileParser().parsers) == 13
+        # 14 parsers (DICOM is discovered even without pydicom installed)
+        assert len(FileParser().parsers) == 14
 
     def test_discovers_each_parser_once(self):
         names = [p.__name__ for p in FileParser().parsers]
@@ -266,6 +267,12 @@ class TestCrossDetection:
     def test_edan_archives_exclusive(self, edan_arc_archive: Path, neutral_holter_arc_file: Path):
         assert self._matching_parsers(edan_arc_archive) == ["EDANARCHolterParser"]
         assert self._matching_parsers(neutral_holter_arc_file) == ["EDANARCHolterParser"]
+
+    def test_cardionics_chain_exclusive(self, tmp_path: Path):
+        from tests.test_cardionics_chain import PREFIX, write_recording
+        chain = write_recording(tmp_path)
+        assert self._matching_parsers(chain) == ["CardionicsChainParser"]
+        assert self._matching_parsers(tmp_path / f"{PREFIX}_1.ecg") == ["ISHNEHolterParser"]
 
     def test_wfdb_dat_exclusive(self, wfdb_file: Path):
         assert self._matching_parsers(wfdb_file.with_suffix(".dat")) == ["WFDBParser"]

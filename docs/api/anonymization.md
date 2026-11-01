@@ -13,8 +13,9 @@ To run it, see {doc}`anonymization/usage`.
 
 1. **Find the files.** The source (a single file or a folder) is scanned
    for files that ecgdatakit reads. Every other file (PDF, images,
-   unsupported formats) is skipped and not copied. EDAN Holter files are
-   not supported.
+   unsupported formats) is skipped and not copied. EDAN Holter files and
+   Cardionics `.chn` chain files are not supported. The ISHNE files that a
+   chain lists are anonymized one by one.
 2. **Read the identity values.** The patient's name and ID and the ECG ID
    are read from the fields of each format (see
    [What is replaced](#what-is-replaced)). The patient ID is replaced only

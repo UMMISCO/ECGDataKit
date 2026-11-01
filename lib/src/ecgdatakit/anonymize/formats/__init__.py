@@ -1,7 +1,8 @@
 """Format handlers, one per ecgdatakit parser.
 
 EDAN Holter is not handled: the format is undocumented. XLE, also
-undocumented, is handled from its reverse-engineered layout.
+undocumented, is handled from its reverse-engineered layout. Cardionics
+chains are not handled, the ISHNE files they list are.
 """
 
 from __future__ import annotations

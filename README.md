@@ -18,7 +18,7 @@ Developed at [UMMISCO](https://www.ummisco.fr) / [IRD](https://www.ird.fr) by Ah
 
 ## Features
 
-### Parsing - 13 ECG formats, one unified data model
+### Parsing - 14 ECG formats, one unified data model
 
 Formats are detected from the file content, not the extension.
 
@@ -37,6 +37,7 @@ Formats are detected from the file content, not the extension.
 | EDAN ARC Holter (experimental) | `patient.hea` + `ecgraw.dat`, `.arc` | `patient.hea` with sibling `ecgraw.dat`, or an `.arc` with a known signature |
 | AliveCor Kardia JSON | `.json` | JSON object with Kardia recording keys (`recordedAt`, `algorithmDetermination`, ...) |
 | XLE ECG (experimental) | `.xle` | `.xle` file with a 256 KiB header holding the patient field labels |
+| Cardionics Holter chain | `.chn` + `.ecg` | `.chn` file whose first record holds a valid date and an `.ecg` file name or `End` |
 
 Parsers report what the file stores. They never compute clinical values (intervals, heart rate, QTc, axes, pacemaker status) or invent dates. The only derived values are those a format requires (duration from the sample count, age from the birth date when no age is stored), and a default taken from a format specification is flagged with a warning and in `raw_metadata`.
 
