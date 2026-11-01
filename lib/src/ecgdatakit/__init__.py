@@ -4,6 +4,7 @@ __version__ = "2.0.4"
 
 from ecgdatakit.models import (
     AcquisitionSetup,
+    BeatAnnotations,
     DeviceInfo,
     ECGRecord,
     FileFormatInfo,
@@ -29,9 +30,11 @@ from ecgdatakit.exceptions import (
     ExportError,
 )
 from ecgdatakit.parsing.batch import BatchParseWarning, parse_batch
+from ecgdatakit.parsing.parsers.ishne_holter import read_ishne_annotations
 
 __all__ = [
     "AcquisitionSetup",
+    "BeatAnnotations",
     "DeviceInfo",
     "ECGRecord",
     "FileFormatInfo",
@@ -56,4 +59,5 @@ __all__ = [
     "ExportError",
     "BatchParseWarning",
     "parse_batch",
+    "read_ishne_annotations",
 ]

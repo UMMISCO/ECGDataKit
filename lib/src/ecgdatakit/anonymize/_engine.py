@@ -432,6 +432,9 @@ class Anonymizer:
                         continue
                     handler = self._detect(path)
                     if handler is None:
+                        if path.suffix.lower() == ".ann" and any(
+                                n.lower() == path.stem.lower() + ".ecg" for n in names):
+                            continue  # ISHNE beat annotations, handled with their recording
                         report.skipped_unsupported += 1
                         continue
                     if isinstance(handler, WFDBHandler) and path.suffix.lower() != ".hea":
@@ -754,6 +757,10 @@ class Anonymizer:
             staged = self._stage(rewrite.outputs, staging)
             verify(entry.path, staged[out_path], replacer, patient_code, kept=kept_ids)
             values = handler.free_text(_head(rewrite.outputs[out_path]))
+            # Companions with a rewritten header of their own (ISHNE .ann) are checked too
+            for p, output in rewrite.outputs.items():
+                if p != out_path and isinstance(output, Spliced) and output.head:
+                    values += handler.free_text(output.head)
             left = sum(1 for v in values if replacer.replace_value(v, is_data(v)) != v)
             if left:
                 risks.append(f"{left} field value(s) of the anonymized file still hold identity text")

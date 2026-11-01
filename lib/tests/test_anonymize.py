@@ -8,11 +8,13 @@ remain in the file or its name. Raw files must not change.
 
 from __future__ import annotations
 
+import binascii
 import csv
 import hashlib
 import json
 import re
 import shutil
+import struct
 import warnings
 from pathlib import Path
 
@@ -118,6 +120,47 @@ class TestFormats:
             warnings.simplefilter("error")  # a CRC mismatch would warn
             record = FileParser().parse(out, auto_scale=False)
         assert record.raw_metadata.get("checksum_valid") in (True, None)
+
+    @pytest.mark.parametrize("rename", [False, True])
+    def test_ishne_annotations_anonymized_with_their_recording(self, ishne_ann_file, tmp_path, rename):
+        from ecgdatakit import read_ishne_annotations
+        ecg = ishne_ann_file.with_suffix(".ecg")
+        base = _source(tmp_path / "s", [ecg, ishne_ann_file])
+        [report] = _anonymizer(base, anonymize_file_names=rename).run()
+        assert report.ok, report.errors
+        assert report.skipped_unsupported == 0
+        [row] = _rows(base)
+        out = base / "dataset-a" / row["anonymized_path"]
+        ann_out = out.with_name(out.stem + ".ann")
+        assert ann_out.exists()
+        assert row["companions"].endswith(ann_out.name)
+        head = ann_out.read_bytes()[:522].decode("latin-1")
+        assert "Test" not in head and "Ecg" not in head and "P0001" not in head
+        with warnings.catch_warnings():
+            warnings.simplefilter("error")  # a CRC mismatch would warn
+            after = read_ishne_annotations(ann_out)
+        before = read_ishne_annotations(ishne_ann_file)
+        assert after.samples.tolist() == before.samples.tolist()
+        assert after.labels == before.labels
+
+    def test_placeholder_names_are_not_identity(self, tmp_path):
+        """THEW Holters store "none" as both names: the files must still anonymize."""
+        from tests.conftest import create_ishne_binary
+        data = bytearray(create_ishne_binary())
+        data[28:68] = b"none".ljust(40, b"\0")
+        data[68:108] = b"none".ljust(40, b"\0")
+        struct.pack_into("<H", data, 8, binascii.crc_hqx(bytes(data[10:522]), 0xFFFF))
+        src = tmp_path / "thew.ecg"
+        src.write_bytes(bytes(data))
+        base = _source(tmp_path / "s", [src])
+        [report] = _anonymizer(base).run()
+        assert report.ok, report.errors
+        [row] = _rows(base)
+        assert row["status"] == "anonymized"
+        assert row["original_first_name"] == "" and row["original_last_name"] == ""
+        after = _parse(base / "dataset-a" / row["anonymized_path"])
+        assert after.patient.first_name == ""
+        assert after.patient.last_name in ("", row["anonymized_patient_id"])
 
     def test_scp_crc_and_pointers_updated(self, scp_ecg_file, tmp_path):
         base = _source(tmp_path, [scp_ecg_file])

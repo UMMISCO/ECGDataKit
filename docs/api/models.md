@@ -105,6 +105,18 @@ Import: `from ecgdatakit import ECGRecord, Lead, PatientInfo, RecordingInfo, ...
    :member-order: bysource
 ```
 
+## BeatAnnotations
+
+Beat labels of a recording, read from its annotation file (see
+{func}`~ecgdatakit.parsing.parsers.ishne_holter.read_ishne_annotations`).
+
+```{eval-rst}
+.. autoclass:: BeatAnnotations
+   :members:
+   :undoc-members:
+   :member-order: bysource
+```
+
 ## Resolution Pipeline (ADC → Physical Units)
 
 ECG hardware digitises analogue signals into integer ADC counts.  The

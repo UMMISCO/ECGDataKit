@@ -1,7 +1,9 @@
-"""ISHNE Holter binary format parser.
+"""ISHNE Holter binary format parser, and reader of its beat annotation files.
 
-Reference: Badilini F. The ISHNE Holter Standard Output File Format.
-Ann Noninvasive Electrocardiol. 1998;3(3):263-266.
+References: Badilini F. The ISHNE Holter Standard Output File Format.
+Ann Noninvasive Electrocardiol. 1998;3(3):263-266. For the annotation files
+(``.ann``): THEW, "ECG Annotations file",
+http://thew-project.org/papers/ishneAnn.pdf.
 """
 
 from __future__ import annotations
@@ -17,6 +19,7 @@ from pathlib import Path
 import numpy as np
 from ecgdatakit.exceptions import ChecksumWarning, CorruptedFileError
 from ecgdatakit.models import (
+    BeatAnnotations,
     DeviceInfo,
     ECGRecord,
     FileFormatInfo,
@@ -30,6 +33,7 @@ from ecgdatakit.parsing.helpers import unique_labels
 from ecgdatakit.parsing.parser import Parser
 
 _MAGIC_ECG = b"ISHNE1.0"
+_MAGIC_ANN = b"ANN  1.0"
 
 _FIXED_HEADER_SIZE = 522  # magic (8) + checksum (2) + fixed block (512)
 _HEADER_RECORD_OFFSET = 10
@@ -68,6 +72,11 @@ _RACE_CODES: dict[int, str] = {1: "Caucasian", 2: "Black", 3: "Oriental"}
 
 # Sample value proposed by the spec to flag lead fault
 _FAULT_SAMPLE = -32768
+
+# Annotation records: label, sub-label, samples since the previous annotation
+_ANN_RECORD = np.dtype([("label", "S1"), ("sub_label", "S1"), ("toc", "<u2")])
+# Label of a record that only carries time: the interval did not fit a uint16
+_TIMEOUT = b"!"
 
 #----------------------------------------------------------------------------------------------
 # Buffer field readers (little-endian)
@@ -183,7 +192,7 @@ class ISHNEHolterParser(Parser):
         return record
 
     @staticmethod
-    def _read_fixed_header(filename: str) -> bytes:
+    def _read_fixed_header(filename: str, magic: bytes = _MAGIC_ECG) -> bytes:
         size = os.path.getsize(filename)
         if size < _FIXED_HEADER_SIZE:
             raise CorruptedFileError(f"File too small to be ISHNE Holter: {size} bytes")
@@ -191,8 +200,8 @@ class ISHNEHolterParser(Parser):
             buf = f.read(_FIXED_HEADER_SIZE)
         if len(buf) < _FIXED_HEADER_SIZE:
             raise CorruptedFileError("Truncated ISHNE header")
-        if buf[:8] != _MAGIC_ECG:
-            raise CorruptedFileError(f"Bad ISHNE magic number: {buf[:8]!r}")
+        if buf[:8] != magic:
+            raise CorruptedFileError(f"Bad ISHNE magic number: {buf[:8]!r}, expected {magic!r}")
         return buf
 
     @staticmethod
@@ -307,18 +316,18 @@ class ISHNEHolterParser(Parser):
         )
 
     def _read_signal(self, filename: str, layout: _Layout, nleads: int) -> np.ndarray:
-        with open(filename, "rb") as f:
-            f.seek(layout.data_offset)
-            data_bytes = f.read()
-        raw = np.frombuffer(data_bytes, dtype="<i2", count=len(data_bytes) // 2)
-        if len(data_bytes) % 2:
+        # Mapped rather than read: each lead is copied out as float64 anyway,
+        # so the int16 bytes (hundreds of MB for a 24 h Holter) stay in the
+        # page cache instead of a private copy, and are not read twice
+        n_bytes = os.path.getsize(filename) - layout.data_offset
+        if n_bytes % 2:
             warnings.warn(
                 "ISHNE: odd number of data bytes, the last byte is ignored. "
                 "File may be truncated",
                 stacklevel=3,
             )
 
-        available = raw.size
+        available = max(0, n_bytes) // 2
         usable = (available // nleads) * nleads  # whole multiplexed frames only
         # The spec defines ecg_size as samples per lead, but writers differ and some
         # store a fixed maximum, so it is not checked here. Both counts are kept in
@@ -334,7 +343,8 @@ class ISHNEHolterParser(Parser):
             raise CorruptedFileError(
                 f"ISHNE file holds no complete sample frame for {nleads} leads"
             )
-        return np.reshape(raw[:usable], (nleads, usable // nleads), order="F")
+        raw = np.memmap(filename, dtype="<i2", mode="r", offset=layout.data_offset, shape=(usable,))
+        return np.reshape(raw, (nleads, usable // nleads), order="F")
 
     def _build_leads(self, signal: np.ndarray, meta: _LeadMeta) -> list[Lead]:
         leads: list[Lead] = []
@@ -421,3 +431,84 @@ class ISHNEHolterParser(Parser):
         raw["recorder_type"] = _text(header, 232, 40)
         raw["proprietary"] = _text(header, 274, 80)
         raw["copyright"] = _text(header, 354, 80)
+
+
+#----------------------------------------------------------------------------------------------
+# Beat annotation files (.ann)
+#----------------------------------------------------------------------------------------------
+
+def read_ishne_annotations(file_path: str | Path) -> BeatAnnotations:
+    """Read the beat annotations of an ISHNE Holter recording (``.ann`` file).
+
+    The format is the one the THEW defines for its Holters: the 522-byte
+    ISHNE header of the ECG file (magic ``ANN  1.0``) and its variable
+    block, a 4-byte position of the first annotation (in samples from the
+    start of the recording), then one 4-byte record per annotation: the
+    beat label, a second label refining it, and the number of samples since
+    the previous annotation (uint16). Intervals are in samples of the
+    recording, at the sampling rate of the header.
+
+    A record labelled ``!`` (timeout) is not a beat: it only adds its 65535
+    samples to an interval too long for a uint16. Records with an empty
+    label are left out the same way, their interval kept. Labels and their
+    meaning are in :attr:`BeatAnnotations.LABELS`.
+
+    The header holds the patient fields of the ECG file; they are not
+    returned. Issues a :class:`ChecksumWarning` when the header CRC does not
+    match, like :class:`ISHNEHolterParser`.
+
+    Raises
+    ------
+    CorruptedFileError
+        If the file is not an ISHNE annotation file, or its header is invalid.
+    """
+    filename = str(file_path)
+    reader = ISHNEHolterParser()
+    header = reader._read_fixed_header(filename, magic=_MAGIC_ANN)
+    layout = reader._parse_layout(header)
+    reader._resolve_data_offset(filename, layout)
+    reader._verify_checksum(filename, layout)
+    sampling_rate = _i16(header, 272)
+    if sampling_rate <= 0:
+        raise CorruptedFileError(
+            f"Invalid ISHNE annotation header: sampling rate is {sampling_rate} Hz, must be positive"
+        )
+
+    with open(filename, "rb") as f:
+        f.seek(layout.data_offset)
+        body = f.read()
+    first = struct.unpack_from("<i", body, 0)[0] if len(body) >= 4 else 0
+    records = body[4:]
+    if len(records) % _ANN_RECORD.itemsize:
+        warnings.warn(
+            f"ISHNE annotations: {len(records) % _ANN_RECORD.itemsize} trailing byte(s) "
+            "after the last whole record are ignored. File may be truncated",
+            stacklevel=2,
+        )
+    rec = np.frombuffer(records, dtype=_ANN_RECORD, count=len(records) // _ANN_RECORD.itemsize)
+    positions = first + np.cumsum(rec["toc"].astype(np.int64))
+    timeout = rec["label"] == _TIMEOUT
+    empty = rec["label"] == b""
+    keep = ~(timeout | empty)
+
+    def decode(values: np.ndarray) -> list[str]:
+        return [v.decode("latin-1") for v in values]
+
+    return BeatAnnotations(
+        samples=positions[keep],
+        labels=decode(rec["label"][keep]),
+        sub_labels=decode(rec["sub_label"][keep]),
+        sampling_rate=sampling_rate,
+        source_format="ishne_annotations",
+        raw_metadata={
+            "filepath": filename,
+            "first_annotation_position": first,
+            "records": int(len(rec)),
+            "timeout_records": int(timeout.sum()),
+            "empty_label_records": int(empty.sum()),
+            "checksum": layout.checksum,
+            "checksum_valid": layout.checksum_valid,
+            "var_block_size": layout.var_block_size,
+        },
+    )
+
