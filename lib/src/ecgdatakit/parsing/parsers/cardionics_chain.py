@@ -172,7 +172,8 @@ class CardionicsChainParser(Parser):
             raise CorruptedFileError(f"Cardionics chain: {path.name} lists a chunk twice")
         starts = [0] + [entry.elapsed_s for entry in entries]
         bounds = starts + ([end.elapsed_s] if end is not None else [])
-        if any(b <= a for a, b in itertools.pairwise(bounds)):
+        # End at 0 s alone: a recording stopped within its first second
+        if bounds != [0, 0] and any(b <= a for a, b in itertools.pairwise(bounds)):
             raise CorruptedFileError(
                 f"Cardionics chain: times of {path.name} do not increase: {bounds[1:]}"
             )

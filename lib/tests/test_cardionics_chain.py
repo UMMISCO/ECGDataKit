@@ -256,6 +256,25 @@ class TestChunkNames:
         assert [c["name"] for c in record.raw_metadata["chunks"]] == [f"{PREFIX}.ecg"]
         assert record.recording.duration == timedelta(seconds=600)
 
+    def test_recording_stopped_within_its_first_second(self, tmp_path: Path):
+        end = chain_record(900, 0, (17, 9, 2009, 8, 21, 6, 0), "End")
+        record, other = parse(write_recording(tmp_path, seconds=(0.5,), chain=end))
+        assert other == []
+        assert [(f.name, f.samples) for f in record.ecg_files] == [(f"{PREFIX}.ecg", 5)]
+        assert record.ecg_files[0].end == START
+        assert record.recording.duration == timedelta(seconds=0.5)
+
+    def test_end_at_zero_checks_the_first_chunk(self, tmp_path: Path):
+        end = chain_record(900, 0, (17, 9, 2009, 8, 21, 6, 0), "End")
+        with pytest.raises(CorruptedFileError, match=f"{PREFIX}.ecg lasts 900000 ms, chain says 0 ms"):
+            parse(write_recording(tmp_path, seconds=(900,), chain=end))
+
+    def test_end_at_zero_after_listed_chunks(self, tmp_path: Path):
+        end = chain_record(900, 0, (17, 9, 2009, 8, 21, 6, 0), "End")
+        chain = recorder_chain()[:276] + end
+        with pytest.raises(CorruptedFileError, match=r"do not increase: \[900, 0\]"):
+            parse(write_recording(tmp_path, seconds=(900, 900), chain=chain))
+
 
 class TestTimeline:
     def test_chunk_headers_with_their_own_start(self, tmp_path: Path):

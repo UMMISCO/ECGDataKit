@@ -65,7 +65,7 @@ Cardionics Holter recorders split a recording into ISHNE Holter files of a fixed
 What the parser reads:
 
 - **Chain.** One 276-byte record per numbered chunk, in recording order: the nominal chunk length, the time from the start of the recording to the start of the chunk, the time the record was written, and the file name of the chunk. The last record is named `End` and holds the length of the whole recording.
-- **Chunk times.** The first chunk runs from 0 to the start of the first listed chunk. Each listed chunk runs to the start of the next one, and the last one to `End`.
+- **Chunk times.** The first chunk runs from 0 to the start of the first listed chunk. Each listed chunk runs to the start of the next one, and the last one to `End`. A chain holding only an `End` record at 0 s is a recording stopped within its first second.
 - **Signal.** Each chunk is read with `ISHNEHolterParser`, and the leads are joined in the order of the chain, not in the order of the file names. Patient, recording start, device and lead settings come from the first chunk. The duration is that of all the samples.
 - **Chunk files.** They are looked up in the folder of the `.chn` file, whatever their case. A folder stored in the chain is ignored.
 
