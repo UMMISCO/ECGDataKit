@@ -68,6 +68,15 @@ needs the new names.
 
 ### Parsing
 
+- **HL7 aECG: every sequence set of a series.** The parser read only the
+  first sequence set of the rhythm series, with a warning. Digitized paper
+  ECGs write one set per lead segment, each with its own time head (a
+  4 x 3 layout with rhythm strips, 2 x 6, or 12 x 10 s), so all leads but
+  those of the first segment were lost. Every set is now read and each
+  segment is placed at its time head. A lead is NaN where it was not
+  recorded, and `raw_metadata["rhythm_time"]` gives the number of sets
+  (`sequence_sets`) and each segment (`segments`). A file with one set is
+  read as before.
 - **New format: Cardionics Holter chain (`.chn`).**
   Cardionics recorders split a Holter recording into ISHNE files of a
   fixed length, described by a `.chn` file. Parsing the `.chn` file

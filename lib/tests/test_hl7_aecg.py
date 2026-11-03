@@ -301,6 +301,76 @@ class TestLeads:
         assert [lead.label for lead in record.leads] == ["I", "II"]
 
 
+def _segmented_xml(layout, rate=500, scale="1", unit="uV") -> str:
+    """An aECG as a digitized paper ECG writes it: one sequenceSet per lead segment, each with
+    its own TIME_ABSOLUTE head. `layout`: (start s, [(lead code, digits)])."""
+    t0 = datetime(2022, 10, 3, 10, 15, 0)
+    sets = []
+    for start, leads in layout:
+        head = (t0 + timedelta(seconds=start)).strftime("%Y%m%d%H%M%S.%f")[:-3]
+        seqs = [f'<component><sequence><code code="TIME_ABSOLUTE"/><value><head value="{head}"/>'
+                f'<increment value="{1 / rate}" unit="s"/></value></sequence></component>']
+        for code, digits, *own in leads:
+            sc, un = own if own else (scale, unit)
+            seqs.append(f'<component><sequence><code code="{code}"/><value><origin value="0" unit="{un}"/>'
+                        f'<scale value="{sc}" unit="{un}"/><digits>{digits}</digits></value></sequence></component>')
+        sets.append(f"<component><sequenceSet>{''.join(seqs)}</sequenceSet></component>")
+    return ('<?xml version="1.0"?><AnnotatedECG xmlns="urn:hl7-org:v3"><id root="x"/><code code="93000"/>'
+            f'<component><series><code code="RHYTHM"/>{"".join(sets)}</series></component></AnnotatedECG>')
+
+
+def _ramp(a, n):
+    return " ".join(str(a + i) for i in range(n))
+
+
+class TestSegmentedSequenceSets:
+    """Digitized paper ECGs: one sequenceSet per lead segment, each at its own time head."""
+
+    LAYOUT = [
+        (0.0, [("MDC_ECG_LEAD_I", _ramp(0, 5)), ("MDC_ECG_LEAD_II", _ramp(100, 5))]),
+        (0.01, [("MDC_ECG_LEAD_AVR", _ramp(200, 5))]),
+        (0.0, [("MDC_ECG_LEAD_V1", _ramp(300, 15))]),  # the rhythm strip
+    ]
+
+    def test_every_segment_is_placed_at_its_head(self, tmp_path: Path):
+        record = _parse(tmp_path, _segmented_xml(self.LAYOUT))
+        by = {lead.label: lead.samples for lead in record.leads}
+        assert list(by) == ["I", "II", "aVR", "V1"]
+        assert all(len(v) == 15 for v in by.values())
+        np.testing.assert_array_equal(by["I"][:5], [0, 1, 2, 3, 4])
+        assert np.isnan(by["I"][5:]).all()
+        # aVR's head is 10 ms (5 samples) after the earliest
+        assert np.isnan(by["aVR"][:5]).all() and np.isnan(by["aVR"][10:]).all()
+        np.testing.assert_array_equal(by["aVR"][5:10], [200, 201, 202, 203, 204])
+        assert not np.isnan(by["V1"]).any()
+
+    def test_the_segments_are_listed(self, tmp_path: Path):
+        record = _parse(tmp_path, _segmented_xml(self.LAYOUT))
+        time = record.raw_metadata["rhythm_time"]
+        assert time["sequence_sets"] == 3
+        assert {"lead": "aVR", "start_s": 0.01, "duration_s": 0.01} in time["segments"]
+
+    def test_a_lead_in_two_segments_is_joined_on_its_first_scale(self, tmp_path: Path):
+        layout = [(0.0, [("MDC_ECG_LEAD_II", "1 2 3 4 5", "5", "uV")]),
+                  (0.01, [("MDC_ECG_LEAD_II", "1 2 3 4 5", "0.01", "mV")])]  # 10 uV a digit
+        lead = _parse(tmp_path, _segmented_xml(layout)).leads[0]
+        np.testing.assert_allclose(lead.samples, [1, 2, 3, 4, 5, 2, 4, 6, 8, 10])
+        assert (lead.resolution, lead.resolution_unit) == (5.0, "uV")
+
+    def test_file_parser_scales_and_keeps_the_gaps(self, tmp_path: Path):
+        path = _write(tmp_path, _segmented_xml(self.LAYOUT))
+        record = FileParser.parse(path, auto_scale=True, units="mV")
+        lead_i = next(lead for lead in record.leads if lead.label == "I")
+        np.testing.assert_allclose(lead_i.samples[:5], [0, 0.001, 0.002, 0.003, 0.004])
+        assert np.isnan(lead_i.samples[5:]).all()
+        json.loads(record.to_json())  # NaN written as null, the JSON stays strict
+
+    def test_one_set_is_read_as_before(self, tmp_path: Path):
+        record = _parse(tmp_path, _segmented_xml([(0.0, [("MDC_ECG_LEAD_I", _ramp(0, 5))])]))
+        assert "sequence_sets" not in record.raw_metadata["rhythm_time"]
+        assert not np.isnan(record.leads[0].samples).any()
+
+
 class TestErrors:
     def test_malformed_xml(self, tmp_path: Path):
         with pytest.raises(CorruptedFileError, match="Malformed XML"):
