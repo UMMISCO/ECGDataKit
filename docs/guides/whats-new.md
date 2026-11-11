@@ -83,7 +83,9 @@ needs the new names.
   for the time the chain gives it, with a warning. Its `ECGFile` entry
   gives the reason in `error`, with the start and end of the gap. If the
   first file is the damaged one, the start of the recording is taken from
-  the other files.
+  the other files. A file whose header is damaged but still readable
+  (wrong checksum, other patient or leads than the rest) is a gap too. A
+  gap longer than one file of the chain raises `CorruptedFileError`.
 - **SCP-ECG: incomplete Section 7.** A file whose Section 7 declares more
   measurement blocks than it stores no longer fails. The blocks that fit
   are read, the pacemaker spikes and the optional parts after them are
