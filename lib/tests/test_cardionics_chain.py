@@ -702,7 +702,7 @@ class TestUnreadableChunk:
             f"{PREFIX}_1.ecg", 900, "Invalid ISHNE header: lead count is 40, spec allows 1 to 12")
         assert_gaps(record, [(9000, 18000)], 1951)
 
-    def test_other_decoding_failure(self, tmp_path: Path, monkeypatch):
+    def test_other_decoding_failure_still_raises(self, tmp_path: Path, monkeypatch):
         path = write_recording(tmp_path)
         read = ishne_holter.ISHNEHolterParser.parse
 
@@ -712,9 +712,10 @@ class TestUnreadableChunk:
             return read(self, file_path)
 
         monkeypatch.setattr(ishne_holter.ISHNEHolterParser, "parse", fail_on_one)
-        record, other = parse(path)
-        assert other == [gap_warning(f"{PREFIX}_1.ecg", 900, "cannot decode: ValueError: boom")]
-        assert record.ecg_files[1].error == "cannot decode: ValueError: boom"
+        # Not a damaged file: it is not turned into a gap
+        with pytest.raises(CorruptedFileError, match=f"chunk {PREFIX}_1.ecg of {PREFIX}.chn: "
+                                                     "cannot decode: ValueError: boom"):
+            parse(path)
 
     def test_file_that_cannot_be_opened_still_raises(self, tmp_path: Path, monkeypatch):
         path = write_recording(tmp_path)
@@ -765,6 +766,49 @@ class TestUnreadableChunk:
         assert (f"{PREFIX}_2.ecg starts at 08:52:06, expected 08:21:06 or 08:51:06"
                 in other[1])
 
+    def test_gap_longer_than_a_chunk(self, tmp_path: Path):
+        chain = (recorder_chain()[:276]
+                 + chain_record(900, 5000, (17, 9, 2009, 9, 44, 18, 0), f"{PREFIX}_2.ecg")
+                 + chain_record(900, 5151, (17, 9, 2009, 9, 46, 49, 0), "End"))
+        path = write_recording(tmp_path, chain=chain)
+        overwrite_start(tmp_path / f"{PREFIX}_1.ecg")
+        with pytest.raises(CorruptedFileError,
+                           match=f"chunk {PREFIX}_1.ecg of {PREFIX}.chn cannot be read and the "
+                                 "chain gives it 4100 s, more than the 900 s of a chunk: "
+                                 "Bad ISHNE magic"):
+            parse(path)
+
+    def test_gap_of_the_first_chunk_longer_than_a_chunk(self, tmp_path: Path):
+        # The first chunk has no chain record: the chunk length is that of the other records
+        chain = (chain_record(900, 5000, (17, 9, 2009, 9, 44, 18, 0), f"{PREFIX}_1.ecg")
+                 + chain_record(900, 5151, (17, 9, 2009, 9, 46, 49, 0), "End"))
+        path = write_recording(tmp_path, seconds=(900, 151), chain=chain)
+        overwrite_start(tmp_path / f"{PREFIX}.ecg")
+        with pytest.raises(CorruptedFileError,
+                           match=f"chunk {PREFIX}.ecg of {PREFIX}.chn cannot be read and the "
+                                 "chain gives it 5000 s, more than the 900 s of a chunk"):
+            parse(path)
+
+    def test_gap_limit_without_chunk_length_in_the_chain(self, tmp_path: Path):
+        # No chunk length in the chain: the longest chunk read gives the limit
+        chain = (chain_record(0, 900, (17, 9, 2009, 8, 36, 18, 515), f"{PREFIX}_1.ecg")
+                 + chain_record(0, 5000, (17, 9, 2009, 9, 44, 18, 0), f"{PREFIX}_2.ecg")
+                 + chain_record(0, 5151, (17, 9, 2009, 9, 46, 49, 0), "End"))
+        path = write_recording(tmp_path, chain=chain)
+        overwrite_start(tmp_path / f"{PREFIX}_1.ecg")
+        with pytest.raises(CorruptedFileError, match="gives it 4100 s, more than the 900 s"):
+            parse(path)
+
+    def test_first_chunk_one_header_far_from_the_chain_times(self, tmp_path: Path):
+        chain = (chain_record(900, 900, (18, 9, 2009, 20, 0, 0, 0), f"{PREFIX}_1.ecg")
+                 + chain_record(900, 1051, (18, 9, 2009, 20, 2, 31, 0), "End"))
+        path = write_recording(tmp_path, seconds=(900, 151), chain=chain)
+        overwrite_start(tmp_path / f"{PREFIX}.ecg")
+        record, other = parse(path)
+        assert other == [gap_warning(f"{PREFIX}.ecg", 900), START_UNKNOWN]
+        assert record.recording.date is None
+        assert record.raw_metadata["start_inferred_from"] is None
+
     def test_file_parser(self, tmp_path: Path):
         path = write_recording(tmp_path)
         overwrite_start(tmp_path / f"{PREFIX}.ecg")
@@ -785,6 +829,98 @@ class TestUnreadableChunk:
         assert (first.start, first.end, first.samples, first.error) == (
             START, START + timedelta(seconds=900), 9000, BAD_MAGIC)
         assert record.to_dict(include_samples=False)["recording"]["date"] == "2009-09-17T08:21:06"
+
+
+def damage_patient_id(path: Path, checksum: bytes | None = None) -> None:
+    """Overwrite the patient ID of a chunk header. Its checksum is then wrong, unless given."""
+    data = bytearray(path.read_bytes())
+    data[108:113] = b"XXXXX"
+    if checksum is not None:
+        data[8:10] = checksum
+    path.write_bytes(bytes(data))
+
+
+def remove_checksum(path: Path) -> None:
+    data = bytearray(path.read_bytes())
+    data[8:10] = b"\x00\x00"
+    path.write_bytes(bytes(data))
+
+
+class TestDamagedHeader:
+    """A header that can be read but has a wrong checksum and differs from the others."""
+
+    ERROR = "damaged header (wrong checksum), holds another patient (patient_id differs from {})"
+
+    def test_chunk_in_the_middle(self, tmp_path: Path):
+        path = write_recording(tmp_path)
+        damage_patient_id(tmp_path / f"{PREFIX}_1.ecg")
+        record, other = parse(path)
+        error = self.ERROR.format(f"{PREFIX}.ecg")
+        assert len(other) == 2
+        assert "ISHNE checksum mismatch" in other[0]
+        assert other[1] == gap_warning(f"{PREFIX}_1.ecg", 900, error)
+        assert_gaps(record, [(9000, 18000)], 1951)
+        assert record.patient.patient_id == "P0001"
+        assert record.ecg_files[1].error == error
+
+    def test_first_chunk_is_not_the_reference(self, tmp_path: Path):
+        path = write_recording(tmp_path)
+        damage_patient_id(tmp_path / f"{PREFIX}.ecg")
+        record, other = parse(path)
+        error = self.ERROR.format(f"{PREFIX}_1.ecg")
+        assert len(other) == 3
+        assert "ISHNE checksum mismatch" in other[0]
+        assert other[1:] == [gap_warning(f"{PREFIX}.ecg", 900, error),
+                             start_warning(f"{PREFIX}_1.ecg")]
+        assert_gaps(record, [(0, 9000)], 1951)
+        assert record.patient.patient_id == "P0001"
+        assert record.recording.date == START
+
+    def test_wrong_checksum_alone_is_kept(self, tmp_path: Path):
+        path = write_recording(tmp_path)
+        chunk = tmp_path / f"{PREFIX}_1.ecg"
+        data = bytearray(chunk.read_bytes())
+        data[8:10] = b"\x12\x34"
+        chunk.write_bytes(bytes(data))
+        record, other = parse(path)
+        assert len(other) == 1 and "ISHNE checksum mismatch" in other[0]
+        np.testing.assert_array_equal(record.leads[0].samples, expected_ramp(1951))
+
+    def test_right_checksum_still_raises(self, tmp_path: Path):
+        path = write_recording(tmp_path)
+        (tmp_path / f"{PREFIX}_1.ecg").write_bytes(
+            ishne_chunk(9000, 9000, START, patient_id=b"P0002"))
+        with pytest.raises(CorruptedFileError, match="another patient"):
+            parse(path)
+
+    def test_no_stored_checksum_still_raises(self, tmp_path: Path):
+        path = write_recording(tmp_path)
+        damage_patient_id(tmp_path / f"{PREFIX}_1.ecg", checksum=b"\x00\x00")
+        with pytest.raises(CorruptedFileError, match="another patient"):
+            parse(path)
+
+    def test_no_chunk_with_a_right_checksum_still_raises(self, tmp_path: Path):
+        # Nothing shows that the recorder writes right checksums: a wrong one tells nothing
+        path = write_recording(tmp_path)
+        for name in chunk_names(3):
+            remove_checksum(tmp_path / name)
+        damage_patient_id(tmp_path / f"{PREFIX}_1.ecg", checksum=b"\x12\x34")
+        with pytest.raises(CorruptedFileError,
+                           match=rf"{PREFIX}_1.ecg of {PREFIX}.chn holds another patient "
+                                 rf"\(patient_id differs from {PREFIX}.ecg\)"):
+            parse(path)
+
+    def test_other_settings(self, tmp_path: Path):
+        path = write_recording(tmp_path)
+        chunk = tmp_path / f"{PREFIX}_2.ecg"
+        data = bytearray(chunk.read_bytes())
+        struct.pack_into("<h", data, 206, 2500)
+        chunk.write_bytes(bytes(data))
+        record, other = parse(path)
+        assert other[-1] == gap_warning(
+            f"{PREFIX}_2.ecg", 151,
+            f"damaged header (wrong checksum), lead I has resolution 2.5, {PREFIX}.ecg has 1.0")
+        assert_gaps(record, [(18000, 19510)], 1951)
 
 
 class TestDetection:

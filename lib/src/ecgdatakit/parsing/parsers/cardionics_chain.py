@@ -31,6 +31,7 @@ from __future__ import annotations
 
 import dataclasses
 import itertools
+import math
 import re
 import struct
 import warnings
@@ -54,6 +55,8 @@ _END = "end"
 _CHUNK_EXT = ".ecg"
 _TOLERANCE_S = 2.0
 _LENGTH_TOLERANCE_MS = 1000
+# A chain record is written a few seconds after its chunk starts
+_WRITE_TOLERANCE_S = 60.0
 
 # Lead fields that must match between chunks for their samples to be joined
 _LEAD_FIELDS = ("label", "sampling_rate", "resolution", "resolution_unit", "offset",
@@ -112,6 +115,27 @@ def _rate(chunks: list[_Chunk]) -> int:
     return next(c.record for c in chunks if c.record is not None).leads[0].sampling_rate
 
 
+def _checksum(chunk: _Chunk) -> bool | None:
+    """True or False for a right or wrong header checksum, None if the header stores none."""
+    return chunk.record.raw_metadata.get("checksum_valid")
+
+
+def _difference(record: ECGRecord, first: _Chunk) -> str | None:
+    """How *record* differs from the chunk *first*, as the end of an error message."""
+    if len(record.leads) != len(first.record.leads):
+        return (f" has {len(record.leads)} leads, "
+                f"{first.segment.name} has {len(first.record.leads)}")
+    for lead, ref in zip(record.leads, first.record.leads):
+        for name in _LEAD_FIELDS:
+            if getattr(lead, name) != getattr(ref, name):
+                return (f": lead {ref.label} has {name} {getattr(lead, name)!r}, "
+                        f"{first.segment.name} has {getattr(ref, name)!r}")
+    for name in _PATIENT_FIELDS:
+        if getattr(record.patient, name) != getattr(first.record.patient, name):
+            return f" holds another patient ({name} differs from {first.segment.name})"
+    return None
+
+
 class CardionicsChainParser(Parser):
     """Parser for Cardionics ``.chn`` Holter chains."""
 
@@ -140,12 +164,12 @@ class CardionicsChainParser(Parser):
             raise unread[0].failure
         for chunk in unread:
             chunk.failure = None
-        self._check_chunks(path, chunks)
-        self._size_gaps(path, chunks)
+        reference = self._check_chunks(path, chunks)
+        self._size_gaps(path, chunks, end)
         self._check_duration(path, chunks)
         start, source = self._recording_start(path, chunks, end)
         self._check_timeline(path, chunks, start)
-        return self._join(path, chunks, end, start, source)
+        return self._join(path, chunks, end, start, source, reference)
 
     @staticmethod
     def _read_chain(path: Path) -> tuple[list[_Segment], _Entry | None]:
@@ -235,10 +259,8 @@ class CardionicsChainParser(Parser):
         except (OSError, ImportError):
             raise
         except Exception as e:
-            error = f"cannot decode: {type(e).__name__}: {e}"
-            failure = CorruptedFileError(f"{where}: {error}")
-            failure.__cause__ = e.with_traceback(None)
-            return _Chunk(segment, path, None, 0, error, failure)
+            # Not a sign of a damaged file: raised, not turned into a gap
+            raise CorruptedFileError(f"{where}: cannot decode: {type(e).__name__}: {e}") from e
         finally:
             # Warnings of a chunk name the chunk they come from
             for w in caught:
@@ -248,30 +270,28 @@ class CardionicsChainParser(Parser):
         return _Chunk(segment, path, record, len(record.leads[0].samples))
 
     @staticmethod
-    def _check_chunks(chain: Path, chunks: list[_Chunk]) -> None:
-        """Raise when a chunk does not continue the first readable one."""
-        first, *others = [c for c in chunks if c.record is not None]
-        for chunk in others:
-            record = chunk.record
-            where = f"Cardionics chain: chunk {chunk.segment.name} of {chain.name}"
-            if len(record.leads) != len(first.record.leads):
-                raise CorruptedFileError(
-                    f"{where} has {len(record.leads)} leads, "
-                    f"{first.segment.name} has {len(first.record.leads)}"
-                )
-            for lead, ref in zip(record.leads, first.record.leads):
-                for name in _LEAD_FIELDS:
-                    if getattr(lead, name) != getattr(ref, name):
-                        raise CorruptedFileError(
-                            f"{where}: lead {ref.label} has {name} {getattr(lead, name)!r}, "
-                            f"{first.segment.name} has {getattr(ref, name)!r}"
-                        )
-            for name in _PATIENT_FIELDS:
-                if getattr(record.patient, name) != getattr(first.record.patient, name):
-                    raise CorruptedFileError(
-                        f"{where} holds another patient "
-                        f"({name} differs from {first.segment.name})"
-                    )
+    def _check_chunks(chain: Path, chunks: list[_Chunk]) -> _Chunk:
+        """Raise when a chunk does not continue the reference chunk, which is returned.
+
+        The reference is the first readable chunk with a right header
+        checksum, or the first readable chunk if none has one. A chunk that
+        differs from it and has a wrong checksum has a damaged header: it
+        becomes unreadable instead of raising.
+        """
+        readable = [c for c in chunks if c.record is not None]
+        checked = [c for c in readable if _checksum(c) is True]
+        first = checked[0] if checked else readable[0]
+        for chunk in readable:
+            difference = _difference(chunk.record, first) if chunk is not first else None
+            if difference is None:
+                continue
+            if checked and _checksum(chunk) is False:
+                chunk.error = f"damaged header (wrong checksum), {difference.lstrip(': ')}"
+                chunk.record, chunk.samples = None, 0
+                continue
+            raise CorruptedFileError(
+                f"Cardionics chain: chunk {chunk.segment.name} of {chain.name}{difference}")
+        return first
 
     @staticmethod
     def _check_duration(chain: Path, chunks: list[_Chunk]) -> None:
@@ -308,9 +328,17 @@ class CardionicsChainParser(Parser):
             )
 
     @staticmethod
-    def _size_gaps(chain: Path, chunks: list[_Chunk]) -> None:
-        """Set the length of each unreadable chunk from its time in the chain."""
+    def _size_gaps(chain: Path, chunks: list[_Chunk], end: _Entry | None) -> None:
+        """Set the length of each unreadable chunk from its time in the chain.
+
+        Raise when that time is longer than a chunk can last: the chain is
+        then wrong, and the gap would have any length.
+        """
         rate = _rate(chunks)
+        # Chunk length of the recorder. The first chunk has no record, so no length of its own
+        nominal = next((n for n in [*(c.segment.nominal_s for c in chunks),
+                                    end.nominal_s if end is not None else None] if n), None)
+        longest = math.ceil(max(c.samples for c in chunks if c.record is not None) / rate)
         for chunk in chunks:
             if chunk.record is not None:
                 continue
@@ -325,6 +353,12 @@ class CardionicsChainParser(Parser):
                 )
                 continue
             seconds = segment.end_s - segment.start_s
+            limit = segment.nominal_s or nominal or longest
+            if seconds > limit + _LENGTH_TOLERANCE_MS // 1000:
+                raise CorruptedFileError(
+                    f"{where} cannot be read and the chain gives it {seconds} s, more than "
+                    f"the {limit} s of a chunk: {chunk.error}"
+                )
             chunk.samples = round(seconds * rate)
             warnings.warn(
                 f"{where} cannot be read, its {seconds} s are filled with NaN: "
@@ -341,6 +375,7 @@ class CardionicsChainParser(Parser):
         headers. A header holds the start of the recording or of its chunk.
         Two headers that agree tell which. Otherwise the chain decides: the
         write time of a record minus its elapsed time is close to the start.
+        A start that is not close to it is not kept.
         """
         if chunks[0].record is not None:
             return chunks[0].record.recording.date, None
@@ -372,10 +407,12 @@ class CardionicsChainParser(Parser):
             if end is not None:
                 entries.append((end.written_at, end.elapsed_s))
             written = [at - timedelta(seconds=s) for at, s in entries if at is not None]
-            if not written:
+            away = [abs((t - written[0]).total_seconds()) if written else math.inf
+                    for t in (same, own)]
+            if min(away) > _WRITE_TOLERANCE_S:
                 warnings.warn(unknown, stacklevel=3)
                 return None, None
-            start = min((same, own), key=lambda t: abs((t - written[0]).total_seconds()))
+            start = same if away[0] <= away[1] else own
         warnings.warn(
             f"Cardionics chain: the first chunk of {chain.name} cannot be read, the start "
             f"of the recording ({start:%Y-%m-%d %H:%M:%S}) is taken from chunk "
@@ -411,10 +448,10 @@ class CardionicsChainParser(Parser):
             )
 
     @staticmethod
-    def _join(chain: Path, chunks: list[_Chunk], end: _Entry | None,
-              origin: datetime | None, source: _Chunk | None) -> ECGRecord:
-        # Patient, device and lead settings come from the first readable chunk
-        first = next(c.record for c in chunks if c.record is not None)
+    def _join(chain: Path, chunks: list[_Chunk], end: _Entry | None, origin: datetime | None,
+              source: _Chunk | None, reference: _Chunk) -> ECGRecord:
+        # Patient, device and lead settings come from the reference chunk
+        first = reference.record
         templates: list = list(first.leads)
         # None for an unreadable chunk, replaced by NaN below
         parts = [[c.record.leads[i].samples if c.record is not None else None for c in chunks]

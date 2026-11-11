@@ -81,8 +81,10 @@ Chunks that cannot be read:
 
 - **Gap.** A chunk file that is present but is not a valid ISHNE file (for example, its header was overwritten on a damaged disk) is a gap. Its samples are NaN in every lead, for the time the chain gives it, so the next samples keep their time and nothing is joined across the gap. A `UserWarning` names the chunk and the reason.
 - **Where the gap is.** The entry of the chunk in `record.ecg_files` has `error` set, with its `start`, `end` and number of samples. Filtering and resampling refuse NaN samples, so leave the gaps out first.
-- **Start of the recording.** If the first chunk cannot be read, `record.recording.date` is taken from the headers of the other chunks, with a `UserWarning`. A header holds the start of the recording or the start of its chunk. Two headers that agree tell which. With one header, the write times of the chain decide. If the start cannot be found, `record.recording.date` is `None`.
+- **Start of the recording.** If the first chunk cannot be read, `record.recording.date` is taken from the headers of the other chunks, with a `UserWarning`. A header holds the start of the recording or the start of its chunk. Two headers that agree tell which. With one header, the write times of the chain decide, and the start must be within one minute of them. If the start cannot be found, `record.recording.date` is `None`.
 - **Last chunk of a chain without `End`.** Its length is unknown, so it is left out of the leads, with a warning. Its `end` is `None`.
+- **Damaged header.** A chunk whose header can be read, but has a wrong checksum and differs from the other chunks (patient, leads, sampling rate or scale), is a gap too. This applies only when another chunk has a right checksum, which then gives the patient and the lead settings.
+- **Gap length.** A gap longer than the chunk length of the chain raises `CorruptedFileError`: the chain times are then wrong.
 - **Other chunks.** They are checked as usual.
 - If no chunk can be read, `CorruptedFileError` is raised. A missing chunk file always raises.
 
