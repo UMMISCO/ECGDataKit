@@ -25,6 +25,8 @@ The HL7 annotated ECG standard (**ANSI/HL7 V3 aECG**) is an XML-based format wid
 
 **Dependencies:** No optional dependency (XML is read with the core dependency `defusedxml`).
 
+A series may hold several sequence sets, each with its own time sequence. Digitized paper ECGs write one per lead segment: for example I, II and III over 0 to 2.5 s, aVR, aVL and aVF over 2.5 to 5 s, and so on, plus one or two rhythm strips over the whole 10 s. Every set is read and each segment is placed on one time axis, at its time head less the earliest one. A lead is NaN where it was not recorded, and `raw_metadata["rhythm_time"]["segments"]` lists each segment with its lead, start and duration. A lead found in two segments is joined, on the scale of its first segment. A set with no time sequence cannot be placed: it is left out, with a warning.
+
 ECGDataKit also writes this format: a record read from any supported format can be exported as HL7 aECG (see {doc}`../api/export`).
 
 ## Philips Sierra XML
