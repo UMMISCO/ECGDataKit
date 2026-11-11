@@ -826,10 +826,10 @@ class ECGFile:
     end: datetime | None = None
     """End of the file in the recording."""
     samples: int = 0
-    """Number of samples per lead in the file, 0 if it could not be read."""
+    """Number of samples per lead the file takes in the leads."""
     error: str = ""
-    """Why the file could not be read, empty if it was read. An unreadable
-    file has no samples in the leads: ``start`` and ``end`` give the gap."""
+    """Why the file could not be read, empty if it was read. The samples of
+    an unreadable file are NaN in the leads."""
 
     def __repr__(self) -> str:
         return _yaml_repr(self)
@@ -892,7 +892,7 @@ class ECGRecord:
     """Files that hold the samples, in recording order, when the record is
     split into several files (Cardionics Holter chain). The leads join the
     samples of these files in this order. An unreadable file has its
-    ``error`` set and no samples. Empty for a record read from a
+    ``error`` set and NaN samples. Empty for a record read from a
     single file."""
 
     @property

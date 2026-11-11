@@ -136,7 +136,7 @@ def remove_start_time(path: Path) -> None:
 
 def gap_warning(name: str, seconds: int, error: str = BAD_MAGIC) -> str:
     return (f"Cardionics chain: chunk {name} of {PREFIX}.chn cannot be read, "
-            f"its {seconds} s are left out of the leads: {error}")
+            f"its {seconds} s are filled with NaN: {error}")
 
 
 def start_warning(source: str, start: datetime = START) -> str:
@@ -149,12 +149,10 @@ START_UNKNOWN = (f"Cardionics chain: the first chunk of {PREFIX}.chn cannot be r
 
 
 def assert_gaps(record, gaps: list[tuple[int, int]], seconds: float) -> None:
-    """Both leads hold the ramp without its samples from *start* to *stop* of each gap."""
-    keep = np.ones(round(seconds * RATE), dtype=bool)
+    """Both leads hold the ramp, with NaN from *start* to *stop* of each gap."""
+    ramp = expected_ramp(seconds)
     for start, stop in gaps:
-        keep[start:stop] = False
-    ramp = expected_ramp(seconds)[keep]
-    assert not np.isnan(record.leads[0].samples).any()
+        ramp[start:stop] = np.nan
     np.testing.assert_array_equal(record.leads[0].samples, ramp)
     np.testing.assert_array_equal(record.leads[1].samples, -ramp)
     assert record.recording.duration == timedelta(seconds=len(ramp) / RATE)
@@ -518,7 +516,7 @@ class TestErrors:
 
 
 class TestUnreadableChunk:
-    """A chunk that is not a readable ISHNE file is left out of the leads."""
+    """A chunk that is not a readable ISHNE file is a gap of NaN in the leads."""
 
     def test_chunk_in_the_middle(self, tmp_path: Path):
         path = write_recording(tmp_path)
@@ -527,7 +525,7 @@ class TestUnreadableChunk:
         assert other == [gap_warning(f"{PREFIX}_1.ecg", 900)]
         assert_gaps(record, [(9000, 18000)], 1951)
         assert record.recording.date == START
-        assert record.recording.duration == timedelta(seconds=1051)
+        assert record.recording.duration == timedelta(seconds=1951)
         assert record.patient.patient_id == "P0001"
         assert [lead.label for lead in record.leads] == ["I", "II"]
 
@@ -538,7 +536,7 @@ class TestUnreadableChunk:
         assert [(f.name, f.start, f.end, f.samples, f.error) for f in record.ecg_files] == [
             (f"{PREFIX}.ecg", START, START + timedelta(seconds=900), 9000, ""),
             (f"{PREFIX}_1.ecg", START + timedelta(seconds=900), START + timedelta(seconds=1800),
-             0, BAD_MAGIC),
+             9000, BAD_MAGIC),
             (f"{PREFIX}_2.ecg", START + timedelta(seconds=1800), START + timedelta(seconds=1951),
              1510, ""),
         ]
@@ -548,8 +546,8 @@ class TestUnreadableChunk:
         assert raw["start_inferred_from"] is None
         chunks = raw["chunks"]
         assert [c["error"] for c in chunks] == [None, BAD_MAGIC, None]
-        assert [c["first_sample"] for c in chunks] == [0, 9000, 9000]
-        assert [c["samples"] for c in chunks] == [9000, 0, 1510]
+        assert [c["first_sample"] for c in chunks] == [0, 9000, 18000]
+        assert [c["samples"] for c in chunks] == [9000, 9000, 1510]
         assert [c["start"] for c in chunks] == [START, None, START]
         assert [c["start_s"] for c in chunks] == [0, 900, 1800]
         assert [c["end_s"] for c in chunks] == [900, 1800, 1951]
@@ -565,7 +563,7 @@ class TestUnreadableChunk:
         assert other == [gap_warning(f"{PREFIX}.ecg", 900), start_warning(f"{PREFIX}_1.ecg")]
         assert_gaps(record, [(0, 9000)], 1951)
         assert record.recording.date == START
-        assert record.recording.duration == timedelta(seconds=1051)
+        assert record.recording.duration == timedelta(seconds=1951)
         assert record.raw_metadata["start_inferred_from"] == f"{PREFIX}_1.ecg"
         assert [(f.start, f.end) for f in record.ecg_files] == [
             (START + timedelta(seconds=a), START + timedelta(seconds=b))
@@ -646,10 +644,10 @@ class TestUnreadableChunk:
         record, other = parse(path)
         assert other == [gap_warning(f"{PREFIX}_2.ecg", 151)]
         assert_gaps(record, [(18000, 19510)], 1951)
-        assert record.recording.duration == timedelta(seconds=1800)
+        assert record.recording.duration == timedelta(seconds=1951)
         last = record.ecg_files[2]
         assert (last.start, last.end, last.samples) == (
-            START + timedelta(seconds=1800), START + timedelta(seconds=1951), 0)
+            START + timedelta(seconds=1800), START + timedelta(seconds=1951), 1510)
 
     def test_last_chunk_without_end_record(self, tmp_path: Path):
         chain = recorder_chain()[:2 * 276]
@@ -658,8 +656,8 @@ class TestUnreadableChunk:
         record, other = parse(path)
         assert other == [
             f"Cardionics chain: {PREFIX}.chn has no End record, the recording may be incomplete",
-            (f"Cardionics chain: chunk {PREFIX}_2.ecg of {PREFIX}.chn cannot be read, "
-             f"it is left out of the leads: {BAD_MAGIC}"),
+            (f"Cardionics chain: chunk {PREFIX}_2.ecg of {PREFIX}.chn cannot be read and "
+             f"its length is unknown, it is left out: {BAD_MAGIC}"),
         ]
         np.testing.assert_array_equal(record.leads[0].samples, expected_ramp(1800))
         assert record.recording.duration == timedelta(seconds=1800)
@@ -679,9 +677,9 @@ class TestUnreadableChunk:
         assert other == [gap_warning(f"{PREFIX}_1.ecg", 900), gap_warning(f"{PREFIX}_3.ecg", 900)]
         assert_gaps(record, [(9000, 18000), (27000, 36000)], 3700)
         assert [bool(f.error) for f in record.ecg_files] == [False, True, False, True, False]
-        assert [f.samples for f in record.ecg_files] == [9000, 0, 9000, 0, 1000]
+        assert [f.samples for f in record.ecg_files] == [9000, 9000, 9000, 9000, 1000]
         assert [c["first_sample"] for c in record.raw_metadata["chunks"]] == [
-            0, 9000, 9000, 18000, 18000]
+            0, 9000, 18000, 27000, 36000]
 
     def test_file_that_is_not_ishne_at_all(self, tmp_path: Path):
         path = write_recording(tmp_path)
@@ -780,11 +778,12 @@ class TestUnreadableChunk:
         assert record.recording.date == START
         samples = record.leads[0].samples
         assert record.leads[0].units == "mV"
-        assert not np.isnan(samples).any()
-        np.testing.assert_allclose(samples, expected_ramp(1951)[9000:] / 1000)
+        assert np.isnan(samples[:9000]).all()
+        assert not np.isnan(samples[9000:]).any()
+        np.testing.assert_allclose(samples[9000:], expected_ramp(1951)[9000:] / 1000)
         first = record.ecg_files[0]
         assert (first.start, first.end, first.samples, first.error) == (
-            START, START + timedelta(seconds=900), 0, BAD_MAGIC)
+            START, START + timedelta(seconds=900), 9000, BAD_MAGIC)
         assert record.to_dict(include_samples=False)["recording"]["date"] == "2009-09-17T08:21:06"
 
 

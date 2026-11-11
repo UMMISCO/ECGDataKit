@@ -79,11 +79,10 @@ Checks:
 
 Chunks that cannot be read:
 
-- **Gap.** A chunk file that is present but is not a valid ISHNE file (for example, its header was overwritten on a damaged disk) is left out of the leads. The leads join the chunks that were read and never hold NaN. A `UserWarning` names the chunk and the reason.
-- **Where the gap is.** The entry of the chunk in `record.ecg_files` has `error` set, `samples` at 0, and the `start` and `end` the chain gives it.
-- **Duration.** `record.recording.duration` is that of the samples, without the gaps.
+- **Gap.** A chunk file that is present but is not a valid ISHNE file (for example, its header was overwritten on a damaged disk) is a gap. Its samples are NaN in every lead, for the time the chain gives it, so the next samples keep their time and nothing is joined across the gap. A `UserWarning` names the chunk and the reason.
+- **Where the gap is.** The entry of the chunk in `record.ecg_files` has `error` set, with its `start`, `end` and number of samples. Filtering and resampling refuse NaN samples, so leave the gaps out first.
 - **Start of the recording.** If the first chunk cannot be read, `record.recording.date` is taken from the headers of the other chunks, with a `UserWarning`. A header holds the start of the recording or the start of its chunk. Two headers that agree tell which. With one header, the write times of the chain decide. If the start cannot be found, `record.recording.date` is `None`.
-- **Last chunk of a chain without `End`.** It is left out the same way. Its `end` is `None`, since nothing gives its length.
+- **Last chunk of a chain without `End`.** Its length is unknown, so it is left out of the leads, with a warning. Its `end` is `None`.
 - **Other chunks.** They are checked as usual.
 - If no chunk can be read, `CorruptedFileError` is raised. A missing chunk file always raises.
 
@@ -95,9 +94,17 @@ for f in gaps:
     print(f.name, f.start, f.end, f.error)
 ```
 
-The samples before and after a gap are next to each other in the leads. `raw_metadata["chunks"][i]["first_sample"]` gives where each chunk starts.
+To take only the signal that was read, chunk by chunk:
 
-`record.ecg_files` lists the chunks in order, as {class}`~ecgdatakit.models.ECGFile` entries: file name, start and end in the recording (from the chain times, or from the samples for the last chunk of a chain without `End`), number of samples, and `error`. `error` is empty for a chunk that was read. Otherwise it gives the reason, and `samples` is 0. The first chunk starts at `record.recording.date`.
+```python
+lead = record.leads[0]
+for chunk in record.raw_metadata["chunks"]:
+    if chunk["error"] is None:
+        first = chunk["first_sample"]
+        samples = lead.samples[first: first + chunk["samples"]]
+```
+
+`record.ecg_files` lists the chunks in order, as {class}`~ecgdatakit.models.ECGFile` entries: file name, start and end in the recording (from the chain times, or from the samples for the last chunk of a chain without `End`), number of samples, and `error`. `error` is empty for a chunk that was read. Otherwise it gives the reason, and `samples` is the length of the gap. The first chunk starts at `record.recording.date`.
 
 `raw_metadata["chunks"]` gives more detail on each chunk. Each entry gives the chunk file (`name`, `filepath`), the index of its first sample in the joined leads (`first_sample`), its number of samples (`samples`), why it could not be read (`error`, `None` for a chunk that was read), its start time from its ISHNE header (`start`), its times in the chain (`start_s`, `end_s`, in seconds from the start of the recording), the values of its chain record (`nominal_s`, `written_at`), `listed` (`False` for the first chunk, which has no record, so its `nominal_s` and `written_at` are `None`), its own annotations (`annotations`) and its own `raw_metadata` (`ishne`). For a chunk that could not be read, `start` is `None`, and `annotations` and `ishne` are empty. `raw_metadata["end_record"]`, `raw_metadata["end_elapsed_s"]` and `raw_metadata["end_written_at"]` describe the `End` record. `raw_metadata["start_inferred_from"]` names the chunk that gave the start of the recording if the first chunk could not be read, and is `None` otherwise.
 

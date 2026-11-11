@@ -79,10 +79,11 @@ needs the new names.
   can still be parsed on its own. ECGDataKit now reads 14 formats (see
   [Cardionics Holter chain](formats.md#cardionics-holter-chain)).
 - **Cardionics Holter chain: damaged files.** A file of the chain that is
-  not a valid ISHNE file no longer stops the parsing. It is left out of
-  the leads, with a warning. Its `ECGFile` entry gives the reason in
-  `error`, with the start and end of the gap. If the first file is the
-  damaged one, the start of the recording is taken from the other files.
+  not a valid ISHNE file no longer stops the parsing. Its samples are NaN
+  for the time the chain gives it, with a warning. Its `ECGFile` entry
+  gives the reason in `error`, with the start and end of the gap. If the
+  first file is the damaged one, the start of the recording is taken from
+  the other files.
 - **SCP-ECG: incomplete Section 7.** A file whose Section 7 declares more
   measurement blocks than it stores no longer fails. The blocks that fit
   are read, the pacemaker spikes and the optional parts after them are

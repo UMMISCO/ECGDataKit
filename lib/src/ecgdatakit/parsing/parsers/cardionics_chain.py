@@ -22,10 +22,9 @@ order of the chain. The samples of each chunk, and of all the chunks
 together, must last as long as the chain says, within 1 s since the chain
 stores whole seconds.
 
-A chunk that cannot be read is left out of the leads, which never hold
-NaN. The chain still gives its start and end, so the gap is known. If the
-first chunk cannot be read, the start of the recording is taken from the
-other chunks.
+A chunk that cannot be read is a gap: its samples are NaN, for the time the
+chain gives it, so the next samples keep their time. If the first chunk
+cannot be read, the start of the recording is taken from the other chunks.
 """
 
 from __future__ import annotations
@@ -88,16 +87,11 @@ class _Chunk:
     segment: _Segment
     path: Path
     record: ECGRecord | None
-    # Length in samples per lead. For an unreadable chunk, from the chain times
+    # Samples per lead in the joined leads
     samples: int
     # Why the file cannot be read, and the error raised if no chunk can be
     error: str = ""
     failure: ECGDataKitError | None = None
-
-    @property
-    def held(self) -> int:
-        """Samples per lead the chunk gives to the leads."""
-        return self.samples if self.record is not None else 0
 
 
 def _read_entry(data: bytes, offset: int) -> _Entry:
@@ -325,14 +319,15 @@ class CardionicsChainParser(Parser):
             if segment.end_s is None:
                 # Last chunk without End record: its length is unknown
                 warnings.warn(
-                    f"{where} cannot be read, it is left out of the leads: {chunk.error}",
+                    f"{where} cannot be read and its length is unknown, it is left out: "
+                    f"{chunk.error}",
                     stacklevel=3,
                 )
                 continue
             seconds = segment.end_s - segment.start_s
             chunk.samples = round(seconds * rate)
             warnings.warn(
-                f"{where} cannot be read, its {seconds} s are left out of the leads: "
+                f"{where} cannot be read, its {seconds} s are filled with NaN: "
                 f"{chunk.error}",
                 stacklevel=3,
             )
@@ -421,20 +416,23 @@ class CardionicsChainParser(Parser):
         # Patient, device and lead settings come from the first readable chunk
         first = next(c.record for c in chunks if c.record is not None)
         templates: list = list(first.leads)
-        # Unreadable chunks give no samples
-        read = [c for c in chunks if c.record is not None]
-        parts = [[c.record.leads[i].samples for c in read] for i in range(len(templates))]
-        for c in read:
-            c.record.leads = []
+        # None for an unreadable chunk, replaced by NaN below
+        parts = [[c.record.leads[i].samples if c.record is not None else None for c in chunks]
+                 for i in range(len(templates))]
+        for c in chunks:
+            if c.record is not None:
+                c.record.leads = []
         # Lead by lead, so that a long recording is held at most once plus one lead
         leads = []
         for i in range(len(templates)):
             template, templates[i] = templates[i], None
-            leads.append(dataclasses.replace(template, samples=np.concatenate(parts[i])))
+            samples = np.concatenate([np.full(c.samples, np.nan) if part is None else part
+                                      for c, part in zip(chunks, parts[i])])
+            leads.append(dataclasses.replace(template, samples=samples))
             parts[i] = []
 
         rate = leads[0].sampling_rate
-        total = sum(c.held for c in chunks)
+        total = sum(c.samples for c in chunks)
         record = ECGRecord(source_format="cardionics_chain")
         record.patient = first.patient
         # Copied, so the chunk keeps its own header time
@@ -451,12 +449,12 @@ class CardionicsChainParser(Parser):
             segment = c.segment
             end_s: float | None = segment.end_s
             if end_s is None and c.record is not None:
-                end_s = segment.start_s + c.held / rate
+                end_s = segment.start_s + c.samples / rate
             record.ecg_files.append(ECGFile(
                 name=segment.name,
                 start=origin + timedelta(seconds=segment.start_s) if origin else None,
                 end=origin + timedelta(seconds=end_s) if origin and end_s is not None else None,
-                samples=c.held,
+                samples=c.samples,
                 error=c.error,
             ))
             chunk_meta.append({
@@ -464,7 +462,7 @@ class CardionicsChainParser(Parser):
                 "filepath": str(c.path),
                 "listed": segment.listed,
                 "first_sample": position,
-                "samples": c.held,
+                "samples": c.samples,
                 "error": c.error or None,
                 "start": c.record.recording.date if c.record is not None else None,
                 "start_s": segment.start_s,
@@ -474,7 +472,7 @@ class CardionicsChainParser(Parser):
                 "annotations": c.record.annotations if c.record is not None else {},
                 "ishne": c.record.raw_metadata if c.record is not None else {},
             })
-            position += c.held
+            position += c.samples
         raw = record.raw_metadata
         raw["filepath"] = str(chain)
         raw["chunks"] = chunk_meta

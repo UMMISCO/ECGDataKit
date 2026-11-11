@@ -286,13 +286,13 @@ class TestECGFile:
         assert ECGFile("rec.ecg").to_dict()["start"] is None
 
     def test_file_that_could_not_be_read(self):
-        f = ECGFile("rec_1.ecg", error="Bad ISHNE magic number")
+        f = ECGFile("rec_1.ecg", samples=450000, error="Bad ISHNE magic number")
         assert f.to_dict()["error"] == "Bad ISHNE magic number"
-        assert repr(f) == ("ECGFile:\n  name: rec_1.ecg\n  samples: 0\n"
+        assert repr(f) == ("ECGFile:\n  name: rec_1.ecg\n  samples: 450000\n"
                            "  error: Bad ISHNE magic number")
         record = ECGRecord(ecg_files=[ECGFile("rec.ecg", samples=1000), f])
         assert ("    - rec.ecg: 1000 samples\n"
-                "    - rec_1.ecg: 0 samples (not read)") in repr(record)
+                "    - rec_1.ecg: 450000 samples (not read)") in repr(record)
 
     def test_record_lists_its_files(self):
         files = [ECGFile("rec.ecg", datetime(2023, 1, 1, 8), datetime(2023, 1, 1, 8, 15), 450000),
