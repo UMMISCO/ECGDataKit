@@ -271,7 +271,7 @@ class TestLead:
 class TestECGFile:
     def test_defaults(self):
         f = ECGFile()
-        assert (f.name, f.start, f.end, f.samples) == ("", None, None, 0)
+        assert (f.name, f.start, f.end, f.samples, f.error) == ("", None, None, 0, "")
         assert repr(f) == "ECGFile:\n  samples: 0"
 
     def test_to_dict(self):
@@ -281,8 +281,18 @@ class TestECGFile:
             "start": "2023-01-01T08:00:00",
             "end": "2023-01-01T08:15:00",
             "samples": 450000,
+            "error": "",
         }
         assert ECGFile("rec.ecg").to_dict()["start"] is None
+
+    def test_file_that_could_not_be_read(self):
+        f = ECGFile("rec_1.ecg", error="Bad ISHNE magic number")
+        assert f.to_dict()["error"] == "Bad ISHNE magic number"
+        assert repr(f) == ("ECGFile:\n  name: rec_1.ecg\n  samples: 0\n"
+                           "  error: Bad ISHNE magic number")
+        record = ECGRecord(ecg_files=[ECGFile("rec.ecg", samples=1000), f])
+        assert ("    - rec.ecg: 1000 samples\n"
+                "    - rec_1.ecg: 0 samples (not read)") in repr(record)
 
     def test_record_lists_its_files(self):
         files = [ECGFile("rec.ecg", datetime(2023, 1, 1, 8), datetime(2023, 1, 1, 8, 15), 450000),

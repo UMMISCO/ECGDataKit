@@ -13,6 +13,7 @@ import pytest
 
 from ecgdatakit.exceptions import CorruptedFileError
 from ecgdatakit.parsing.parser import FileParser
+from ecgdatakit.parsing.parsers import ishne_holter
 from ecgdatakit.parsing.parsers.cardionics_chain import CardionicsChainParser
 from tests.conftest import create_ishne_binary
 
@@ -111,6 +112,54 @@ def expected_ramp(seconds: float) -> np.ndarray:
     return (np.arange(round(seconds * RATE)) % 30000).astype(np.float64)
 
 
+# Start of a chunk file found on a damaged disk: the log of another program, in UTF-16
+LOG = ("op\\TEMP\\UPDATE\\idx\\master.idx'.\r\n[UPDLIB] [ERROR] Gestionnaire de "
+       "t\u00e9l\u00e9chargements : une erreur s'est produite.\r\n").encode("utf-16-le")
+BAD_MAGIC = "Bad ISHNE magic number: b'o\\x00p\\x00\\\\\\x00T\\x00', expected b'ISHNE1.0'"
+
+
+def overwrite_start(path: Path, size: int = 4096) -> None:
+    """Replace the first *size* bytes of a chunk file with the log, the file keeps its size."""
+    data = bytearray(path.read_bytes())
+    assert len(data) > size
+    data[:size] = (LOG * (size // len(LOG) + 1))[:size]
+    path.write_bytes(bytes(data))
+
+
+def remove_start_time(path: Path) -> None:
+    """Set the record date of a chunk header to zeros, which is not a date."""
+    data = bytearray(path.read_bytes())
+    struct.pack_into("<hhh", data, 138, 0, 0, 0)
+    struct.pack_into("<H", data, 8, binascii.crc_hqx(bytes(data[10:522]), 0xFFFF))
+    path.write_bytes(bytes(data))
+
+
+def gap_warning(name: str, seconds: int, error: str = BAD_MAGIC) -> str:
+    return (f"Cardionics chain: chunk {name} of {PREFIX}.chn cannot be read, "
+            f"its {seconds} s are left out of the leads: {error}")
+
+
+def start_warning(source: str, start: datetime = START) -> str:
+    return (f"Cardionics chain: the first chunk of {PREFIX}.chn cannot be read, the start "
+            f"of the recording ({start:%Y-%m-%d %H:%M:%S}) is taken from chunk {source}")
+
+
+START_UNKNOWN = (f"Cardionics chain: the first chunk of {PREFIX}.chn cannot be read and "
+                 "the other chunks do not tell the start of the recording, it is not known")
+
+
+def assert_gaps(record, gaps: list[tuple[int, int]], seconds: float) -> None:
+    """Both leads hold the ramp without its samples from *start* to *stop* of each gap."""
+    keep = np.ones(round(seconds * RATE), dtype=bool)
+    for start, stop in gaps:
+        keep[start:stop] = False
+    ramp = expected_ramp(seconds)[keep]
+    assert not np.isnan(record.leads[0].samples).any()
+    np.testing.assert_array_equal(record.leads[0].samples, ramp)
+    np.testing.assert_array_equal(record.leads[1].samples, -ramp)
+    assert record.recording.duration == timedelta(seconds=len(ramp) / RATE)
+
+
 class TestRecorderChain:
     def test_record_bytes_match_the_recorder_layout(self):
         data = recorder_chain()
@@ -148,6 +197,8 @@ class TestRecorderChain:
         assert [c["end_s"] for c in chunks] == [900, 1800, 1951]
         assert [c["nominal_s"] for c in chunks] == [None, 900, 900]
         assert [c["start"] for c in chunks] == [START] * 3
+        assert [c["error"] for c in chunks] == [None] * 3
+        assert raw["start_inferred_from"] is None
         assert [c["written_at"] for c in chunks] == [
             None,
             datetime(2009, 9, 17, 8, 36, 18, 515000),
@@ -157,6 +208,7 @@ class TestRecorderChain:
 
     def test_ecg_files(self, tmp_path: Path):
         record, _ = parse(write_recording(tmp_path))
+        assert [f.error for f in record.ecg_files] == [""] * 3
         assert [(f.name, f.start, f.end, f.samples) for f in record.ecg_files] == [
             (f"{PREFIX}.ecg", START, START + timedelta(seconds=900), 9000),
             (f"{PREFIX}_1.ecg", START + timedelta(seconds=900), START + timedelta(seconds=1800), 9000),
@@ -168,6 +220,7 @@ class TestRecorderChain:
             "start": "2009-09-17T08:36:06",
             "end": "2009-09-17T08:51:06",
             "samples": 9000,
+            "error": "",
         }
 
     def test_second_recorder_chain(self, tmp_path: Path):
@@ -443,11 +496,296 @@ class TestErrors:
             parse(path)
 
     def test_chunk_error_names_the_chunk(self, tmp_path: Path):
-        path = write_recording(tmp_path)
-        (tmp_path / f"{PREFIX}_1.ecg").write_bytes(b"NOTISHNE" + bytes(600))
-        with pytest.raises(CorruptedFileError, match=f"chunk {PREFIX}_1.ecg of {PREFIX}.chn: "
-                                                     "Bad ISHNE magic"):
+        end = chain_record(900, 600, (17, 9, 2009, 8, 31, 6, 0), "End")
+        path = write_recording(tmp_path, seconds=(600,), chain=end)
+        (tmp_path / f"{PREFIX}.ecg").write_bytes(b"NOTISHNE" + bytes(600))
+        with pytest.raises(CorruptedFileError, match=f"chunk {PREFIX}.ecg of {PREFIX}.chn: "
+                                                     "Bad ISHNE magic") as raised:
             parse(path)
+        assert isinstance(raised.value.__cause__, CorruptedFileError)
+        assert str(raised.value.__cause__).startswith("Bad ISHNE magic")
+
+    def test_no_chunk_can_be_read(self, tmp_path: Path):
+        path = write_recording(tmp_path)
+        for name in chunk_names(3):
+            overwrite_start(tmp_path / name)
+        with warnings.catch_warnings():
+            warnings.simplefilter("error")
+            with pytest.raises(CorruptedFileError) as raised:
+                CardionicsChainParser().parse(path)
+        assert str(raised.value) == (f"Cardionics chain: chunk {PREFIX}.ecg of {PREFIX}.chn: "
+                                     f"{BAD_MAGIC}")
+
+
+class TestUnreadableChunk:
+    """A chunk that is not a readable ISHNE file is left out of the leads."""
+
+    def test_chunk_in_the_middle(self, tmp_path: Path):
+        path = write_recording(tmp_path)
+        overwrite_start(tmp_path / f"{PREFIX}_1.ecg")
+        record, other = parse(path)
+        assert other == [gap_warning(f"{PREFIX}_1.ecg", 900)]
+        assert_gaps(record, [(9000, 18000)], 1951)
+        assert record.recording.date == START
+        assert record.recording.duration == timedelta(seconds=1051)
+        assert record.patient.patient_id == "P0001"
+        assert [lead.label for lead in record.leads] == ["I", "II"]
+
+    def test_ecg_files_and_metadata(self, tmp_path: Path):
+        path = write_recording(tmp_path)
+        overwrite_start(tmp_path / f"{PREFIX}_1.ecg")
+        record, _ = parse(path)
+        assert [(f.name, f.start, f.end, f.samples, f.error) for f in record.ecg_files] == [
+            (f"{PREFIX}.ecg", START, START + timedelta(seconds=900), 9000, ""),
+            (f"{PREFIX}_1.ecg", START + timedelta(seconds=900), START + timedelta(seconds=1800),
+             0, BAD_MAGIC),
+            (f"{PREFIX}_2.ecg", START + timedelta(seconds=1800), START + timedelta(seconds=1951),
+             1510, ""),
+        ]
+        assert sum(f.samples for f in record.ecg_files) == len(record.leads[0].samples)
+        assert record.to_dict(include_samples=False)["ecg_files"][1]["error"] == BAD_MAGIC
+        raw = record.raw_metadata
+        assert raw["start_inferred_from"] is None
+        chunks = raw["chunks"]
+        assert [c["error"] for c in chunks] == [None, BAD_MAGIC, None]
+        assert [c["first_sample"] for c in chunks] == [0, 9000, 9000]
+        assert [c["samples"] for c in chunks] == [9000, 0, 1510]
+        assert [c["start"] for c in chunks] == [START, None, START]
+        assert [c["start_s"] for c in chunks] == [0, 900, 1800]
+        assert [c["end_s"] for c in chunks] == [900, 1800, 1951]
+        assert chunks[1]["filepath"] == str(tmp_path / f"{PREFIX}_1.ecg")
+        assert chunks[1]["written_at"] == datetime(2009, 9, 17, 8, 36, 18, 515000)
+        assert (chunks[1]["annotations"], chunks[1]["ishne"]) == ({}, {})
+        assert chunks[2]["ishne"]["checksum_valid"] is True
+
+    def test_first_chunk_headers_with_the_recording_start(self, tmp_path: Path):
+        path = write_recording(tmp_path)
+        overwrite_start(tmp_path / f"{PREFIX}.ecg")
+        record, other = parse(path)
+        assert other == [gap_warning(f"{PREFIX}.ecg", 900), start_warning(f"{PREFIX}_1.ecg")]
+        assert_gaps(record, [(0, 9000)], 1951)
+        assert record.recording.date == START
+        assert record.recording.duration == timedelta(seconds=1051)
+        assert record.raw_metadata["start_inferred_from"] == f"{PREFIX}_1.ecg"
+        assert [(f.start, f.end) for f in record.ecg_files] == [
+            (START + timedelta(seconds=a), START + timedelta(seconds=b))
+            for a, b in ((0, 900), (900, 1800), (1800, 1951))]
+        assert record.patient.patient_id == "P0001"
+        assert record.patient.age == 29
+
+    def test_first_chunk_headers_with_their_own_start(self, tmp_path: Path):
+        path = write_recording(tmp_path, chunk_starts=True)
+        overwrite_start(tmp_path / f"{PREFIX}.ecg")
+        record, other = parse(path)
+        assert other == [gap_warning(f"{PREFIX}.ecg", 900), start_warning(f"{PREFIX}_1.ecg")]
+        assert record.recording.date == START
+        assert record.ecg_files[1].start == START + timedelta(seconds=900)
+        assert [c["start"] for c in record.raw_metadata["chunks"]] == [
+            None, START + timedelta(seconds=900), START + timedelta(seconds=1800)]
+
+    @pytest.mark.parametrize("chunk_starts", [False, True])
+    def test_first_chunk_one_chunk_left(self, tmp_path: Path, chunk_starts: bool):
+        # One header does not tell what it holds: the write times of the chain do
+        chain = recorder_chain()[:276] + chain_record(900, 1051, (17, 9, 2009, 8, 38, 49, 0), "End")
+        path = write_recording(tmp_path, seconds=(900, 151), chain=chain,
+                               chunk_starts=chunk_starts)
+        overwrite_start(tmp_path / f"{PREFIX}.ecg")
+        record, other = parse(path)
+        assert other == [gap_warning(f"{PREFIX}.ecg", 900), start_warning(f"{PREFIX}_1.ecg")]
+        assert record.recording.date == START
+        assert_gaps(record, [(0, 9000)], 1051)
+
+    @pytest.mark.parametrize("chunk_starts", [False, True])
+    def test_first_two_chunks(self, tmp_path: Path, chunk_starts: bool):
+        path = write_recording(tmp_path, chunk_starts=chunk_starts)
+        overwrite_start(tmp_path / f"{PREFIX}.ecg")
+        overwrite_start(tmp_path / f"{PREFIX}_1.ecg")
+        record, other = parse(path)
+        assert other == [gap_warning(f"{PREFIX}.ecg", 900), gap_warning(f"{PREFIX}_1.ecg", 900),
+                         start_warning(f"{PREFIX}_2.ecg")]
+        assert record.recording.date == START
+        assert_gaps(record, [(0, 18000)], 1951)
+        assert record.ecg_files[2].start == START + timedelta(seconds=1800)
+
+    def test_first_chunk_headers_that_disagree(self, tmp_path: Path):
+        path = write_recording(tmp_path)
+        overwrite_start(tmp_path / f"{PREFIX}.ecg")
+        late = START + timedelta(seconds=60)
+        (tmp_path / f"{PREFIX}_2.ecg").write_bytes(ishne_chunk(18000, 1510, late))
+        record, other = parse(path)
+        assert other[:2] == [gap_warning(f"{PREFIX}.ecg", 900), start_warning(f"{PREFIX}_1.ecg")]
+        assert len(other) == 3
+        assert f"{PREFIX}_2.ecg starts at 08:22:06, expected 08:21:06 or 08:51:06" in other[2]
+        assert record.recording.date == START
+
+    def test_first_chunk_no_start_in_the_other_headers(self, tmp_path: Path):
+        path = write_recording(tmp_path)
+        overwrite_start(tmp_path / f"{PREFIX}.ecg")
+        remove_start_time(tmp_path / f"{PREFIX}_1.ecg")
+        remove_start_time(tmp_path / f"{PREFIX}_2.ecg")
+        record, other = parse(path)
+        assert other == [gap_warning(f"{PREFIX}.ecg", 900), START_UNKNOWN]
+        assert record.recording.date is None
+        assert record.raw_metadata["start_inferred_from"] is None
+        assert [(f.start, f.end) for f in record.ecg_files] == [(None, None)] * 3
+        assert_gaps(record, [(0, 9000)], 1951)
+
+    def test_first_chunk_one_header_and_no_write_time(self, tmp_path: Path):
+        chain = (chain_record(900, 900, (0, 0, 0, 0, 0, 0, 0), f"{PREFIX}_1.ecg")
+                 + chain_record(900, 1051, (0, 0, 0, 0, 0, 0, 0), "End"))
+        path = write_recording(tmp_path, seconds=(900, 151), chain=chain)
+        overwrite_start(tmp_path / f"{PREFIX}.ecg")
+        record, other = parse(path)
+        assert other == [gap_warning(f"{PREFIX}.ecg", 900), START_UNKNOWN]
+        assert record.recording.date is None
+        assert record.raw_metadata["chunks"][1]["start"] == START
+
+    def test_last_chunk(self, tmp_path: Path):
+        path = write_recording(tmp_path)
+        overwrite_start(tmp_path / f"{PREFIX}_2.ecg")
+        record, other = parse(path)
+        assert other == [gap_warning(f"{PREFIX}_2.ecg", 151)]
+        assert_gaps(record, [(18000, 19510)], 1951)
+        assert record.recording.duration == timedelta(seconds=1800)
+        last = record.ecg_files[2]
+        assert (last.start, last.end, last.samples) == (
+            START + timedelta(seconds=1800), START + timedelta(seconds=1951), 0)
+
+    def test_last_chunk_without_end_record(self, tmp_path: Path):
+        chain = recorder_chain()[:2 * 276]
+        path = write_recording(tmp_path, seconds=(900, 900, 40), chain=chain)
+        overwrite_start(tmp_path / f"{PREFIX}_2.ecg", size=600)
+        record, other = parse(path)
+        assert other == [
+            f"Cardionics chain: {PREFIX}.chn has no End record, the recording may be incomplete",
+            (f"Cardionics chain: chunk {PREFIX}_2.ecg of {PREFIX}.chn cannot be read, "
+             f"it is left out of the leads: {BAD_MAGIC}"),
+        ]
+        np.testing.assert_array_equal(record.leads[0].samples, expected_ramp(1800))
+        assert record.recording.duration == timedelta(seconds=1800)
+        last = record.ecg_files[2]
+        assert (last.start, last.end, last.samples, last.error) == (
+            START + timedelta(seconds=1800), None, 0, BAD_MAGIC)
+        assert record.raw_metadata["chunks"][2]["first_sample"] == 18000
+
+    def test_several_gaps(self, tmp_path: Path):
+        chain = b"".join(chain_record(900, 900 * i, (17, 9, 2009, 8, 21 + 15 * i, 18, 0),
+                                      f"{PREFIX}_{i}.ecg") for i in range(1, 5))
+        chain += chain_record(900, 3700, (17, 9, 2009, 9, 22, 46, 0), "End")
+        path = write_recording(tmp_path, seconds=(900, 900, 900, 900, 100), chain=chain)
+        overwrite_start(tmp_path / f"{PREFIX}_1.ecg")
+        overwrite_start(tmp_path / f"{PREFIX}_3.ecg")
+        record, other = parse(path)
+        assert other == [gap_warning(f"{PREFIX}_1.ecg", 900), gap_warning(f"{PREFIX}_3.ecg", 900)]
+        assert_gaps(record, [(9000, 18000), (27000, 36000)], 3700)
+        assert [bool(f.error) for f in record.ecg_files] == [False, True, False, True, False]
+        assert [f.samples for f in record.ecg_files] == [9000, 0, 9000, 0, 1000]
+        assert [c["first_sample"] for c in record.raw_metadata["chunks"]] == [
+            0, 9000, 9000, 18000, 18000]
+
+    def test_file_that_is_not_ishne_at_all(self, tmp_path: Path):
+        path = write_recording(tmp_path)
+        (tmp_path / f"{PREFIX}_1.ecg").write_bytes(b"short")
+        record, other = parse(path)
+        assert other == [gap_warning(f"{PREFIX}_1.ecg", 900,
+                                     "File too small to be ISHNE Holter: 5 bytes")]
+        assert_gaps(record, [(9000, 18000)], 1951)
+
+    def test_invalid_header_after_the_magic(self, tmp_path: Path):
+        path = write_recording(tmp_path)
+        chunk = tmp_path / f"{PREFIX}_1.ecg"
+        data = bytearray(chunk.read_bytes())
+        struct.pack_into("<h", data, 156, 40)
+        chunk.write_bytes(bytes(data))
+        record, other = parse(path)
+        assert len(other) == 2
+        assert "ISHNE checksum mismatch" in other[0]
+        assert other[1] == gap_warning(
+            f"{PREFIX}_1.ecg", 900, "Invalid ISHNE header: lead count is 40, spec allows 1 to 12")
+        assert_gaps(record, [(9000, 18000)], 1951)
+
+    def test_other_decoding_failure(self, tmp_path: Path, monkeypatch):
+        path = write_recording(tmp_path)
+        read = ishne_holter.ISHNEHolterParser.parse
+
+        def fail_on_one(self, file_path):
+            if Path(file_path).name == f"{PREFIX}_1.ecg":
+                raise ValueError("boom")
+            return read(self, file_path)
+
+        monkeypatch.setattr(ishne_holter.ISHNEHolterParser, "parse", fail_on_one)
+        record, other = parse(path)
+        assert other == [gap_warning(f"{PREFIX}_1.ecg", 900, "cannot decode: ValueError: boom")]
+        assert record.ecg_files[1].error == "cannot decode: ValueError: boom"
+
+    def test_file_that_cannot_be_opened_still_raises(self, tmp_path: Path, monkeypatch):
+        path = write_recording(tmp_path)
+        read = ishne_holter.ISHNEHolterParser.parse
+
+        def fail_on_one(self, file_path):
+            if Path(file_path).name == f"{PREFIX}_1.ecg":
+                raise PermissionError("denied")
+            return read(self, file_path)
+
+        monkeypatch.setattr(ishne_holter.ISHNEHolterParser, "parse", fail_on_one)
+        with pytest.raises(PermissionError, match="denied"):
+            parse(path)
+
+    def test_missing_chunk_still_raises(self, tmp_path: Path):
+        path = write_recording(tmp_path)
+        overwrite_start(tmp_path / f"{PREFIX}.ecg")
+        (tmp_path / f"{PREFIX}_2.ecg").unlink()
+        with pytest.raises(CorruptedFileError, match=f"chunk {PREFIX}_2.ecg of .* is missing"):
+            parse(path)
+
+    def test_other_chunks_still_checked_for_length(self, tmp_path: Path):
+        path = write_recording(tmp_path, seconds=(900, 890, 151))
+        overwrite_start(tmp_path / f"{PREFIX}.ecg")
+        with pytest.raises(CorruptedFileError,
+                           match=f"chunk lengths of {PREFIX}.chn do not match its times: "
+                                 f"{PREFIX}_1.ecg lasts 890000 ms, chain says 900000 ms$"):
+            parse(path)
+
+    def test_other_chunks_still_checked_against_each_other(self, tmp_path: Path):
+        path = write_recording(tmp_path)
+        overwrite_start(tmp_path / f"{PREFIX}.ecg")
+        (tmp_path / f"{PREFIX}_2.ecg").write_bytes(
+            ishne_chunk(18000, 1510, START, patient_id=b"P0002"))
+        with pytest.raises(CorruptedFileError,
+                           match=f"chunk {PREFIX}_2.ecg of {PREFIX}.chn holds another patient "
+                                 rf"\(patient_id differs from {PREFIX}_1.ecg\)"):
+            parse(path)
+
+    def test_start_time_mismatch_after_a_gap_warns(self, tmp_path: Path):
+        path = write_recording(tmp_path, chunk_starts=True)
+        overwrite_start(tmp_path / f"{PREFIX}_1.ecg")
+        late = START + timedelta(seconds=1860)
+        (tmp_path / f"{PREFIX}_2.ecg").write_bytes(ishne_chunk(18000, 1510, late))
+        _, other = parse(path)
+        assert len(other) == 2
+        assert other[0] == gap_warning(f"{PREFIX}_1.ecg", 900)
+        assert (f"{PREFIX}_2.ecg starts at 08:52:06, expected 08:21:06 or 08:51:06"
+                in other[1])
+
+    def test_file_parser(self, tmp_path: Path):
+        path = write_recording(tmp_path)
+        overwrite_start(tmp_path / f"{PREFIX}.ecg")
+        with warnings.catch_warnings(record=True) as caught:
+            warnings.simplefilter("always")
+            record = FileParser.parse(path)
+        assert [str(w.message) for w in caught] == [
+            gap_warning(f"{PREFIX}.ecg", 900), start_warning(f"{PREFIX}_1.ecg")]
+        assert all(w.filename == __file__ for w in caught)
+        assert record.file_format.parser == "CardionicsChainParser"
+        assert record.recording.date == START
+        samples = record.leads[0].samples
+        assert record.leads[0].units == "mV"
+        assert not np.isnan(samples).any()
+        np.testing.assert_allclose(samples, expected_ramp(1951)[9000:] / 1000)
+        first = record.ecg_files[0]
+        assert (first.start, first.end, first.samples, first.error) == (
+            START, START + timedelta(seconds=900), 0, BAD_MAGIC)
+        assert record.to_dict(include_samples=False)["recording"]["date"] == "2009-09-17T08:21:06"
 
 
 class TestDetection:

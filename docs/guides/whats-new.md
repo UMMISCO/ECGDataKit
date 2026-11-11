@@ -62,7 +62,8 @@ needs the new names.
 
 - **New `record.ecg_files` field.** When a record is read from several
   files, it lists them in recording order as `ECGFile` entries: file
-  name, start, end and number of samples per lead. `to_dict()` and
+  name, start, end, number of samples per lead, and `error` (why the
+  file could not be read, empty otherwise). `to_dict()` and
   `to_json()` write it under `"ecg_files"`. It is empty for a record read
   from a single file.
 
@@ -77,6 +78,11 @@ needs the new names.
   or for the whole recording, raise `CorruptedFileError`. Each ISHNE file
   can still be parsed on its own. ECGDataKit now reads 14 formats (see
   [Cardionics Holter chain](formats.md#cardionics-holter-chain)).
+- **Cardionics Holter chain: damaged files.** A file of the chain that is
+  not a valid ISHNE file no longer stops the parsing. It is left out of
+  the leads, with a warning. Its `ECGFile` entry gives the reason in
+  `error`, with the start and end of the gap. If the first file is the
+  damaged one, the start of the recording is taken from the other files.
 - **SCP-ECG: incomplete Section 7.** A file whose Section 7 declares more
   measurement blocks than it stores no longer fails. The blocks that fit
   are read, the pacemaker spikes and the optional parts after them are

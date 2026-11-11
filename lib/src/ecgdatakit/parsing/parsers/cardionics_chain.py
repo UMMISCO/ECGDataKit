@@ -21,6 +21,11 @@ A chunk lasts from its start to the start of the next one, or to the
 order of the chain. The samples of each chunk, and of all the chunks
 together, must last as long as the chain says, within 1 s since the chain
 stores whole seconds.
+
+A chunk that cannot be read is left out of the leads, which never hold
+NaN. The chain still gives its start and end, so the gap is known. If the
+first chunk cannot be read, the start of the recording is taken from the
+other chunks.
 """
 
 from __future__ import annotations
@@ -79,10 +84,20 @@ class _Segment:
 
 @dataclass
 class _Chunk:
+    """One chunk file. *record* is None if the file cannot be read."""
     segment: _Segment
     path: Path
-    record: ECGRecord
+    record: ECGRecord | None
+    # Length in samples per lead. For an unreadable chunk, from the chain times
     samples: int
+    # Why the file cannot be read, and the error raised if no chunk can be
+    error: str = ""
+    failure: ECGDataKitError | None = None
+
+    @property
+    def held(self) -> int:
+        """Samples per lead the chunk gives to the leads."""
+        return self.samples if self.record is not None else 0
 
 
 def _read_entry(data: bytes, offset: int) -> _Entry:
@@ -96,6 +111,11 @@ def _read_entry(data: bytes, offset: int) -> _Entry:
     # Only the file name is used, a stored folder is ignored
     name = re.split(r"[\\/]", name.decode("latin-1").strip())[-1]
     return _Entry(nominal_s, elapsed_s, written_at, name)
+
+
+def _rate(chunks: list[_Chunk]) -> int:
+    """Sampling rate of the recording, from the first chunk that can be read."""
+    return next(c.record for c in chunks if c.record is not None).leads[0].sampling_rate
 
 
 class CardionicsChainParser(Parser):
@@ -121,10 +141,17 @@ class CardionicsChainParser(Parser):
             raise FileNotFoundError(f"File not found: {path}")
         segments, end = self._read_chain(path)
         chunks = [self._read_chunk(path, s, self._locate(path, s.name)) for s in segments]
+        unread = [c for c in chunks if c.record is None]
+        if len(unread) == len(chunks):
+            raise unread[0].failure
+        for chunk in unread:
+            chunk.failure = None
         self._check_chunks(path, chunks)
+        self._size_gaps(path, chunks)
         self._check_duration(path, chunks)
-        self._check_timeline(path, chunks)
-        return self._join(path, chunks, end)
+        start, source = self._recording_start(path, chunks, end)
+        self._check_timeline(path, chunks, start)
+        return self._join(path, chunks, end, start, source)
 
     @staticmethod
     def _read_chain(path: Path) -> tuple[list[_Segment], _Entry | None]:
@@ -197,6 +224,7 @@ class CardionicsChainParser(Parser):
 
     @staticmethod
     def _read_chunk(chain: Path, segment: _Segment, path: Path | None) -> _Chunk:
+        """Read a chunk file. An unreadable file gives a chunk without record."""
         where = f"Cardionics chain: chunk {segment.name} of {chain.name}"
         if path is None:
             raise CorruptedFileError(f"{where} is missing")
@@ -206,11 +234,17 @@ class CardionicsChainParser(Parser):
                 warnings.simplefilter("always")
                 record = ishne_holter.ISHNEHolterParser().parse(path)
         except ECGDataKitError as e:
-            raise type(e)(f"{where}: {e}") from e
+            failure = type(e)(f"{where}: {e}")
+            # The cause is kept without its traceback, which holds memory
+            failure.__cause__ = e.with_traceback(None)
+            return _Chunk(segment, path, None, 0, str(e), failure)
         except (OSError, ImportError):
             raise
         except Exception as e:
-            raise CorruptedFileError(f"{where}: cannot decode: {type(e).__name__}: {e}") from e
+            error = f"cannot decode: {type(e).__name__}: {e}"
+            failure = CorruptedFileError(f"{where}: {error}")
+            failure.__cause__ = e.with_traceback(None)
+            return _Chunk(segment, path, None, 0, error, failure)
         finally:
             # Warnings of a chunk name the chunk they come from
             for w in caught:
@@ -221,9 +255,9 @@ class CardionicsChainParser(Parser):
 
     @staticmethod
     def _check_chunks(chain: Path, chunks: list[_Chunk]) -> None:
-        """Raise when a chunk does not continue the first one."""
-        first = chunks[0]
-        for chunk in chunks[1:]:
+        """Raise when a chunk does not continue the first readable one."""
+        first, *others = [c for c in chunks if c.record is not None]
+        for chunk in others:
             record = chunk.record
             where = f"Cardionics chain: chunk {chunk.segment.name} of {chain.name}"
             if len(record.leads) != len(first.record.leads):
@@ -251,13 +285,14 @@ class CardionicsChainParser(Parser):
 
         Each chunk is checked against its start and end in the chain, then all
         the chunks against the End record. Without an End record, the last
-        chunk and the total are not checked.
+        chunk and the total are not checked. An unreadable chunk is not
+        checked. The total counts it for its time in the chain.
         """
-        rate = chunks[0].record.leads[0].sampling_rate
+        rate = _rate(chunks)
         wrong: list[str] = []
         for chunk in chunks:
             segment = chunk.segment
-            if segment.end_s is None:
+            if segment.end_s is None or chunk.record is None:
                 continue
             held_ms = round(1000 * chunk.samples / rate)
             stated_ms = 1000 * (segment.end_s - segment.start_s)
@@ -279,19 +314,94 @@ class CardionicsChainParser(Parser):
             )
 
     @staticmethod
-    def _check_timeline(chain: Path, chunks: list[_Chunk]) -> None:
+    def _size_gaps(chain: Path, chunks: list[_Chunk]) -> None:
+        """Set the length of each unreadable chunk from its time in the chain."""
+        rate = _rate(chunks)
+        for chunk in chunks:
+            if chunk.record is not None:
+                continue
+            segment = chunk.segment
+            where = f"Cardionics chain: chunk {segment.name} of {chain.name}"
+            if segment.end_s is None:
+                # Last chunk without End record: its length is unknown
+                warnings.warn(
+                    f"{where} cannot be read, it is left out of the leads: {chunk.error}",
+                    stacklevel=3,
+                )
+                continue
+            seconds = segment.end_s - segment.start_s
+            chunk.samples = round(seconds * rate)
+            warnings.warn(
+                f"{where} cannot be read, its {seconds} s are left out of the leads: "
+                f"{chunk.error}",
+                stacklevel=3,
+            )
+
+    @staticmethod
+    def _recording_start(chain: Path, chunks: list[_Chunk],
+                         end: _Entry | None) -> tuple[datetime | None, _Chunk | None]:
+        """Start of the recording, and the chunk it is taken from if not the first.
+
+        If the first chunk cannot be read, the start comes from the other
+        headers. A header holds the start of the recording or of its chunk.
+        Two headers that agree tell which. Otherwise the chain decides: the
+        write time of a record minus its elapsed time is close to the start.
+        """
+        if chunks[0].record is not None:
+            return chunks[0].record.recording.date, None
+        rate = _rate(chunks)
+        # Chunk, header time, and header time minus the time before the chunk
+        dated: list[tuple[_Chunk, datetime, datetime]] = []
+        before = 0
+        for chunk in chunks:
+            date = chunk.record.recording.date if chunk.record is not None else None
+            if date is not None:
+                dated.append((chunk, date, date - timedelta(seconds=before / rate)))
+            before += chunk.samples
+        unknown = (f"Cardionics chain: the first chunk of {chain.name} cannot be read and "
+                   "the other chunks do not tell the start of the recording, it is not known")
+        if not dated:
+            warnings.warn(unknown, stacklevel=3)
+            return None, None
+
+        def agree(times: list[datetime]) -> bool:
+            return all(abs((t - times[0]).total_seconds()) <= _TOLERANCE_S for t in times)
+
+        source, same, own = dated[0]
+        if len(dated) > 1 and agree([d[1] for d in dated]):
+            start = same
+        elif len(dated) > 1 and agree([d[2] for d in dated]):
+            start = own
+        else:
+            entries = [(c.segment.written_at, c.segment.start_s) for c in chunks]
+            if end is not None:
+                entries.append((end.written_at, end.elapsed_s))
+            written = [at - timedelta(seconds=s) for at, s in entries if at is not None]
+            if not written:
+                warnings.warn(unknown, stacklevel=3)
+                return None, None
+            start = min((same, own), key=lambda t: abs((t - written[0]).total_seconds()))
+        warnings.warn(
+            f"Cardionics chain: the first chunk of {chain.name} cannot be read, the start "
+            f"of the recording ({start:%Y-%m-%d %H:%M:%S}) is taken from chunk "
+            f"{source.segment.name}",
+            stacklevel=3,
+        )
+        return start, source
+
+    @staticmethod
+    def _check_timeline(chain: Path, chunks: list[_Chunk], origin: datetime | None) -> None:
         """Warn when the chunk start times do not match the recording.
 
         A chunk header holds the start of the recording or the start of the
         chunk, both are accepted.
         """
-        rate = chunks[0].record.leads[0].sampling_rate
-        origin = chunks[0].record.recording.date
+        rate = _rate(chunks)
         starts: list[str] = []
         before = 0
         for chunk in chunks:
             segment = chunk.segment
-            date = chunk.record.recording.date
+            date = chunk.record.recording.date if chunk.record is not None else None
             if origin is not None and date is not None:
                 follows = origin + timedelta(seconds=before / rate)
                 if all(abs((date - t).total_seconds()) > _TOLERANCE_S for t in (origin, follows)):
@@ -306,11 +416,15 @@ class CardionicsChainParser(Parser):
             )
 
     @staticmethod
-    def _join(chain: Path, chunks: list[_Chunk], end: _Entry | None) -> ECGRecord:
-        first = chunks[0].record
+    def _join(chain: Path, chunks: list[_Chunk], end: _Entry | None,
+              origin: datetime | None, source: _Chunk | None) -> ECGRecord:
+        # Patient, device and lead settings come from the first readable chunk
+        first = next(c.record for c in chunks if c.record is not None)
         templates: list = list(first.leads)
-        parts = [[c.record.leads[i].samples for c in chunks] for i in range(len(templates))]
-        for c in chunks:
+        # Unreadable chunks give no samples
+        read = [c for c in chunks if c.record is not None]
+        parts = [[c.record.leads[i].samples for c in read] for i in range(len(templates))]
+        for c in read:
             c.record.leads = []
         # Lead by lead, so that a long recording is held at most once plus one lead
         leads = []
@@ -320,46 +434,51 @@ class CardionicsChainParser(Parser):
             parts[i] = []
 
         rate = leads[0].sampling_rate
-        total = sum(c.samples for c in chunks)
+        total = sum(c.held for c in chunks)
         record = ECGRecord(source_format="cardionics_chain")
         record.patient = first.patient
-        record.recording = first.recording
-        record.recording.duration = timedelta(seconds=total / rate)
+        # Copied, so the chunk keeps its own header time
+        record.recording = dataclasses.replace(
+            first.recording, date=origin, duration=timedelta(seconds=total / rate))
         record.file_format = FileFormatInfo()
         record.leads = leads
         record.representative_beats = []
         record.annotations = dict(first.annotations)
 
-        origin = record.recording.date
         chunk_meta = []
         position = 0
         for c in chunks:
             segment = c.segment
-            end_s = segment.end_s if segment.end_s is not None else segment.start_s + c.samples / rate
+            end_s: float | None = segment.end_s
+            if end_s is None and c.record is not None:
+                end_s = segment.start_s + c.held / rate
             record.ecg_files.append(ECGFile(
                 name=segment.name,
                 start=origin + timedelta(seconds=segment.start_s) if origin else None,
-                end=origin + timedelta(seconds=end_s) if origin else None,
-                samples=c.samples,
+                end=origin + timedelta(seconds=end_s) if origin and end_s is not None else None,
+                samples=c.held,
+                error=c.error,
             ))
             chunk_meta.append({
                 "name": segment.name,
                 "filepath": str(c.path),
                 "listed": segment.listed,
                 "first_sample": position,
-                "samples": c.samples,
-                "start": c.record.recording.date,
+                "samples": c.held,
+                "error": c.error or None,
+                "start": c.record.recording.date if c.record is not None else None,
                 "start_s": segment.start_s,
                 "end_s": segment.end_s,
                 "nominal_s": segment.nominal_s,
                 "written_at": segment.written_at,
-                "annotations": c.record.annotations,
-                "ishne": c.record.raw_metadata,
+                "annotations": c.record.annotations if c.record is not None else {},
+                "ishne": c.record.raw_metadata if c.record is not None else {},
             })
-            position += c.samples
+            position += c.held
         raw = record.raw_metadata
         raw["filepath"] = str(chain)
         raw["chunks"] = chunk_meta
+        raw["start_inferred_from"] = source.segment.name if source is not None else None
         raw["end_record"] = end is not None
         raw["end_elapsed_s"] = end.elapsed_s if end is not None else None
         raw["end_written_at"] = end.written_at if end is not None else None

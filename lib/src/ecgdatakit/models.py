@@ -826,7 +826,10 @@ class ECGFile:
     end: datetime | None = None
     """End of the file in the recording."""
     samples: int = 0
-    """Number of samples per lead in the file."""
+    """Number of samples per lead in the file, 0 if it could not be read."""
+    error: str = ""
+    """Why the file could not be read, empty if it was read. An unreadable
+    file has no samples in the leads: ``start`` and ``end`` give the gap."""
 
     def __repr__(self) -> str:
         return _yaml_repr(self)
@@ -838,6 +841,7 @@ class ECGFile:
             "start": self.start.isoformat() if self.start else None,
             "end": self.end.isoformat() if self.end else None,
             "samples": self.samples,
+            "error": self.error,
         }
 
 
@@ -887,7 +891,8 @@ class ECGRecord:
     ecg_files: list[ECGFile] = field(default_factory=list)
     """Files that hold the samples, in recording order, when the record is
     split into several files (Cardionics Holter chain). The leads join the
-    samples of these files in this order. Empty for a record read from a
+    samples of these files in this order. An unreadable file has its
+    ``error`` set and no samples. Empty for a record read from a
     single file."""
 
     @property
@@ -998,7 +1003,8 @@ class ECGRecord:
             for f in self.ecg_files:
                 span = (f", {_format_value(f.start)} to {_format_value(f.end)}"
                         if f.start and f.end else "")
-                lines.append(f"    - {f.name}: {f.samples} samples{span}")
+                unread = " (not read)" if f.error else ""
+                lines.append(f"    - {f.name}: {f.samples} samples{span}{unread}")
 
         # Raw metadata indicator
         if self.raw_metadata:

@@ -66,27 +66,47 @@ What the parser reads:
 
 - **Chain.** One 276-byte record per numbered chunk, in recording order: the nominal chunk length, the time from the start of the recording to the start of the chunk, the time the record was written, and the file name of the chunk. The last record is named `End` and holds the length of the whole recording.
 - **Chunk times.** The first chunk runs from 0 to the start of the first listed chunk. Each listed chunk runs to the start of the next one, and the last one to `End`. A chain holding only an `End` record at 0 s is a recording stopped within its first second.
-- **Signal.** Each chunk is read with `ISHNEHolterParser`, and the leads are joined in the order of the chain, not in the order of the file names. Patient, recording start, device and lead settings come from the first chunk. The duration is that of all the samples.
+- **Signal.** Each chunk is read with `ISHNEHolterParser`, and the leads are joined in the order of the chain, not in the order of the file names. Patient, recording start, device and lead settings come from the first chunk, or from the first one that can be read (see below). The duration is that of all the samples.
 - **Chunk files.** They are looked up in the folder of the `.chn` file, whatever their case. A folder stored in the chain is ignored.
 
 Checks:
 
-- A missing chunk, a chunk listed twice, a chunk of another patient, a chunk whose leads, sampling rate or scale differ from the first one, or chunk times that do not increase raise `CorruptedFileError`.
+- A missing chunk, a chunk listed twice, a chunk of another patient, a chunk whose leads, sampling rate or scale differ from the first one that can be read, or chunk times that do not increase raise `CorruptedFileError`.
 - The samples of each chunk must last as long as the chunk in the chain (its end minus its start), and the samples of all the chunks as long as the recording given by `End`, within 1 s since the chain stores whole seconds. Otherwise the leads would not match the chain times, and `CorruptedFileError` is raised with the chunks that differ.
 - A chunk whose header start time is neither the start of the recording nor the end of the previous chunks issues a `UserWarning`.
 - A chain without an `End` record issues a `UserWarning`. The last chunk and the total length are then not checked.
 - Warnings and errors raised while reading a chunk name the chunk.
 
-`record.ecg_files` lists the chunks in order, as {class}`~ecgdatakit.models.ECGFile` entries: file name, start and end in the recording (from the chain times, or from the samples for the last chunk of a chain without `End`), and number of samples. The first chunk starts at `record.recording.date`.
+Chunks that cannot be read:
 
-`raw_metadata["chunks"]` gives more detail on each chunk. Each entry gives the chunk file (`name`, `filepath`), the index of its first sample in the joined leads (`first_sample`), its number of samples (`samples`), its start time from its ISHNE header (`start`), its times in the chain (`start_s`, `end_s`, in seconds from the start of the recording), the values of its chain record (`nominal_s`, `written_at`), `listed` (`False` for the first chunk, which has no record, so its `nominal_s` and `written_at` are `None`), its own annotations (`annotations`) and its own `raw_metadata` (`ishne`). `raw_metadata["end_record"]`, `raw_metadata["end_elapsed_s"]` and `raw_metadata["end_written_at"]` describe the `End` record.
+- **Gap.** A chunk file that is present but is not a valid ISHNE file (for example, its header was overwritten on a damaged disk) is left out of the leads. The leads join the chunks that were read and never hold NaN. A `UserWarning` names the chunk and the reason.
+- **Where the gap is.** The entry of the chunk in `record.ecg_files` has `error` set, `samples` at 0, and the `start` and `end` the chain gives it.
+- **Duration.** `record.recording.duration` is that of the samples, without the gaps.
+- **Start of the recording.** If the first chunk cannot be read, `record.recording.date` is taken from the headers of the other chunks, with a `UserWarning`. A header holds the start of the recording or the start of its chunk. Two headers that agree tell which. With one header, the write times of the chain decide. If the start cannot be found, `record.recording.date` is `None`.
+- **Last chunk of a chain without `End`.** It is left out the same way. Its `end` is `None`, since nothing gives its length.
+- **Other chunks.** They are checked as usual.
+- If no chunk can be read, `CorruptedFileError` is raised. A missing chunk file always raises.
+
+To know if a recording has gaps:
+
+```python
+gaps = [f for f in record.ecg_files if f.error]
+for f in gaps:
+    print(f.name, f.start, f.end, f.error)
+```
+
+The samples before and after a gap are next to each other in the leads. `raw_metadata["chunks"][i]["first_sample"]` gives where each chunk starts.
+
+`record.ecg_files` lists the chunks in order, as {class}`~ecgdatakit.models.ECGFile` entries: file name, start and end in the recording (from the chain times, or from the samples for the last chunk of a chain without `End`), number of samples, and `error`. `error` is empty for a chunk that was read. Otherwise it gives the reason, and `samples` is 0. The first chunk starts at `record.recording.date`.
+
+`raw_metadata["chunks"]` gives more detail on each chunk. Each entry gives the chunk file (`name`, `filepath`), the index of its first sample in the joined leads (`first_sample`), its number of samples (`samples`), why it could not be read (`error`, `None` for a chunk that was read), its start time from its ISHNE header (`start`), its times in the chain (`start_s`, `end_s`, in seconds from the start of the recording), the values of its chain record (`nominal_s`, `written_at`), `listed` (`False` for the first chunk, which has no record, so its `nominal_s` and `written_at` are `None`), its own annotations (`annotations`) and its own `raw_metadata` (`ishne`). For a chunk that could not be read, `start` is `None`, and `annotations` and `ishne` are empty. `raw_metadata["end_record"]`, `raw_metadata["end_elapsed_s"]` and `raw_metadata["end_written_at"]` describe the `End` record. `raw_metadata["start_inferred_from"]` names the chunk that gave the start of the recording if the first chunk could not be read, and is `None` otherwise.
 
 ```python
 from ecgdatakit import FileParser
 
 record = FileParser.parse("recording.chn")
 for f in record.ecg_files:
-    print(f.name, f.start, f.end, f.samples)
+    print(f.name, f.start, f.end, f.samples, f.error or "read")
 ```
 
 **Dependencies:** None.
