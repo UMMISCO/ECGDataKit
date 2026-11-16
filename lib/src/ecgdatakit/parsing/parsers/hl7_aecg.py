@@ -303,18 +303,32 @@ class HL7aECGParser(Parser):
     def _read_sequence_set(
         self, series: ET.Element, kind: str, file_path: Path
     ) -> tuple[list[Lead], dict]:
+        """The leads of a series. A recorder writes one sequenceSet; a digitized paper ECG
+        writes one per lead segment (I, II, III over 0-2.5 s, aVR, aVL, aVF over 2.5-5 s...,
+        and the rhythm strips), each with its own time head. Every set is then read and each
+        segment placed on one time axis at its head less the earliest: a lead is NaN where
+        it was not recorded, and the segments are listed in the time info."""
         sets = _children(series, "component/sequenceSet")
         if not sets:
             return [], {}
-        if len(sets) > 1:
-            self._warnings.append(
-                f"{len(sets)} sequence sets in the {kind} series; only the first is read"
-            )
+        # A set of several without a time sequence cannot be placed: _place_sets leaves it out
+        parts = [self._read_one_set(s, kind, file_path, timed=len(sets) == 1) for s in sets]
+        if len(parts) == 1:
+            time_info, entries = parts[0]
+            labels = unique_labels([label for label, _, _ in entries])
+            leads = []
+            for label, (_, samples, value) in zip(labels, entries):
+                leads.append(self._make_lead(label, samples, value, time_info["sampling_rate"]))
+            return leads, time_info
+        return self._place_sets(parts, kind, file_path, len(sets))
 
+    def _read_one_set(
+        self, sequence_set: ET.Element, kind: str, file_path: Path, timed: bool = True
+    ) -> tuple[dict, list[tuple[str, np.ndarray, ET.Element]]]:
         time_info: dict = {}
         entries: list[tuple[str, np.ndarray, ET.Element]] = []
         skipped: list[str] = []
-        for seq in _children(sets[0], "component/sequence"):
+        for seq in _children(sequence_set, "component/sequence"):
             code = _attr(_child(seq, "code"), "code")
             value = _child(seq, "value")
             if code.upper().startswith("TIME_"):
@@ -335,14 +349,95 @@ class HL7aECGParser(Parser):
             entries.append((label, samples, value))
         if skipped:
             self._warnings.append(f"Unrecognised sequences ignored in the {kind} series: {skipped}")
-        if entries and not time_info.get("sampling_rate"):
+        if timed and entries and not time_info.get("sampling_rate"):
             raise CorruptedFileError(f"No usable time increment in the {kind} series of {file_path}")
+        return time_info, entries
 
-        labels = unique_labels([label for label, _, _ in entries])
+    def _place_sets(
+        self, parts: list[tuple[dict, list]], kind: str, file_path: Path, count: int
+    ) -> tuple[list[Lead], dict]:
+        """The leads of several sequenceSets on one time axis (see _read_sequence_set)."""
+        timed = [(info, entries) for info, entries in parts if entries and info.get("sampling_rate")]
+        untimed = count - len(timed)
+        rates = sorted({info["sampling_rate"] for info, _ in timed})
+        if len(rates) > 1:
+            self._warnings.append(
+                f"{count} sequence sets in the {kind} series at different rates ({rates} Hz); "
+                f"only those at {rates[0]} Hz are read"
+            )
+            timed = [(info, entries) for info, entries in timed if info["sampling_rate"] == rates[0]]
+        if untimed:
+            self._warnings.append(
+                f"{count} sequence sets in the {kind} series; {untimed} without a time sequence "
+                "or a lead ignored"
+            )
+        if not timed:
+            raise CorruptedFileError(f"No usable time increment in the {kind} series of {file_path}")
+        rate = timed[0][0]["sampling_rate"]
+        exact = timed[0][0].get("sampling_rate_exact") or rate
+        heads = [self._head_seconds(info) for info, _ in timed]
+        if any(h is None for h in heads):
+            self._warnings.append(
+                f"A sequence set of the {kind} series has no usable time head; "
+                "its segments are placed at the start"
+            )
+        known = [h for h in heads if h is not None]
+        t0 = min(known) if known else 0.0
+        starts = [0 if h is None else int(round((h - t0) * exact)) for h in heads]
+
+        # Each lead in the order it first appears, on the scale of its first segment
+        order: list[str] = []
+        first: dict[str, ET.Element] = {}
+        pieces: dict[str, list[tuple[int, np.ndarray, ET.Element]]] = {}
+        segments = []
+        for start, (_, entries) in zip(starts, timed):
+            for label, samples, value in entries:
+                if label not in pieces:
+                    order.append(label)
+                    first[label] = value
+                    pieces[label] = []
+                pieces[label].append((start, samples, value))
+                segments.append({"lead": label, "start_s": round(start / exact, 6),
+                                 "duration_s": round(len(samples) / exact, 6)})
+        n = max(start + len(samples) for label in order for start, samples, _ in pieces[label])
         leads = []
-        for label, (_, samples, value) in zip(labels, entries):
-            leads.append(self._make_lead(label, samples, value, time_info["sampling_rate"]))
-        return leads, time_info
+        for label in order:
+            ref = self._make_lead(label, np.empty(0), first[label], rate)
+            row = np.full(n, np.nan)
+            for start, samples, value in pieces[label]:
+                own = self._make_lead(label, np.empty(0), value, rate)
+                # The segment's digits in the units of the lead's first segment
+                if (own.resolution, own.offset, own.resolution_unit) != (ref.resolution, ref.offset, ref.resolution_unit):
+                    to = _TO_UV.get(own.resolution_unit, 1.0) / _TO_UV.get(ref.resolution_unit, 1.0) \
+                        if own.resolution_unit and ref.resolution_unit else 1.0
+                    samples = ((samples * own.resolution + own.offset) * to - ref.offset) / (ref.resolution or 1.0)
+                # Where two segments of a lead overlap, the first one
+                part = row[start:start + len(samples)]
+                free = np.isnan(part)
+                part[free] = samples[free]
+            leads.append(self._make_lead(label, row, first[label], rate))
+        info = dict(timed[int(np.argmin([h if h is not None else np.inf for h in heads]))][0]) if known else dict(timed[0][0])
+        info["sequence_sets"] = count
+        info["segments"] = segments
+        return leads, info
+
+    @staticmethod
+    def _head_seconds(info: dict) -> float | None:
+        """A set's time head in seconds: an absolute HL7 timestamp, or a relative value with its
+        unit. Only differences between heads are used."""
+        head = info.get("head")
+        if not head:
+            return None
+        unit = info.get("head_unit")
+        if unit:
+            step = _float(head)
+            return None if step is None or unit not in _INCREMENT_TO_S else step * _INCREMENT_TO_S[unit]
+        ts = _parse_ts(head)
+        if ts is None:
+            return None
+        if ts.tzinfo is None:
+            ts = ts.replace(tzinfo=timezone.utc)
+        return ts.timestamp()
 
     def _read_time(self, code: str, value: ET.Element | None) -> dict:
         head = _child(value, "head")

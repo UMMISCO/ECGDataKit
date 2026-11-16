@@ -183,6 +183,31 @@ def _encode(fmt: int, values: list[int]) -> bytes:
 
 # Hand-written headers carry placeholder checksums
 @pytest.mark.filterwarnings("ignore::ecgdatakit.exceptions.ChecksumWarning")
+class TestWFDBUntrustedNames:
+    """A header is untrusted text: the files it names are read only beside it."""
+
+    @pytest.mark.parametrize("name", ["{abs}", "../secret.dat", "sub/r.dat", "..", "sub\\r.dat"])
+    def test_signal_file_outside_the_folder_is_refused(self, tmp_path: Path, name: str):
+        secret = tmp_path / "secret.dat"
+        secret.write_bytes(struct.pack("<4h", 1, 2, 3, 4))
+        folder = tmp_path / "rec"
+        (folder / "sub").mkdir(parents=True)
+        (folder / "sub" / "r.dat").write_bytes(struct.pack("<4h", 1, 2, 3, 4))
+        name = name.format(abs=secret)
+        hea = _write(folder, "r", ["r 1 250 4", f"{name} 16 200/mV 16 0 0 0 0 I"], {})
+        with pytest.raises(CorruptedFileError, match="plain name"):
+            WFDBParser().parse(hea)
+
+    def test_segment_header_outside_the_folder_is_refused(self, tmp_path: Path):
+        folder = tmp_path / "rec"
+        folder.mkdir()
+        _write(tmp_path, "s", ["s 1 250 4", "s.dat 16 200/mV 16 0 0 0 0 I"],
+               {"s.dat": struct.pack("<4h", 1, 2, 3, 4)})
+        hea = _write(folder, "m", ["m/1 1 250 4", "../s 4"], {})
+        with pytest.raises(CorruptedFileError, match="plain name"):
+            WFDBParser().parse(hea)
+
+
 class TestWFDBFormats:
     @pytest.mark.parametrize("fmt", [16, 61, 160, 80, 24, 32, 212, 310, 311])
     def test_amplitude_formats(self, tmp_path: Path, fmt: int):

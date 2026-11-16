@@ -76,7 +76,7 @@ Leads, measurements and waves are coded with the MDC codes of ISO/IEEE 11073. A 
 
 Not written: the detail of each interpretation statement, the severity, the QRS count, the wave boundaries whose unit is not stated (keys without `_ms`), `leads_enhanced`, `ecg_files`, the other patient and recording fields (race, weight, height, medications, pacemaker, referring physician, room), other annotations and `raw_metadata`.
 
-Leads at different sampling rates or lengths go to separate sequence sets, since a sequence set has a single time sequence. ECGDataKit's HL7 aECG parser reads only the first sequence set of a series, so it reads back only the leads of the first one.
+Leads at different sampling rates or lengths go to separate sequence sets, since a sequence set has a single time sequence. ECGDataKit's HL7 aECG parser reads every sequence set of a series and places each one at its time head, so leads of different lengths are read back, the shorter ones padded with NaN. Leads at another sampling rate than the first set's are left out, with a warning.
 
 ### Samples
 

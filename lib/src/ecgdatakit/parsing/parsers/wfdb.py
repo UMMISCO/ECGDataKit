@@ -149,6 +149,15 @@ def _parse_base_time(text: str) -> time:
         raise _fail(f"invalid base time {text!r}") from None
 
 
+def _beside(directory: Path, name: str) -> Path:
+    """Path of ``name`` in ``directory``. A header is untrusted text: a name
+    that is a path (absolute, or with a directory part) would read a file
+    from anywhere on the machine as samples, so only plain names are read."""
+    if not name or name in (".", "..") or name != Path(name).name or "\\" in name or "\x00" in name:
+        raise _fail(f"file name {name!r} is not a plain name beside the header")
+    return directory / name
+
+
 def _parse_record_line(line: str) -> _Header:
     tokens = line.split()
     if len(tokens) < 2:
@@ -433,9 +442,11 @@ class WFDBParser(Parser):
                 raise UnsupportedFormatError(f"WFDB format {fmt} (FLAC) is not supported")
             if fmt not in _FORMAT_BITS:
                 raise UnsupportedFormatError(f"Unknown WFDB storage format {fmt}")
-            dat_path = directory / filename
-            if filename == "~" or not dat_path.is_file():
-                raise CorruptedFileError(f"WFDB signal file not found: {dat_path}")
+            if filename == "~":
+                raise CorruptedFileError("WFDB signal file not found: ~")
+            dat_path = _beside(directory, filename)
+            if not dat_path.is_file():
+                raise CorruptedFileError(f"WFDB signal file not found: {filename}")
             data = dat_path.read_bytes()
             byte_offset = group[0].byte_offset
             if byte_offset > len(data):
@@ -552,9 +563,9 @@ class WFDBParser(Parser):
         return layout, signals, sum(length for length, _, _ in parts)
 
     def _read_segment_header(self, directory: Path, name: str) -> _Header:
-        seg_path = directory / f"{name}.hea"
+        seg_path = _beside(directory, f"{name}.hea")
         if not seg_path.is_file():
-            raise CorruptedFileError(f"WFDB segment header not found: {seg_path}")
+            raise CorruptedFileError(f"WFDB segment header not found: {name}.hea")
         seg = _parse_header_text(decode_text(seg_path.read_bytes()))
         if seg.num_segments is not None:
             raise UnsupportedFormatError("Nested WFDB multi-segment records are not supported")
